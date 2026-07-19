@@ -72,6 +72,7 @@ function NavBar() {
             </span>
           </Link>
           <div className="flex items-center gap-0.5 overflow-x-auto">
+            <NavLink to="/dashboard">Dashboard</NavLink>
             <NavLink to="/">Home</NavLink>
             <NavLink to="/swap">Swap</NavLink>
             <NavLink to="/earn">Earn</NavLink>

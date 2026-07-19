@@ -20,6 +20,7 @@ import { Route as PortfolioRouteImport } from './routes/portfolio'
 import { Route as GasRouteImport } from './routes/gas'
 import { Route as EarnRouteImport } from './routes/earn'
 import { Route as DepositRouteImport } from './routes/deposit'
+import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as ContractsRouteImport } from './routes/contracts'
 import { Route as ChatRouteImport } from './routes/chat'
 import { Route as ChainsRouteImport } from './routes/chains'
@@ -86,6 +87,11 @@ const DepositRoute = DepositRouteImport.update({
   path: '/deposit',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DashboardRoute = DashboardRouteImport.update({
+  id: '/dashboard',
+  path: '/dashboard',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ContractsRoute = ContractsRouteImport.update({
   id: '/contracts',
   path: '/contracts',
@@ -147,6 +153,7 @@ export interface FileRoutesByFullPath {
   '/chains': typeof ChainsRouteWithChildren
   '/chat': typeof ChatRoute
   '/contracts': typeof ContractsRoute
+  '/dashboard': typeof DashboardRoute
   '/deposit': typeof DepositRoute
   '/earn': typeof EarnRoute
   '/gas': typeof GasRoute
@@ -170,6 +177,7 @@ export interface FileRoutesByTo {
   '/chains': typeof ChainsRouteWithChildren
   '/chat': typeof ChatRoute
   '/contracts': typeof ContractsRoute
+  '/dashboard': typeof DashboardRoute
   '/deposit': typeof DepositRoute
   '/earn': typeof EarnRoute
   '/gas': typeof GasRoute
@@ -194,6 +202,7 @@ export interface FileRoutesById {
   '/chains': typeof ChainsRouteWithChildren
   '/chat': typeof ChatRoute
   '/contracts': typeof ContractsRoute
+  '/dashboard': typeof DashboardRoute
   '/deposit': typeof DepositRoute
   '/earn': typeof EarnRoute
   '/gas': typeof GasRoute
@@ -219,6 +228,7 @@ export interface FileRouteTypes {
     | '/chains'
     | '/chat'
     | '/contracts'
+    | '/dashboard'
     | '/deposit'
     | '/earn'
     | '/gas'
@@ -242,6 +252,7 @@ export interface FileRouteTypes {
     | '/chains'
     | '/chat'
     | '/contracts'
+    | '/dashboard'
     | '/deposit'
     | '/earn'
     | '/gas'
@@ -265,6 +276,7 @@ export interface FileRouteTypes {
     | '/chains'
     | '/chat'
     | '/contracts'
+    | '/dashboard'
     | '/deposit'
     | '/earn'
     | '/gas'
@@ -289,6 +301,7 @@ export interface RootRouteChildren {
   ChainsRoute: typeof ChainsRouteWithChildren
   ChatRoute: typeof ChatRoute
   ContractsRoute: typeof ContractsRoute
+  DashboardRoute: typeof DashboardRoute
   DepositRoute: typeof DepositRoute
   EarnRoute: typeof EarnRoute
   GasRoute: typeof GasRoute
@@ -379,6 +392,13 @@ declare module '@tanstack/react-router' {
       path: '/deposit'
       fullPath: '/deposit'
       preLoaderRoute: typeof DepositRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dashboard': {
+      id: '/dashboard'
+      path: '/dashboard'
+      fullPath: '/dashboard'
+      preLoaderRoute: typeof DashboardRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/contracts': {
@@ -475,6 +495,7 @@ const rootRouteChildren: RootRouteChildren = {
   ChainsRoute: ChainsRouteWithChildren,
   ChatRoute: ChatRoute,
   ContractsRoute: ContractsRoute,
+  DashboardRoute: DashboardRoute,
   DepositRoute: DepositRoute,
   EarnRoute: EarnRoute,
   GasRoute: GasRoute,

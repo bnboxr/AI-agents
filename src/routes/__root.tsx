@@ -6,7 +6,7 @@ import {
   Link,
 } from "@tanstack/react-router";
 import type { ReactNode } from "react";
-import { WalletProvider, ConnectButton } from "~/components/WalletProvider";
+import { WalletProvider, ConnectButton, ChainSelector } from "~/components/WalletProvider";
 import AlertBell from "~/components/AlertBell";
 import AlertToast from "~/components/AlertToast";
 import HelpGuide from "~/components/HelpGuide";
@@ -91,6 +91,7 @@ function NavBar() {
             <NavLink to="/alerts">Alerts</NavLink>
           </div>
           <div className="shrink-0 ml-2 flex items-center gap-1">
+            <ChainSelector />
             <AlertBell />
             <ConnectButton />
           </div>

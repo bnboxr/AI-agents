@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import {
   getSettings,
   saveApiKey,
@@ -8,8 +8,12 @@ import {
   addRpcEndpoint,
   toggleRpcEndpoint,
   deleteRpcEndpoint,
+  getLLMProvider,
+  setLLMProvider,
 } from "~/lib/api-keys";
-import type { ServiceKey, RpcEntry, ServiceName } from "~/lib/api-keys";
+import type { ServiceKey, RpcEntry, ServiceName, LLMProvider } from "~/lib/api-keys";
+import { detectOllama, findCompatibleModel } from "~/lib/llm/local";
+import type { OllamaModel } from "~/lib/llm/local";
 import {
   listDestinations,
   addDestination,
@@ -82,12 +86,20 @@ const SERVICES: ServiceDef[] = [
 
 export const Route = createFileRoute("/settings")({
   loader: async () => {
-    const [settings, destinations, exchangeConfigs] = await Promise.all([
+    const [settings, destinations, exchangeConfigs, llmProvider] = await Promise.all([
       getSettings(),
       listDestinations(),
       getExchangeConfigs(),
+      getLLMProvider(),
     ]);
-    return { ...settings, destinations, exchangeConfigs };
+    // Try to detect Ollama on the server side
+    let ollamaStatus = { running: false, models: [] as OllamaModel[] };
+    try {
+      ollamaStatus = await detectOllama();
+    } catch {
+      // Ollama not available
+    }
+    return { ...settings, destinations, exchangeConfigs, llmProvider, ollamaStatus };
   },
   component: SettingsPage,
 });
@@ -104,6 +116,11 @@ function SettingsPage() {
   const [exchangeCfgs, setExchangeCfgs] = useState<ExchangeConfig[]>(
     initial.exchangeConfigs,
   );
+  const [provider, setProvider] = useState<LLMProvider>(initial.llmProvider);
+  const [ollamaModels, setOllamaModels] = useState<OllamaModel[]>(initial.ollamaStatus.models);
+  const [ollamaRunning, setOllamaRunning] = useState(initial.ollamaStatus.running);
+  const [ollamaChecking, setOllamaChecking] = useState(false);
+  const [providerSaving, setProviderSaving] = useState(false);
   const [inputs, setInputs] = useState<Record<string, string>>({});
   const [testing, setTesting] = useState<Record<string, boolean>>({});
   const [testResults, setTestResults] = useState<Record<string, { ok: boolean; message: string } | null>>({});
@@ -262,6 +279,48 @@ function SettingsPage() {
     }
   }, []);
 
+  // ── LLM Provider actions ─────────────────────────────────────────
+
+  const handleProviderChange = useCallback(async (newProvider: LLMProvider) => {
+    setProviderSaving(true);
+    try {
+      await setLLMProvider({ data: { provider: newProvider } });
+      setProvider(newProvider);
+      // Re-check Ollama if switching to it
+      if (newProvider === "ollama") {
+        setOllamaChecking(true);
+        try {
+          const status = await detectOllama();
+          setOllamaRunning(status.running);
+          setOllamaModels(status.models);
+        } catch {
+          setOllamaRunning(false);
+          setOllamaModels([]);
+        } finally {
+          setOllamaChecking(false);
+        }
+      }
+    } catch {
+      // keep current state
+    } finally {
+      setProviderSaving(false);
+    }
+  }, []);
+
+  const handleRefreshOllama = useCallback(async () => {
+    setOllamaChecking(true);
+    try {
+      const status = await detectOllama();
+      setOllamaRunning(status.running);
+      setOllamaModels(status.models);
+    } catch {
+      setOllamaRunning(false);
+      setOllamaModels([]);
+    } finally {
+      setOllamaChecking(false);
+    }
+  }, []);
+
   // ── Render ─────────────────────────────────────────────────────
 
   return (
@@ -279,6 +338,155 @@ function SettingsPage() {
             Manage API keys, RPC endpoints, and service integrations for the
             autonomous agent network.
           </p>
+        </div>
+
+        {/* LLM Provider section */}
+        <div className="mb-10 animate-fade-in-up" style={{ animationDelay: "0.05s" }}>
+          <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+            <span>🧠</span> LLM Provider
+          </h2>
+          <div className="glass-card p-5">
+            <p className="text-gray-400 text-sm mb-4">
+              Select which AI model to use for chat and agent reasoning.
+              Ollama runs locally on your PC — no API key needed.
+            </p>
+
+            {/* Provider selector */}
+            <div className="flex gap-3 mb-4 flex-wrap">
+              {(["openai", "anthropic", "ollama"] as LLMProvider[]).map((p) => (
+                <button
+                  key={p}
+                  onClick={() => handleProviderChange(p)}
+                  disabled={providerSaving}
+                  className={`text-sm px-4 py-2.5 rounded-lg border transition-all duration-200 flex items-center gap-2 ${
+                    provider === p
+                      ? "border-accent-blue bg-accent-blue/10 text-white"
+                      : "border-dark-border text-gray-500 hover:border-dark-border-light hover:text-gray-300"
+                  } disabled:opacity-40`}
+                >
+                  <span>
+                    {p === "openai" ? "🤖" : p === "anthropic" ? "🧠" : "🦙"}
+                  </span>
+                  <span>
+                    {p === "openai" ? "OpenAI (GPT-4o)" : p === "anthropic" ? "Anthropic (Claude)" : "Ollama (Local)"}
+                  </span>
+                  {provider === p && (
+                    <span className="text-accent-blue text-xs">●</span>
+                  )}
+                </button>
+              ))}
+            </div>
+
+            {/* Ollama status panel */}
+            {provider === "ollama" && (
+              <div className="mt-3 p-4 rounded-lg border border-dark-border bg-dark-hover/40">
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-sm font-semibold text-white flex items-center gap-2">
+                    <span>🦙</span> Ollama Status
+                  </h4>
+                  <button
+                    onClick={handleRefreshOllama}
+                    disabled={ollamaChecking}
+                    className="text-xs px-3 py-1 rounded-lg border border-dark-border text-gray-400 hover:text-white hover:border-accent-blue/40 transition-all disabled:opacity-40"
+                  >
+                    {ollamaChecking ? "Checking…" : "🔄 Refresh"}
+                  </button>
+                </div>
+
+                {ollamaRunning ? (
+                  <>
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="status-dot-online" />
+                      <span className="text-sm text-accent-green">Ollama is running</span>
+                    </div>
+                    {ollamaModels.length > 0 ? (
+                      <div className="space-y-1.5">
+                        <p className="text-xs text-gray-500 mb-2">Available models:</p>
+                        {ollamaModels.map((m) => {
+                          const isCompat = findCompatibleModel([m]) !== null;
+                          return (
+                            <div
+                              key={m.name}
+                              className={`flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg border ${
+                                isCompat
+                                  ? "border-accent-green/20 bg-accent-green/5 text-accent-green"
+                                  : "border-dark-border bg-dark-hover/20 text-gray-400"
+                              }`}
+                            >
+                              <span>{isCompat ? "✅" : "📦"}</span>
+                              <span className="font-mono">{m.name}</span>
+                              <span className="text-gray-600 ml-auto">
+                                {(m.size / 1e9).toFixed(1)} GB
+                              </span>
+                            </div>
+                          );
+                        })}
+                        {ollamaModels.length > 0 && findCompatibleModel(ollamaModels) && (
+                          <p className="text-xs text-accent-green mt-2">
+                            ✓ Compatible model found — Ollama is ready to use
+                          </p>
+                        )}
+                        {ollamaModels.length > 0 && !findCompatibleModel(ollamaModels) && (
+                          <div className="mt-3">
+                            <p className="text-xs text-accent-yellow mb-2">
+                              ⚠ No compatible model found. Download one:
+                            </p>
+                            <code className="block text-xs text-gray-300 bg-dark-hover rounded-lg px-3 py-2 font-mono border border-dark-border">
+                              ollama pull llama3
+                            </code>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="mt-2">
+                        <p className="text-xs text-accent-yellow mb-2">
+                          No models installed. Download llama3 to get started:
+                        </p>
+                        <div className="flex gap-2">
+                          <code className="block flex-1 text-xs text-gray-300 bg-dark-hover rounded-lg px-3 py-2 font-mono border border-dark-border">
+                            ollama pull llama3
+                          </code>
+                          <button
+                            className="text-xs px-3 py-1.5 rounded-lg bg-accent-blue/10 border border-accent-blue/30 text-accent-blue hover:bg-accent-blue/20 transition-colors whitespace-nowrap"
+                            title="Copy to clipboard — run in terminal"
+                            onClick={() => {
+                              navigator.clipboard?.writeText("ollama pull llama3");
+                            }}
+                          >
+                            📋 Copy
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div>
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="status-dot-offline" />
+                      <span className="text-sm text-gray-400">
+                        {ollamaChecking ? "Checking..." : "Ollama not detected"}
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-500 mb-2">
+                      Make sure Ollama is installed and running at <code className="text-gray-400">http://localhost:11434</code>.
+                    </p>
+                    <a
+                      href="https://ollama.com/download"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-accent-blue hover:text-accent-cyan transition-colors"
+                    >
+                      Download Ollama →
+                    </a>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {providerSaving && (
+              <p className="text-xs text-gray-500 mt-2">Saving preference...</p>
+            )}
+          </div>
         </div>
 
         {/* API Keys section */}

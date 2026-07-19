@@ -1,7 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import { executeToolCall, type ToolCall } from "~/lib/chat-tools";
 import { listDestinations, type PaymentDestination } from "~/lib/payment-destinations";
-import { getApiKey } from "~/lib/api-keys";
+import { getApiKey, type LLMProvider } from "~/lib/api-keys";
+import { detectOllama, findCompatibleModel, ollamaChat, type OllamaModel } from "~/lib/llm/local";
 
 interface ChatMessage {
   role: "user" | "assistant" | "system";
@@ -29,89 +30,176 @@ Based on the user's message, determine which single tool to call.
 Respond with ONLY the tool name — nothing else, no punctuation, no explanation.
 If no tool fits, respond with: getAgentStatus`;
 
-async function detectToolViaLLM(messages: ChatMessage[]): Promise<string | null> {
-  const userMessages = messages.filter(m => m.role === "user");
+// ── Cached Ollama status ────────────────────────────────────────────
+
+let ollamaCache: { models: OllamaModel[]; checkedAt: number } | null = null;
+
+async function getOllamaModels(): Promise<OllamaModel[]> {
+  const now = Date.now();
+  if (ollamaCache && now - ollamaCache.checkedAt < 60_000) {
+    return ollamaCache.models;
+  }
+  const status = await detectOllama();
+  ollamaCache = { models: status.models, checkedAt: now };
+  return status.models;
+}
+
+// ── Provider-specific tool detection ───────────────────────────────
+
+async function detectToolOpenAI(
+  messages: ChatMessage[],
+  key: string,
+): Promise<string | null> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10_000);
+  try {
+    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${key}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "gpt-4o",
+        messages,
+        temperature: 0.3,
+        max_tokens: 50,
+      }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      choices: Array<{ message: { content: string } }>;
+    };
+    return data.choices?.[0]?.message?.content?.trim() ?? null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function detectToolAnthropic(
+  messages: ChatMessage[],
+  key: string,
+): Promise<string | null> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10_000);
+  try {
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "x-api-key": key,
+        "anthropic-version": "2023-06-01",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "claude-3-haiku-20240307",
+        messages,
+        max_tokens: 50,
+      }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    if (!res.ok) return null;
+    const data = (await res.json()) as { content: Array<{ text: string }> };
+    return data.content?.[0]?.text?.trim() ?? null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function detectToolOllama(messages: ChatMessage[]): Promise<string | null> {
+  const models = await getOllamaModels();
+  const model = findCompatibleModel(models);
+  if (!model) return null;
+
+  try {
+    const response = await ollamaChat({
+      model,
+      messages: messages as { role: "user" | "assistant" | "system"; content: string }[],
+      temperature: 0.3,
+      max_tokens: 50,
+    });
+    return response.content.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+function extractToolName(raw: string): string | null {
+  for (const name of TOOL_NAMES) {
+    if (raw.includes(name)) return name;
+  }
+  const matched = TOOL_NAMES.find((n) => raw === n || raw.startsWith(n));
+  return matched ?? null;
+}
+
+async function detectToolViaLLM(
+  messages: ChatMessage[],
+  provider: LLMProvider,
+): Promise<string | null> {
+  const userMessages = messages.filter((m) => m.role === "user");
   if (!userMessages.length) return null;
-  
+
   const lastUserMsg = userMessages[userMessages.length - 1].content;
-  
   const llmMessages = [
     { role: "system", content: SYSTEM_PROMPT },
     { role: "user", content: lastUserMsg },
   ];
 
-  // Try OpenAI first
-  const openaiKey = getApiKey("openai");
-  if (openaiKey) {
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 10_000);
-      const res = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${openaiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "gpt-4o",
-          messages: llmMessages,
-          temperature: 0.3,
-          max_tokens: 50,
-        }),
-        signal: controller.signal,
-      });
-      clearTimeout(timeout);
-
-      if (res.ok) {
-        const data = await res.json() as { choices: Array<{ message: { content: string } }> };
-        const raw = data.choices?.[0]?.message?.content?.trim() ?? "";
-        // Extract just the tool name from the response
-        for (const name of TOOL_NAMES) {
-          if (raw.includes(name)) return name;
-        }
-        // If the raw response matches a tool name exactly, use it
-        const matched = TOOL_NAMES.find(n => raw === n || raw.startsWith(n));
-        if (matched) return matched;
-      }
-    } catch {
-      // OpenAI failed, fall through to Anthropic
+  if (provider === "ollama") {
+    const raw = await detectToolOllama(llmMessages as ChatMessage[]);
+    if (raw) {
+      const tool = extractToolName(raw);
+      if (tool) return tool;
     }
+    return null;
   }
 
-  // Try Anthropic second
-  const anthropicKey = getApiKey("anthropic");
-  if (anthropicKey) {
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 10_000);
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: {
-          "x-api-key": anthropicKey,
-          "anthropic-version": "2023-06-01",
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "claude-3-haiku-20240307",
-          messages: llmMessages,
-          max_tokens: 50,
-        }),
-        signal: controller.signal,
-      });
-      clearTimeout(timeout);
-
-      if (res.ok) {
-        const data = await res.json() as { content: Array<{ text: string }> };
-        const raw = data.content?.[0]?.text?.trim() ?? "";
-        for (const name of TOOL_NAMES) {
-          if (raw.includes(name)) return name;
-        }
-        const matched = TOOL_NAMES.find(n => raw === n || raw.startsWith(n));
-        if (matched) return matched;
+  if (provider === "openai") {
+    const key = getApiKey("openai");
+    if (key) {
+      const raw = await detectToolOpenAI(llmMessages as ChatMessage[], key);
+      if (raw) {
+        const tool = extractToolName(raw);
+        if (tool) return tool;
       }
-    } catch {
-      // Anthropic failed
     }
+    // Fallback to Anthropic if OpenAI fails and key exists
+    const anthropicKey = getApiKey("anthropic");
+    if (anthropicKey) {
+      const raw = await detectToolAnthropic(llmMessages as ChatMessage[], anthropicKey);
+      if (raw) {
+        const tool = extractToolName(raw);
+        if (tool) return tool;
+      }
+    }
+    return null;
+  }
+
+  if (provider === "anthropic") {
+    const key = getApiKey("anthropic");
+    if (key) {
+      const raw = await detectToolAnthropic(llmMessages as ChatMessage[], key);
+      if (raw) {
+        const tool = extractToolName(raw);
+        if (tool) return tool;
+      }
+    }
+    // Fallback to OpenAI if Anthropic fails and key exists
+    const openaiKey = getApiKey("openai");
+    if (openaiKey) {
+      const raw = await detectToolOpenAI(llmMessages as ChatMessage[], openaiKey);
+      if (raw) {
+        const tool = extractToolName(raw);
+        if (tool) return tool;
+      }
+    }
+    return null;
   }
 
   return null;
@@ -276,6 +364,10 @@ export const processChat = createServerFn({ method: "POST" })
     const { messages } = data;
     if (!messages?.length) throw new Error("Messages required");
 
+    // Dynamically import to avoid circular dependency at module load
+    const { getLLMProvider } = await import("~/lib/api-keys");
+    const provider: LLMProvider = await getLLMProvider();
+
     // Try LLM detection first, fall back to regex
     let toolName: string | null = null;
     let usedLLM = false;
@@ -284,8 +376,29 @@ export const processChat = createServerFn({ method: "POST" })
     const hasOpenAI = !!getApiKey("openai");
     const hasAnthropic = !!getApiKey("anthropic");
 
-    if (hasOpenAI || hasAnthropic) {
-      toolName = await detectToolViaLLM(messages);
+    // Check Ollama availability
+    let ollamaAvailable = false;
+    if (provider === "ollama") {
+      const models = await getOllamaModels();
+      const compat = findCompatibleModel(models);
+      ollamaAvailable = compat !== null;
+    }
+
+    const hasAnyProvider =
+      (provider === "openai" && hasOpenAI) ||
+      (provider === "anthropic" && hasAnthropic) ||
+      (provider === "ollama" && ollamaAvailable);
+
+    if (hasAnyProvider) {
+      toolName = await detectToolViaLLM(messages, provider);
+      if (toolName) usedLLM = true;
+    } else if (provider === "openai" && !hasOpenAI && hasAnthropic) {
+      // Fallback: user selected OpenAI but no key, try Anthropic
+      toolName = await detectToolViaLLM(messages, "anthropic");
+      if (toolName) usedLLM = true;
+    } else if (provider === "anthropic" && !hasAnthropic && hasOpenAI) {
+      // Fallback: user selected Anthropic but no key, try OpenAI
+      toolName = await detectToolViaLLM(messages, "openai");
       if (toolName) usedLLM = true;
     }
 
@@ -294,16 +407,23 @@ export const processChat = createServerFn({ method: "POST" })
       toolName = detectToolRegex(messages);
     }
 
-    // If no LLM key configured and regex matched default/fallback, be honest
-    if (!usedLLM && !hasOpenAI && !hasAnthropic && toolName === "getAgentStatus") {
+    // If no LLM key/backend configured and regex matched default/fallback, be honest
+    if (!usedLLM) {
       const userMsg = messages.filter(m => m.role === "user").slice(-1)[0]?.content ?? "";
-      // Only show the no-AI message if the user wasn't clearly asking for agent status
       const isAgentQuery = /agent|astra|neuron|vortex|spectra|nova|zenith|frost|phantom|oracle|prism/i.test(userMsg);
+
       if (!isAgentQuery) {
+        if (provider === "ollama" && !ollamaAvailable) {
+          return {
+            toolCall: { id: `call_${Date.now()}_noai`, name: "noop", arguments: {} },
+            toolResult: null,
+            responseText: 'Ollama is not running or no compatible models found. Make sure Ollama is installed and run "ollama pull llama3" to download a model.',
+          };
+        }
         return {
           toolCall: { id: `call_${Date.now()}_noai`, name: "noop", arguments: {} },
           toolResult: null,
-          responseText: "No AI model configured. Add an OpenAI or Anthropic API key in Settings to enable AI chat.",
+          responseText: "No AI model configured. Add an OpenAI or Anthropic API key in Settings, or select Ollama for local models.",
         };
       }
     }

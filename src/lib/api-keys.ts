@@ -10,6 +10,8 @@ export type ServiceName =
   | "1inch"
   | "coingecko";
 
+export type LLMProvider = "openai" | "anthropic" | "ollama";
+
 export interface ServiceKey {
   service: ServiceName;
   configured: boolean;
@@ -28,6 +30,10 @@ export interface RpcEntry {
 
 const apiKeys = new Map<ServiceName, string>();
 const enabledServices = new Map<ServiceName, boolean>();
+
+// ── LLM provider preference ────────────────────────────────────────
+
+let llmProvider: LLMProvider = "openai";
 
 // Initialize all services as disabled + unconfigured
 const ALL_SERVICES: ServiceName[] = [
@@ -150,6 +156,27 @@ export const toggleService = createServerFn({ method: "POST" }).handler(
     };
   },
 );
+
+// ── LLM Provider preference ────────────────────────────────────────
+
+export const getLLMProvider = createServerFn({ method: "GET" }).handler(
+  async (): Promise<LLMProvider> => {
+    return llmProvider;
+  },
+);
+
+export const setLLMProvider = createServerFn({ method: "POST" }).handler(
+  async ({
+    data,
+  }: {
+    data: { provider: LLMProvider };
+  }): Promise<LLMProvider> => {
+    llmProvider = data.provider;
+    return llmProvider;
+  },
+);
+
+export { llmProvider as _llmProvider };
 
 export const testApiKey = createServerFn({ method: "POST" }).handler(
   async ({

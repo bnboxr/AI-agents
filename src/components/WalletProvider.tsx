@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { WagmiProvider, useAccount, useConnect, useDisconnect, useBalance } from "wagmi";
+import { WagmiProvider, useAccount, useConnect, useDisconnect, useBalance, useChainId, useSwitchChain, useChains } from "wagmi";
 import { formatUnits } from "viem";
 import { useState, useEffect, useMemo, useCallback, type ReactNode } from "react";
 import { config, type WalletMeta, WALLET_LIST } from "~/lib/web3";
@@ -80,6 +80,153 @@ export function ConnectButton() {
 }
 
 // ── EIP-6963 helper ─────────────────────────────────────────────
+
+const CHAIN_STORAGE_KEY = "paun-ai:preferred-chain";
+
+const CHAIN_LABELS: Record<number, string> = {
+  1: "Ethereum",
+  56: "BSC",
+  137: "Polygon",
+  42161: "Arbitrum",
+  10: "Optimism",
+  8453: "Base",
+  43114: "Avalanche",
+  250: "Fantom",
+  100: "Gnosis",
+  324: "zkSync",
+  59144: "Linea",
+  534352: "Scroll",
+  5000: "Mantle",
+  42220: "Celo",
+  1284: "Moonbeam",
+};
+
+const CHAIN_ICONS: Record<number, string> = {
+  1: "🔷",
+  56: "🟡",
+  137: "🟣",
+  42161: "🔵",
+  10: "🔴",
+  8453: "🔘",
+  43114: "❄️",
+  250: "👻",
+  100: "🦉",
+  324: "💎",
+  59144: "📐",
+  534352: "📜",
+  5000: "🔥",
+  42220: "🌿",
+  1284: "🌙",
+};
+
+function getSavedChainId(): number {
+  if (typeof window === "undefined") return 1;
+  try {
+    const saved = localStorage.getItem(CHAIN_STORAGE_KEY);
+    if (saved) {
+      const id = parseInt(saved, 10);
+      if (CHAIN_LABELS[id]) return id;
+    }
+  } catch { /* localStorage not available */ }
+  return 1;
+}
+
+function saveChainId(chainId: number) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(CHAIN_STORAGE_KEY, String(chainId));
+  } catch { /* ignore */ }
+}
+
+// ── Chain Selector (navbar dropdown) ─────────────────────────────
+export function ChainSelector() {
+  const chainId = useChainId();
+  const { switchChain } = useSwitchChain();
+  const chains = useChains();
+  const [mounted, setMounted] = useState(false);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => { setMounted(true); }, []);
+
+  // Auto-switch to saved chain on mount
+  useEffect(() => {
+    if (!mounted) return;
+    const saved = getSavedChainId();
+    if (saved !== chainId && CHAIN_LABELS[saved]) {
+      const targetChain = chains.find((c) => c.id === saved);
+      if (targetChain) {
+        switchChain({ chainId: saved });
+      }
+    }
+  }, [mounted]);
+
+  if (!mounted) {
+    return (
+      <button className="px-3 py-2 rounded-lg bg-dark-hover border border-dark-border text-gray-400 text-xs font-medium flex items-center gap-1.5">
+        <span>{CHAIN_ICONS[1]}</span>
+        <span className="hidden sm:inline">Ethereum</span>
+      </button>
+    );
+  }
+
+  const currentLabel = CHAIN_LABELS[chainId] ?? `Chain ${chainId}`;
+  const currentIcon = CHAIN_ICONS[chainId] ?? "⛓️";
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen(!open)}
+        className="px-3 py-2 rounded-lg bg-dark-hover border border-dark-border hover:border-accent-blue/40 text-gray-300 hover:text-white text-xs font-medium flex items-center gap-1.5 transition-all duration-200"
+        title={`Current: ${currentLabel}`}
+      >
+        <span>{currentIcon}</span>
+        <span className="hidden sm:inline">{currentLabel}</span>
+        <span className="text-gray-500 text-[0.6rem] ml-0.5">▼</span>
+      </button>
+
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div
+            className="absolute right-0 mt-2 z-50 w-56 max-h-80 overflow-y-auto rounded-xl border border-dark-border shadow-2xl animate-fade-in-up"
+            style={{
+              background: "linear-gradient(135deg, rgba(13,17,35,0.98) 0%, rgba(10,22,40,0.98) 100%)",
+              boxShadow: "0 20px 60px rgba(0,0,0,0.5), 0 0 40px rgba(59,130,246,0.08)",
+            }}
+          >
+            <div className="p-1.5">
+              {chains
+                .filter((c) => CHAIN_LABELS[c.id])
+                .map((c) => (
+                  <button
+                    key={c.id}
+                    onClick={() => {
+                      saveChainId(c.id);
+                      switchChain({ chainId: c.id });
+                      setOpen(false);
+                    }}
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-150 ${
+                      c.id === chainId
+                        ? "bg-accent-blue/10 border border-accent-blue/20 text-white"
+                        : "text-gray-400 hover:text-white hover:bg-dark-hover border border-transparent"
+                    }`}
+                  >
+                    <span className="text-lg">{CHAIN_ICONS[c.id] ?? "⛓️"}</span>
+                    <span className="flex-1 text-left font-medium">
+                      {CHAIN_LABELS[c.id]}
+                    </span>
+                    {c.id === chainId && (
+                      <span className="text-accent-blue text-xs">●</span>
+                    )}
+                  </button>
+                ))}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
 function useDetectedWallets() {
   const [eip6963Providers, setEip6963Providers] = useState<{ rdns: string; name: string; icon?: string }[]>([]);
 
@@ -128,9 +275,13 @@ function hasLegacyEthereum(): boolean {
 // ── Wallet Modal ─────────────────────────────────────────────────
 function WalletModal({ onClose }: { onClose: () => void }) {
   const { connect, connectors: availableConnectors } = useConnect();
+  const { switchChain } = useSwitchChain();
+  const chainId = useChainId();
+  const chains = useChains();
   const [connecting, setConnecting] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
+  const [chainOpen, setChainOpen] = useState(false);
   const eip6963Providers = useDetectedWallets();
 
   useEffect(() => { setMounted(true); }, []);
@@ -284,9 +435,61 @@ function WalletModal({ onClose }: { onClose: () => void }) {
             <span className="text-xl">🦚</span>
             <span className="text-gradient-blue">Connect Wallet</span>
           </h2>
-          <button onClick={onClose} className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 hover:text-white hover:bg-white/10 transition-colors">
-            ✕
-          </button>
+          <div className="flex items-center gap-2">
+            {/* Chain selector in modal */}
+            <div className="relative">
+              <button
+                onClick={() => setChainOpen(!chainOpen)}
+                className="px-2.5 py-1.5 rounded-lg bg-dark-hover border border-dark-border hover:border-accent-blue/40 text-gray-400 hover:text-white text-xs font-medium flex items-center gap-1 transition-all duration-200"
+                title={`Network: ${CHAIN_LABELS[chainId] ?? `Chain ${chainId}`}`}
+              >
+                <span>{CHAIN_ICONS[chainId] ?? "⛓️"}</span>
+                <span className="hidden sm:inline text-[0.65rem]">{CHAIN_LABELS[chainId] ?? chainId}</span>
+                <span className="text-gray-600 text-[0.5rem]">▼</span>
+              </button>
+              {chainOpen && (
+                <>
+                  <div className="fixed inset-0 z-50" onClick={() => setChainOpen(false)} />
+                  <div
+                    className="absolute right-0 mt-2 z-[60] w-52 max-h-64 overflow-y-auto rounded-xl border border-dark-border shadow-2xl"
+                    style={{
+                      background: "linear-gradient(135deg, rgba(13,17,35,0.99) 0%, rgba(10,22,40,0.99) 100%)",
+                      boxShadow: "0 20px 60px rgba(0,0,0,0.6), 0 0 40px rgba(59,130,246,0.1)",
+                    }}
+                  >
+                    <div className="p-1">
+                      {chains
+                        .filter((c) => CHAIN_LABELS[c.id])
+                        .map((c) => (
+                          <button
+                            key={c.id}
+                            onClick={() => {
+                              saveChainId(c.id);
+                              switchChain({ chainId: c.id });
+                              setChainOpen(false);
+                            }}
+                            className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs transition-all duration-150 ${
+                              c.id === chainId
+                                ? "bg-accent-blue/10 border border-accent-blue/20 text-white"
+                                : "text-gray-400 hover:text-white hover:bg-dark-hover border border-transparent"
+                            }`}
+                          >
+                            <span className="text-base">{CHAIN_ICONS[c.id] ?? "⛓️"}</span>
+                            <span className="flex-1 text-left">{CHAIN_LABELS[c.id]}</span>
+                            {c.id === chainId && (
+                              <span className="text-accent-blue text-[0.5rem]">●</span>
+                            )}
+                          </button>
+                        ))}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+            <button onClick={onClose} className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 hover:text-white hover:bg-white/10 transition-colors">
+              ✕
+            </button>
+          </div>
         </div>
 
         <div className="p-6 space-y-5">

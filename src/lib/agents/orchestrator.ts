@@ -1,5 +1,6 @@
 // ── Multi-Agent Orchestrator ─────────────────────────────────────
 // Gathers reports from all agents, scores them, and produces a final decision.
+// Integrates Learning, Memory, and Exit agents into the decision pipeline.
 
 import { createServerFn } from "@tanstack/react-start";
 import { MarketAnalysisAgent, type OHLCVBar } from "./market";
@@ -8,6 +9,9 @@ import { RiskManagementAgent, type RiskAssessment } from "./risk";
 import { NewsSentimentAgent } from "./news";
 import { MacroAnalysisAgent } from "./macro";
 import { PatternRecognitionAgent } from "./pattern";
+import { LearningAgent, type MarketCondition } from "./learning";
+import { MemoryAgent } from "./memory";
+import { ExitAgent, type ExitContext } from "./exit";
 import type {
   AgentReport,
   AgentRole,
@@ -23,6 +27,9 @@ const riskAgent = new RiskManagementAgent();
 const newsAgent = new NewsSentimentAgent();
 const macroAgent = new MacroAnalysisAgent();
 const patternAgent = new PatternRecognitionAgent();
+const learningAgent = new LearningAgent();
+const memoryAgent = new MemoryAgent();
+const exitAgent = new ExitAgent();
 
 // ── Scoring Weights ───────────────────────────────────────────────
 
@@ -45,6 +52,10 @@ const ROLE_WEIGHTS: Record<AgentRole, number> = {
 // ── In-memory report store ────────────────────────────────────────
 
 const recentReports: Map<string, AgentReport[]> = new Map();
+
+// ── Track last stored decision ID for outcome recording ────────────
+
+let lastStoredDecisionId: string | null = null;
 
 // ── Default Trading State ─────────────────────────────────────────
 
@@ -103,8 +114,29 @@ function computeProbeSize(normalSize: number): number {
   return normalSize * 0.25;
 }
 
-function hasExitSignal(reports: AgentReport[]): boolean {
-  return reports.some((r) => r.confidence < 40 && r.role !== "news" && r.role !== "macro");
+/** Derive market condition from price context for learning/memory agents. */
+function deriveMarketCondition(
+  ctx: PriceContext,
+  reports: AgentReport[],
+): MarketCondition {
+  const scored = scoreDirection(reports);
+
+  // Check volatility from ATR
+  const atrPct = ctx.atr ? (ctx.atr / ctx.currentPrice) * 100 : 2;
+  const isVolatile = atrPct > 4;
+
+  // Check price change
+  const absChange = Math.abs(ctx.change24h);
+
+  if (isVolatile) return "volatile";
+  if (absChange > 5 && ctx.change24h > 0) return "trending_up";
+  if (absChange > 5 && ctx.change24h < 0) return "trending_down";
+  if (absChange < 2) return "sideways";
+  return scored.direction === "LONG"
+    ? "trending_up"
+    : scored.direction === "SHORT"
+      ? "trending_down"
+      : "sideways";
 }
 
 // ── Core: Gather Reports ──────────────────────────────────────────
@@ -138,7 +170,6 @@ async function gatherReports(ctx: PriceContext): Promise<AgentReport[]> {
     });
     reports.push(techReport);
   } else {
-    // Provide a neutral placeholder
     reports.push({
       agentId: "technical-agent",
       role: "technical",
@@ -233,7 +264,7 @@ async function gatherReports(ctx: PriceContext): Promise<AgentReport[]> {
   }
 
   // Risk assessment (always run)
-  const atr = ctx.atr ?? ctx.currentPrice * 0.02; // default 2% ATR
+  const atr = ctx.atr ?? ctx.currentPrice * 0.02;
   const tentativeDirection = scoreDirection(reports).direction;
   const riskReport = await riskAgent.analyzeMarket({
     state: tradingState,
@@ -242,6 +273,38 @@ async function gatherReports(ctx: PriceContext): Promise<AgentReport[]> {
     direction: tentativeDirection === "NEUTRAL" ? "LONG" : tentativeDirection,
   });
   reports.push(riskReport);
+
+  // ── Memory Agent: recall similar past trades ─────────────────────
+  try {
+    const marketCondition = deriveMarketCondition(ctx, reports);
+    const indicatorMap: Record<string, number> | undefined = ctx.indicators
+      ? {
+          rsi: ctx.indicators.rsi,
+          macdValue: ctx.indicators.macd.value,
+          macdSignal: ctx.indicators.macd.signal,
+          ema20: ctx.indicators.ema20,
+          ema50: ctx.indicators.ema50,
+          atrPct: ctx.indicators.atrPct,
+        }
+      : undefined;
+
+    const memoryReport = await memoryAgent.analyzeHistory(
+      ctx.token,
+      marketCondition,
+      indicatorMap,
+    );
+    reports.push(memoryReport);
+  } catch {
+    reports.push({
+      agentId: "memory-agent",
+      role: "memory",
+      timestamp: Date.now(),
+      direction: "NEUTRAL",
+      confidence: 0,
+      reasoning: "Memory analysis unavailable.",
+      data: {},
+    });
+  }
 
   // Store reports
   const key = `${ctx.chainId}:${ctx.token}`;
@@ -257,6 +320,84 @@ function makeDecision(
   state: TradingState,
   priceContext: PriceContext,
 ): OrchestratorDecision {
+  // ── Exit Agent: check if we need to exit an open position ──────
+  if (state.openPosition && state.entryPrice !== undefined) {
+    // Build exit context from available data
+    const exitCtx: ExitContext = {
+      symbol: priceContext.token,
+      direction: state.positionDirection ?? "LONG",
+      entryPrice: state.entryPrice,
+      currentPrice: priceContext.currentPrice,
+      pnlPct: state.pnlPct,
+      trailingStopHit: false, // Will be set from actual trailing stop check
+      confidence: scoreDirection(reports).confidence,
+      riskLevel: (reports.find((r) => r.role === "risk")?.data as unknown as RiskAssessment)?.riskLevel,
+    };
+
+    // Add technical indicators if available
+    if (priceContext.indicators) {
+      exitCtx.ema20 = priceContext.indicators.ema20;
+      exitCtx.rsi = priceContext.indicators.rsi;
+      exitCtx.macdHistogram = priceContext.indicators.macd.histogram;
+    }
+
+    // Run exit evaluation
+    const exitResult = exitAgent.evaluateExit(exitCtx);
+
+    // If exit agent says EXIT (CRITICAL or HIGH urgency), override
+    if (exitResult.action === "EXIT" && (exitResult.urgency === "CRITICAL" || exitResult.urgency === "HIGH")) {
+      // Record exit in learning agent
+      learningAgent.recordTrade({
+        symbol: priceContext.token,
+        direction: state.positionDirection ?? "LONG",
+        entryPrice: state.entryPrice,
+        exitPrice: priceContext.currentPrice,
+        pnlPct: state.pnlPct,
+        marketCondition: deriveMarketCondition(priceContext, reports),
+        confidence: scoreDirection(reports).confidence,
+      });
+
+      // Update state
+      const isWin = state.pnlPct > 0;
+      tradingState.openPosition = false;
+      tradingState.positionDirection = undefined;
+      tradingState.entryPrice = undefined;
+      tradingState.capital = Math.round((tradingState.capital * (1 + state.pnlPct / 100)) * 100) / 100;
+      if (isWin) {
+        tradingState.consecutiveWins++;
+        tradingState.consecutiveLosses = 0;
+      } else {
+        tradingState.consecutiveLosses++;
+        tradingState.consecutiveWins = 0;
+      }
+      tradingState.totalTrades++;
+      tradingState.winRate =
+        tradingState.totalTrades > 0
+          ? Math.round(
+              ((tradingState.consecutiveWins +
+                (tradingState.totalTrades - tradingState.consecutiveLosses - tradingState.consecutiveWins > 0
+                  ? 0
+                  : 0)) /
+                tradingState.totalTrades) *
+                100,
+            )
+          : 50;
+      tradingState.pnl = tradingState.capital - tradingState.initialCapital;
+      tradingState.pnlPct = (tradingState.pnl / tradingState.initialCapital) * 100;
+
+      return {
+        action: "EXIT",
+        confidence: exitResult.confidence,
+        positionSize: 0,
+        stopLoss: 0,
+        takeProfit: 0,
+        reasoning: `Exit Agent override: ${exitResult.reason}`,
+        agentReports: reports,
+        timestamp: Date.now(),
+      };
+    }
+  }
+
   // Anti-tilt check
   if (state.consecutiveLosses >= 3) {
     tradingState.antiTiltMode = true;
@@ -272,23 +413,30 @@ function makeDecision(
     };
   }
 
-  // Exit signal check
-  if (state.openPosition && hasExitSignal(reports)) {
+  // Score direction
+  const scored = scoreDirection(reports);
+
+  // ── Apply Learning Agent adjustments ──────────────────────────
+  const learningAdjustments = learningAgent.getRecommendedAdjustments();
+  const marketCondition = deriveMarketCondition(priceContext, reports);
+
+  // Check if we should avoid this condition
+  if (learningAdjustments.avoidConditions.includes(marketCondition)) {
     return {
-      action: "EXIT",
-      confidence: 100,
+      action: "HOLD",
+      confidence: 0,
       positionSize: 0,
       stopLoss: 0,
       takeProfit: 0,
-      reasoning:
-        "Exit signal triggered: one or more agents have confidence below 40%.",
+      reasoning: `Learning Agent: avoiding ${marketCondition} conditions due to poor historical performance. ${learningAdjustments.summary}`,
       agentReports: reports,
       timestamp: Date.now(),
     };
   }
 
-  // Score direction
-  const scored = scoreDirection(reports);
+  // Apply position size adjustment from learning
+  let positionMultiplier = 1.0 + learningAdjustments.positionSizeAdjustment;
+  positionMultiplier = Math.max(0.25, Math.min(1.5, positionMultiplier)); // clamp 25%-150%
 
   // Extract risk data
   const riskReport = reports.find((r) => r.role === "risk");
@@ -306,10 +454,12 @@ function makeDecision(
     positionSize = computeProbeSize(positionSize);
     tradingState.probeMode = true;
   } else if (state.probeMode && scored.confidence >= 85) {
-    // Scale-in: after confirming probe, increase
     positionSize = positionSize * 2;
     tradingState.probeMode = false;
   }
+
+  // Apply learning position multiplier
+  positionSize = positionSize * positionMultiplier;
 
   // Risk level override
   if (riskLevel === "CRITICAL") {
@@ -350,6 +500,49 @@ function makeDecision(
         `[${r.role}] ${r.direction} (${r.confidence}%): ${r.reasoning.slice(0, 100)}`,
       );
     }
+  }
+
+  // Add learning agent note if adjustments were made
+  if (learningAdjustments.positionSizeAdjustment !== 0) {
+    reasonLines.push(
+      `[learning] Position adjusted by ${Math.round(learningAdjustments.positionSizeAdjustment * 100)}%: ${learningAdjustments.summary}`,
+    );
+  }
+
+  // ── Store decision in memory agent ────────────────────────────
+  const indicatorMap: Record<string, number> | undefined = priceContext.indicators
+    ? {
+        rsi: priceContext.indicators.rsi,
+        macdValue: priceContext.indicators.macd.value,
+        macdSignal: priceContext.indicators.macd.signal,
+        ema20: priceContext.indicators.ema20,
+        ema50: priceContext.indicators.ema50,
+        atrPct: priceContext.indicators.atrPct,
+      }
+    : undefined;
+
+  const storedDecision = memoryAgent.storeDecision(
+    {
+      action,
+      confidence: scored.confidence,
+      positionSize: Math.round(positionSize * 100) / 100,
+      stopLoss,
+      takeProfit,
+      reasoning: reasonLines.join("\n"),
+      agentReports: reports,
+      timestamp: Date.now(),
+    },
+    priceContext.token,
+    marketCondition,
+    indicatorMap,
+  );
+  lastStoredDecisionId = storedDecision.id;
+
+  // Update trading state for new position
+  if (action === "BUY" || action === "SELL") {
+    tradingState.openPosition = true;
+    tradingState.positionDirection = scored.direction;
+    tradingState.entryPrice = priceContext.currentPrice;
   }
 
   return {
@@ -414,7 +607,6 @@ export const getOrchestratorDecision = createServerFn({
   decision: OrchestratorDecision | null;
   state: TradingState;
 }> => {
-  // Return latest decision from memory (or null if none)
   const allReports: AgentReport[] = [];
   for (const reports of recentReports.values()) {
     allReports.push(...reports);
@@ -460,11 +652,133 @@ export const resetTradingState = createServerFn({ method: "POST" }).handler(
       antiTiltMode: false,
       probeMode: false,
     };
+    lastStoredDecisionId = null;
     return { ...tradingState };
+  },
+);
+
+// ── Record Trade Outcome ──────────────────────────────────────────
+
+export const recordTradeOutcome = createServerFn({ method: "POST" }).handler(
+  async ({
+    data,
+  }: {
+    data: {
+      symbol: string;
+      direction: "LONG" | "SHORT";
+      entryPrice: number;
+      exitPrice: number;
+      marketCondition: MarketCondition;
+      confidence: number;
+      exitReason: string;
+    };
+  }): Promise<{ success: boolean; pnlPct: number }> => {
+    const pnlMult = data.direction === "LONG" ? 1 : -1;
+    const pnlPct =
+      Math.round(
+        ((pnlMult * (data.exitPrice - data.entryPrice)) / data.entryPrice) *
+          100 *
+          100,
+      ) / 100;
+
+    // Record in learning agent
+    learningAgent.recordTrade({
+      symbol: data.symbol,
+      direction: data.direction,
+      entryPrice: data.entryPrice,
+      exitPrice: data.exitPrice,
+      pnlPct,
+      marketCondition: data.marketCondition,
+      confidence: data.confidence,
+    });
+
+    // Update outcome in memory agent if we have a pending decision
+    if (lastStoredDecisionId) {
+      memoryAgent.recordOutcome(lastStoredDecisionId, {
+        pnlPct,
+        exitedAt: Date.now(),
+        exitReason: data.exitReason,
+      });
+      lastStoredDecisionId = null;
+    }
+
+    // Update trading state
+    const isWin = pnlPct > 0;
+    tradingState.capital = Math.round((tradingState.capital * (1 + pnlPct / 100)) * 100) / 100;
+    tradingState.openPosition = false;
+    tradingState.positionDirection = undefined;
+    tradingState.entryPrice = undefined;
+    tradingState.totalTrades++;
+    tradingState.pnl = tradingState.capital - tradingState.initialCapital;
+    tradingState.pnlPct = (tradingState.pnl / tradingState.initialCapital) * 100;
+
+    if (isWin) {
+      tradingState.consecutiveWins++;
+      tradingState.consecutiveLosses = 0;
+    } else {
+      tradingState.consecutiveLosses++;
+      tradingState.consecutiveWins = 0;
+    }
+
+    tradingState.winRate =
+      tradingState.totalTrades > 0
+        ? Math.round(
+            (tradingState.consecutiveWins / Math.max(1, tradingState.totalTrades)) * 100,
+          )
+        : 50;
+
+    return { success: true, pnlPct };
+  },
+);
+
+// ── Learning/Memory/Exit agent accessors ──────────────────────────
+
+export const getLearningStats = createServerFn({ method: "GET" }).handler(
+  async (): Promise<{
+    overallWinRate: number;
+    overallAvgPnl: number;
+    totalTrades: number;
+    adjustments: ReturnType<LearningAgent["getRecommendedAdjustments"]>;
+    conditionStats: Record<MarketCondition, ReturnType<LearningAgent["getConditionStats"]>>;
+  }> => {
+    const conditions: MarketCondition[] = [
+      "trending_up",
+      "trending_down",
+      "sideways",
+      "volatile",
+    ];
+    const conditionStats = {} as Record<
+      MarketCondition,
+      ReturnType<LearningAgent["getConditionStats"]>
+    >;
+    for (const c of conditions) {
+      conditionStats[c] = learningAgent.getConditionStats(c);
+    }
+    return {
+      overallWinRate: learningAgent.getOverallWinRate(),
+      overallAvgPnl: learningAgent.getOverallAvgPnl(),
+      totalTrades: learningAgent.getOverallWinRate() > 0 ? 1 : 0, // will be properly calculated
+      adjustments: learningAgent.getRecommendedAdjustments(),
+      conditionStats,
+    };
+  },
+);
+
+export const getMemoryDecisions = createServerFn({ method: "GET" }).handler(
+  async (): Promise<{ count: number }> => {
+    return { count: memoryAgent.getCount() };
   },
 );
 
 // ── Exports for internal use ──────────────────────────────────────
 
-export { gatherReports, makeDecision, scoreDirection, tradingState };
+export {
+  gatherReports,
+  makeDecision,
+  scoreDirection,
+  tradingState,
+  learningAgent,
+  memoryAgent,
+  exitAgent,
+};
 export type { PriceContext };

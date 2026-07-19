@@ -21,16 +21,36 @@ export type { MacroData, MacroCorrelation } from "./macro";
 export { PatternRecognitionAgent } from "./pattern";
 export type { PriceExtrema, DetectedPattern } from "./pattern";
 
+export { LearningAgent } from "./learning";
+export type {
+  TradeRecord,
+  MarketCondition,
+  ConditionStats,
+  LearningAdjustments,
+} from "./learning";
+
+export { MemoryAgent } from "./memory";
+export type { StoredDecision, SimilarTrade } from "./memory";
+
+export { ExitAgent } from "./exit";
+export type { ExitContext, ExitResult } from "./exit";
+
 export {
   runAgentAnalysis,
   getAgentReports,
   getOrchestratorDecision,
   updateTradingStateFn,
   resetTradingState,
+  recordTradeOutcome,
+  getLearningStats,
+  getMemoryDecisions,
   gatherReports,
   makeDecision,
   scoreDirection,
   tradingState,
+  learningAgent,
+  memoryAgent,
+  exitAgent,
 } from "./orchestrator";
 export type { PriceContext } from "./orchestrator";
 

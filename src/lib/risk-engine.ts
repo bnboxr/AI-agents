@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { CHAINS } from "./chains";
 import { AGENTS } from "./agents";
 import { agentBus } from "./agent-bus";
+import { sql, isDbAvailable } from "./db";
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -145,6 +146,9 @@ export function recordMarketPrice(price: number): void {
             type: "info",
           },
         });
+
+        // DB: persist circuit breaker state
+        persistRiskSystemState();
       }
 
       // Auto-recover if market recovers (drop < 5%)
@@ -161,6 +165,9 @@ export function recordMarketPrice(price: number): void {
             type: "info",
           },
         });
+
+        // DB: persist circuit breaker recovery
+        persistRiskSystemState();
       }
     }
   }
@@ -183,6 +190,23 @@ function calculateRiskScore(drawdownPct: number, volatilityPct: number, exposure
 }
 
 // ── Core: Update Risk Metrics ───────────────────────────────────────
+
+/**
+ * Persist risk_system_state to DB. Fire-and-forget.
+ */
+function persistRiskSystemState(): void {
+  if (!isDbAvailable()) return;
+  sql`
+    INSERT INTO risk_system_state (id, circuit_breaker_tripped, circuit_breaker_reason, market_drop_pct, last_market_check, total_exposure, overall_risk_score, updated_at)
+    VALUES (1, ${circuitBreakerTripped}, ${circuitBreakerReason || null}, ${marketDropPct}, ${lastMarketCheck > 0 ? new Date(lastMarketCheck).toISOString() : null}, ${0}, ${5}, now())
+    ON CONFLICT (id) DO UPDATE SET
+      circuit_breaker_tripped = EXCLUDED.circuit_breaker_tripped,
+      circuit_breaker_reason = EXCLUDED.circuit_breaker_reason,
+      market_drop_pct = EXCLUDED.market_drop_pct,
+      last_market_check = EXCLUDED.last_market_check,
+      updated_at = EXCLUDED.updated_at
+  `.catch((err) => console.error("[DB] persistRiskSystemState UPSERT failed:", err));
+}
 
 /**
  * Called after each agent scan to update risk metrics.
@@ -265,6 +289,26 @@ export async function updateRiskMetrics(
   }
 
   state.lastUpdated = now;
+
+  // Write-through to DB: UPSERT risk_states
+  if (isDbAvailable()) {
+    sql`
+      INSERT INTO risk_states (chain_id, agent_name, peak_value, current_value, drawdown_pct, exposure_usd, volatility_pct, risk_score, status, pause_reason, updated_at)
+      VALUES (${chainId}, ${state.agentName}, ${state.peakValue}, ${state.currentValue}, ${state.drawdownPct}, ${state.exposureUsd}, ${state.volatilityPct}, ${state.riskScore}, ${state.status}, ${state.pauseReason ?? null}, now())
+      ON CONFLICT (chain_id) DO UPDATE SET
+        agent_name = EXCLUDED.agent_name,
+        peak_value = EXCLUDED.peak_value,
+        current_value = EXCLUDED.current_value,
+        drawdown_pct = EXCLUDED.drawdown_pct,
+        exposure_usd = EXCLUDED.exposure_usd,
+        volatility_pct = EXCLUDED.volatility_pct,
+        risk_score = EXCLUDED.risk_score,
+        status = EXCLUDED.status,
+        pause_reason = EXCLUDED.pause_reason,
+        updated_at = EXCLUDED.updated_at
+    `.catch((err) => console.error("[DB] updateRiskMetrics UPSERT failed:", err));
+  }
+
   return state;
 }
 
@@ -380,6 +424,8 @@ export const resetCircuitBreaker = createServerFn({ method: "POST" }).handler(as
   circuitBreakerTripped = false;
   circuitBreakerReason = "";
 
+  persistRiskSystemState();
+
   const now = Date.now();
   agentBus.emit("activity", {
     activity: {
@@ -419,6 +465,19 @@ export const toggleAgentRiskStatus = createServerFn({ method: "POST" }).handler(
       type: "info",
     },
   });
+
+  // DB: persist risk state update
+  if (isDbAvailable()) {
+    sql`
+      INSERT INTO risk_states (chain_id, agent_name, peak_value, current_value, drawdown_pct, exposure_usd, volatility_pct, risk_score, status, pause_reason, updated_at)
+      VALUES (${state.chainId}, ${state.agentName}, ${state.peakValue}, ${state.currentValue}, ${state.drawdownPct}, ${state.exposureUsd}, ${state.volatilityPct}, ${state.riskScore}, ${state.status}, ${state.pauseReason ?? null}, now())
+      ON CONFLICT (chain_id) DO UPDATE SET
+        agent_name = EXCLUDED.agent_name,
+        status = EXCLUDED.status,
+        pause_reason = EXCLUDED.pause_reason,
+        updated_at = EXCLUDED.updated_at
+    `.catch((err) => console.error("[DB] toggleAgentRiskStatus UPSERT failed:", err));
+  }
 
   return { ...state };
 });

@@ -5,6 +5,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { getApiKey } from "~/lib/api-keys";
 import { getRiskStateRaw } from "~/lib/risk-engine";
 import { agentBus } from "~/lib/agent-bus";
+import { sql, isDbAvailable } from "~/lib/db";
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -156,12 +157,57 @@ export const updateTradeConfig = createServerFn({ method: "POST" }).handler(asyn
 });
 
 export const getOpenPositions = createServerFn({ method: "GET" }).handler(async () => {
+  // Try DB first
+  if (isDbAvailable()) {
+    try {
+      const result = await sql`SELECT * FROM trades WHERE status = 'open' ORDER BY opened_at DESC`;
+      if (result.rows.length > 0) {
+        return result.rows.map(rowToTradePosition);
+      }
+    } catch (err) {
+      console.error("[DB] getOpenPositions query failed:", err);
+    }
+  }
   return Array.from(openPositions.values());
 });
 
 export const getTradeHistory = createServerFn({ method: "GET" }).handler(async () => {
+  // Try DB first
+  if (isDbAvailable()) {
+    try {
+      const result = await sql`SELECT * FROM trades WHERE status = 'closed' ORDER BY closed_at DESC LIMIT 50`;
+      if (result.rows.length > 0) {
+        return result.rows.map(rowToTradePosition);
+      }
+    } catch (err) {
+      console.error("[DB] getTradeHistory query failed:", err);
+    }
+  }
   return tradeHistory.slice(-50);
 });
+
+// ── Row mapper: DB row → TradePosition ───────────────────────────
+
+function rowToTradePosition(row: Record<string, unknown>): TradePosition {
+  return {
+    id: row.id as string,
+    chainId: row.chain_id as string,
+    token: row.token as string,
+    direction: row.direction as TradeDirection,
+    entryPrice: row.entry_price as number,
+    currentPrice: (row.current_price as number) ?? (row.entry_price as number),
+    size: row.size as number,
+    leverage: (row.leverage as number) ?? 1,
+    pnl: (row.pnl as number) ?? 0,
+    pnlPct: (row.pnl_pct as number) ?? 0,
+    stopLoss: row.stop_loss as number,
+    takeProfit: row.take_profit as number,
+    status: row.status as TradeStatus,
+    openedAt: new Date(row.opened_at as string).getTime(),
+    closedAt: row.closed_at ? new Date(row.closed_at as string).getTime() : undefined,
+    aiReasoning: row.ai_reasoning as string | undefined,
+  };
+}
 
 export const analyzeToken = createServerFn({ method: "POST" }).handler(async ({ data }: { data: { chainId: string; token: string; price: number; change24h: number; volume24h: number; high24h: number; low24h: number } }) => {
   resetDailyIfNeeded();
@@ -191,6 +237,14 @@ export const openTrade = createServerFn({ method: "POST" }).handler(async ({ dat
 
   dailyTradeCount++;
   const id = `trade_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+  const leverage = Math.min(data.leverage, tradeConfig.maxLeverage);
+  const stopLoss = data.direction === "LONG"
+    ? data.price * (1 - tradeConfig.stopLossPct / 100)
+    : data.price * (1 + tradeConfig.stopLossPct / 100);
+  const takeProfit = data.direction === "LONG"
+    ? data.price * (1 + tradeConfig.takeProfitPct / 100)
+    : data.price * (1 - tradeConfig.takeProfitPct / 100);
+
   const position: TradePosition = {
     id,
     chainId: data.chainId,
@@ -199,15 +253,24 @@ export const openTrade = createServerFn({ method: "POST" }).handler(async ({ dat
     entryPrice: data.price,
     currentPrice: data.price,
     size: data.size,
-    leverage: Math.min(data.leverage, tradeConfig.maxLeverage),
+    leverage,
     pnl: 0,
     pnlPct: 0,
-    stopLoss: data.direction === "LONG" ? data.price * (1 - tradeConfig.stopLossPct / 100) : data.price * (1 + tradeConfig.stopLossPct / 100),
-    takeProfit: data.direction === "LONG" ? data.price * (1 + tradeConfig.takeProfitPct / 100) : data.price * (1 - tradeConfig.takeProfitPct / 100),
+    stopLoss,
+    takeProfit,
     status: "open",
     openedAt: Date.now(),
   };
   openPositions.set(id, position);
+
+  // Write-through to DB
+  if (isDbAvailable()) {
+    sql`
+      INSERT INTO trades (id, chain_id, token, direction, entry_price, current_price, size, leverage, pnl, pnl_pct, stop_loss, take_profit, status, opened_at)
+      VALUES (${id}, ${data.chainId}, ${data.token}, ${data.direction}, ${data.price}, ${data.price}, ${data.size}, ${leverage}, 0, 0, ${stopLoss}, ${takeProfit}, 'open', now())
+    `.catch((err) => console.error("[DB] openTrade insert failed:", err));
+  }
+
   agentBus.emit("activity", { type: "trade_opened", chainId: data.chainId, data: position });
   return position;
 });
@@ -228,6 +291,17 @@ export const closeTrade = createServerFn({ method: "POST" }).handler(async ({ da
 
   openPositions.delete(data.id);
   tradeHistory.push({ ...pos });
+
+  // Write-through to DB
+  if (isDbAvailable()) {
+    sql`
+      UPDATE trades
+      SET status = 'closed', exit_price = ${data.exitPrice}, current_price = ${data.exitPrice},
+          pnl = ${pos.pnl}, pnl_pct = ${pos.pnlPct}, closed_at = now(), updated_at = now()
+      WHERE id = ${data.id}
+    `.catch((err) => console.error("[DB] closeTrade update failed:", err));
+  }
+
   agentBus.emit("activity", { type: "trade_closed", chainId: pos.chainId, data: pos });
   return pos;
 });

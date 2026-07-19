@@ -8,6 +8,7 @@ import { getSystemAuditReport } from "~/lib/audit-runner";
 import type { AuditReport } from "~/lib/agents/system-audit";
 import { AGENTS } from "~/lib/agents";
 import { CHAINS } from "~/lib/chains";
+import { getCapitalState } from "~/lib/capital-manager";
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -640,6 +641,53 @@ function DashboardPage() {
           </div>
         </div>
       )}
+
+      {/* ── Capital Manager ────────────────────────────────────────── */}
+      <CapitalManagerCard />
+    </div>
+  );
+}
+
+// ── Capital Manager Card ───────────────────────────────────────────
+
+function CapitalManagerCard() {
+  const capital = getCapitalState();
+
+  return (
+    <div className="glass-panel p-5 sm:p-6">
+      <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+        <span>💰</span> Capital Manager
+        <span className="text-xs text-gray-400 font-normal">(profit split: 90% payout / 10% reinvest)</span>
+      </h2>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
+        <div className="text-center p-4 rounded-lg bg-dark-surface/40 border border-dark-border/30">
+          <p className="text-gray-400 mb-1">Trading Capital</p>
+          <p className="text-2xl font-bold font-mono text-accent-teal">
+            ${capital.trading.toFixed(2)}
+          </p>
+          <p className="text-xs text-gray-500 mt-1">
+            Initial: ${capital.initial.toFixed(2)}
+          </p>
+        </div>
+        <div className="text-center p-4 rounded-lg bg-dark-surface/40 border border-dark-border/30">
+          <p className="text-gray-400 mb-1">Total Profit</p>
+          <p className={`text-2xl font-bold font-mono ${capital.profit >= 0 ? "text-accent-green" : "text-accent-red"}`}>
+            ${capital.profit.toFixed(2)}
+          </p>
+          <p className="text-xs text-gray-500 mt-1">
+            {capital.profit >= 0 ? "cumulative P&L" : "cumulative loss"}
+          </p>
+        </div>
+        <div className="text-center p-4 rounded-lg bg-dark-surface/40 border border-dark-border/30">
+          <p className="text-gray-400 mb-1">Owner Payout</p>
+          <p className="text-2xl font-bold font-mono text-accent-blue">
+            ${capital.payout.toFixed(2)}
+          </p>
+          <p className="text-xs text-gray-500 mt-1">
+            90% of all profits
+          </p>
+        </div>
+      </div>
     </div>
   );
 }

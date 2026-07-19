@@ -9,7 +9,12 @@
 // with an already-running server. Every sandbox user has passwordless sudo, so
 // the takeover works across user boundaries.
 import handler from "./dist/server/server.js";
-import { startOrchestrator } from "./src/lib/orchestrator/orchestrator";
+import { startOrchestrator, getState } from "./src/lib/orchestrator/orchestrator";
+import { getAgentState, getActivities } from "./src/lib/agent-runner";
+import { CHAINS } from "./src/lib/chains";
+import { agentBus } from "./src/lib/agent-bus";
+import type { AgentBusEvent, AgentBusEvents } from "./src/lib/agent-bus";
+import type { ServerWebSocket } from "bun";
 
 // Pinned, NOT read from the environment. The published preview URL
 // (<label>.<PUBLIC_SITE_DOMAIN>) is reverse-proxied to 0.0.0.0:3000 inside the
@@ -30,28 +35,116 @@ const freePort =
   `kill $pids 2>/dev/null || true; sleep 0.2; ` +
   `done`;
 
-// Start the agent orchestration engine before the server binds
+// ── WebSocket client registry ────────────────────────────────────────
+
+const wsClients = new Set<ServerWebSocket<unknown>>();
+
+function broadcast(data: Record<string, unknown>): void {
+  const payload = JSON.stringify(data);
+  for (const ws of wsClients) {
+    try {
+      ws.send(payload);
+    } catch {
+      wsClients.delete(ws);
+    }
+  }
+}
+
+function buildInitPayload() {
+  const statuses = CHAINS.map((c) => getAgentState(c.id));
+  const activities = getActivities().slice(0, 50);
+  const orchState = getState();
+  return {
+    type: "init",
+    statuses,
+    activities,
+    orchestrator: orchState,
+    timestamp: Date.now(),
+  };
+}
+
+// ── Agent bus → WebSocket bridge ─────────────────────────────────────
+
+agentBus.on("scan_started", (payload) => {
+  broadcast({ type: "scan_started", ...payload });
+});
+
+agentBus.on("scan_completed", (payload) => {
+  broadcast({ type: "scan_completed", ...payload });
+});
+
+agentBus.on("opportunity_found", (payload) => {
+  broadcast({ type: "opportunity_found", ...payload });
+});
+
+agentBus.on("agent_status_change", (payload) => {
+  broadcast({ type: "agent_status_change", ...payload });
+});
+
+agentBus.on("activity", (payload) => {
+  broadcast({ type: "activity", ...payload });
+});
+
+// ── Heartbeat ────────────────────────────────────────────────────────
+
+let heartbeatId: ReturnType<typeof setInterval> | null = null;
+
+function startHeartbeat(): void {
+  if (heartbeatId) return;
+  heartbeatId = setInterval(() => {
+    const state = getState();
+    const statuses = CHAINS.map((c) => getAgentState(c.id));
+    broadcast({
+      type: "heartbeat",
+      timestamp: Date.now(),
+      orchestrator: state,
+      statuses,
+    });
+  }, 10_000);
+}
+
+// ── Start orchestrator ───────────────────────────────────────────────
+
 startOrchestrator();
 
-// Take over the port, re-freeing and retrying if another publish grabbed it in the
-// gap between freeing and binding (last publish wins). Bun.serve throws EADDRINUSE
-// synchronously, so without this a raced publish would die while the shell already
-// reported success.
+// ── Server ───────────────────────────────────────────────────────────
+
 for (let attempt = 1; ; attempt++) {
   await Bun.$`sudo sh -c ${freePort}`.quiet().nothrow();
   try {
     Bun.serve({
       port: PORT,
       hostname: HOST,
-      async fetch(req) {
+      websocket: {
+        open(ws) {
+          wsClients.add(ws);
+          // Send full initial state on connect
+          try {
+            ws.send(JSON.stringify(buildInitPayload()));
+          } catch {
+            wsClients.delete(ws);
+          }
+          if (wsClients.size === 1) startHeartbeat();
+        },
+        close(ws) {
+          wsClients.delete(ws);
+          if (wsClients.size === 0 && heartbeatId) {
+            clearInterval(heartbeatId);
+            heartbeatId = null;
+          }
+        },
+      },
+      fetch(req, server) {
         const { pathname } = new URL(req.url);
-        if (pathname !== "/") {
-          const file = Bun.file(CLIENT_DIR + pathname);
-          if (await file.exists()) return new Response(file);
+
+        // WebSocket upgrade — sync, no await needed
+        if (pathname === "/ws") {
+          if (server.upgrade(req)) return;
+          return new Response("WebSocket upgrade failed", { status: 400 });
         }
-        return (
-          handler as { fetch: (r: Request) => Response | Promise<Response> }
-        ).fetch(req);
+
+        // For everything else, delegate to async handler
+        return handleHttp(req);
       },
     });
     break;
@@ -59,6 +152,15 @@ for (let attempt = 1; ; attempt++) {
     if (attempt >= 10) throw err;
     await Bun.sleep(200);
   }
+}
+
+async function handleHttp(req: Request): Promise<Response> {
+  const { pathname } = new URL(req.url);
+  if (pathname !== "/") {
+    const file = Bun.file(CLIENT_DIR + pathname);
+    if (await file.exists()) return new Response(file);
+  }
+  return (handler as { fetch: (r: Request) => Response | Promise<Response> }).fetch(req);
 }
 
 console.log(`team-site serving on http://${HOST}:${String(PORT)}`);

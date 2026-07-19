@@ -1,5 +1,6 @@
 // ── Macro Analysis Agent ──────────────────────────────────────────
 import { BaseAgent } from "./base";
+import { getCorrelationAgent } from "./correlation";
 
 export interface MacroData {
   dxy: number;
@@ -196,25 +197,50 @@ export class MacroAnalysisAgent extends BaseAgent {
   }
 
   /**
-   * Compute approximate correlations based on directional alignment.
-   * This is a simplified heuristic — full correlation would need historical series.
+   * Compute correlations using live data from CorrelationAgent when available.
+   * Falls back to heuristic defaults if correlation data is not yet ready.
    * DXY typically inversely correlated, S&P500 typically positively correlated.
    */
   computeCorrelations(macro: MacroData): MacroCorrelation {
-    // Simplified heuristics based on known macro relationships
-    // DXY up = typically bad for crypto → negative correlation assumed
-    const dxyCryptoCorr = -0.5; // typical inverse correlation
+    // Hardcoded fallback defaults
+    const FALLBACK_DXY_CRYPTO = -0.5;
+    const FALLBACK_SP500_CRYPTO = 0.6;
+    const FALLBACK_GOLD_CRYPTO = macro.fearGreedIndex < 30 ? -0.3 : 0.3;
 
-    // S&P500 up = typically good for crypto → positive
-    const sp500CryptoCorr = 0.6; // typical positive correlation
+    try {
+      const corrAgent = getCorrelationAgent();
+      const matrix = corrAgent.getMatrix();
 
-    // Gold: can be positive (debasement narrative) or negative (flight to safety)
-    const goldCryptoCorr = macro.fearGreedIndex < 30 ? -0.3 : 0.3;
+      // If correlation agent has live data, extract the relevant pairs
+      if (matrix.dataAvailable) {
+        let dxyCryptoCorr = FALLBACK_DXY_CRYPTO;
+        let sp500CryptoCorr = FALLBACK_SP500_CRYPTO;
+        let goldCryptoCorr = FALLBACK_GOLD_CRYPTO;
+
+        for (const pair of matrix.pairs) {
+          switch (pair.pair) {
+            case "DXY-CRYPTO":
+              dxyCryptoCorr = pair.short; // 7d correlation
+              break;
+            case "BTC-SPX":
+              sp500CryptoCorr = pair.short;
+              break;
+            case "BTC-GOLD":
+              goldCryptoCorr = pair.short;
+              break;
+          }
+        }
+
+        return { dxyCryptoCorr, sp500CryptoCorr, goldCryptoCorr };
+      }
+    } catch {
+      // Correlation agent unavailable — use hardcoded defaults
+    }
 
     return {
-      dxyCryptoCorr,
-      sp500CryptoCorr,
-      goldCryptoCorr,
+      dxyCryptoCorr: FALLBACK_DXY_CRYPTO,
+      sp500CryptoCorr: FALLBACK_SP500_CRYPTO,
+      goldCryptoCorr: FALLBACK_GOLD_CRYPTO,
     };
   }
 

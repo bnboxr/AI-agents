@@ -14,6 +14,7 @@ export interface AgentBusEvents {
   agent_status_change: { chainId: string; status: AgentStatus };
   activity: { activity: AgentActivity };
   heartbeat: { timestamp: number };
+  news_sentiment: { chainId: string; token: string; overallSentiment: number; confidence: number; direction: "LONG" | "SHORT" | "NEUTRAL"; headlineCount: number; summary: string; timestamp: number };
 }
 
 export type AgentBusEvent = keyof AgentBusEvents;

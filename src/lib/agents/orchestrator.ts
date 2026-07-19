@@ -5,6 +5,9 @@ import { createServerFn } from "@tanstack/react-start";
 import { MarketAnalysisAgent, type OHLCVBar } from "./market";
 import { TechnicalAnalysisAgent, type TechnicalIndicators } from "./technical";
 import { RiskManagementAgent, type RiskAssessment } from "./risk";
+import { NewsSentimentAgent } from "./news";
+import { MacroAnalysisAgent } from "./macro";
+import { PatternRecognitionAgent } from "./pattern";
 import type {
   AgentReport,
   AgentRole,
@@ -17,18 +20,21 @@ import type {
 const marketAgent = new MarketAnalysisAgent();
 const technicalAgent = new TechnicalAnalysisAgent();
 const riskAgent = new RiskManagementAgent();
+const newsAgent = new NewsSentimentAgent();
+const macroAgent = new MacroAnalysisAgent();
+const patternAgent = new PatternRecognitionAgent();
 
 // ── Scoring Weights ───────────────────────────────────────────────
 
 const ROLE_WEIGHTS: Record<AgentRole, number> = {
-  market: 0.15,
-  technical: 0.15,
-  pattern: 0.1,
-  risk: 0.25,
-  strategy: 0.2,
-  portfolio: 0.15,
-  news: 0,
-  macro: 0,
+  market: 0.12,
+  technical: 0.12,
+  pattern: 0.08,
+  risk: 0.20,
+  strategy: 0.18,
+  portfolio: 0.10,
+  news: 0.10,
+  macro: 0.10,
   execution: 0,
   learning: 0,
   memory: 0,
@@ -140,6 +146,88 @@ async function gatherReports(ctx: PriceContext): Promise<AgentReport[]> {
       direction: "NEUTRAL",
       confidence: 50,
       reasoning: "No technical indicators provided — neutral signal.",
+      data: {},
+    });
+  }
+
+  // News sentiment analysis
+  try {
+    const newsResult = await newsAgent.analyzeNews({
+      token: ctx.token,
+      chainId: ctx.chainId,
+    });
+    reports.push({
+      agentId: "news-agent",
+      role: "news",
+      timestamp: Date.now(),
+      direction: newsResult.direction,
+      confidence: newsResult.confidence,
+      reasoning: newsResult.summary,
+      data: {
+        overallSentiment: newsResult.overallSentiment,
+        headlineCount: newsResult.headlines.length,
+        headlines: newsResult.headlines.slice(0, 5).map((h) => h.title),
+      },
+    });
+  } catch {
+    reports.push({
+      agentId: "news-agent",
+      role: "news",
+      timestamp: Date.now(),
+      direction: "NEUTRAL",
+      confidence: 0,
+      reasoning: "News sentiment analysis unavailable.",
+      data: {},
+    });
+  }
+
+  // Macro analysis
+  try {
+    const macroReport = await macroAgent.analyzeMarket();
+    reports.push(macroReport);
+  } catch {
+    reports.push({
+      agentId: "macro-agent",
+      role: "macro",
+      timestamp: Date.now(),
+      direction: "NEUTRAL",
+      confidence: 0,
+      reasoning: "Macro analysis unavailable.",
+      data: {},
+    });
+  }
+
+  // Pattern recognition (only if OHLCV data provided)
+  if (ctx.ohlcv && ctx.ohlcv.length >= 30) {
+    try {
+      const patterns = patternAgent.detectPatterns(ctx.ohlcv);
+      const patternReport = await patternAgent.analyzeMarket({
+        token: ctx.token,
+        chainId: ctx.chainId,
+        currentPrice: ctx.currentPrice,
+        patterns,
+        bars: ctx.ohlcv,
+      });
+      reports.push(patternReport);
+    } catch {
+      reports.push({
+        agentId: "pattern-agent",
+        role: "pattern",
+        timestamp: Date.now(),
+        direction: "NEUTRAL",
+        confidence: 0,
+        reasoning: "Pattern recognition unavailable.",
+        data: {},
+      });
+    }
+  } else {
+    reports.push({
+      agentId: "pattern-agent",
+      role: "pattern",
+      timestamp: Date.now(),
+      direction: "NEUTRAL",
+      confidence: 50,
+      reasoning: "Insufficient OHLCV data for pattern detection.",
       data: {},
     });
   }

@@ -1,5 +1,4 @@
-import { createFileRoute } from '@tanstack/react-router'
-import { createFileRoute } from "@tanstack/react-start";
+import { createFileRoute } from "@tanstack/react-router";
 import { executeToolCall, type ToolCall } from "~/lib/chat-tools";
 
 // ── Types ─────────────────────────────────────────────────────────

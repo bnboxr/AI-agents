@@ -84,6 +84,9 @@ export type {
 export { ProbabilityAgent } from "./probability";
 export type { ProbabilityResult } from "./probability";
 
+export { ConfidenceAgent } from "./confidence";
+export type { ConsensusResult, ConflictPair, AgentAccuracyRecord, CalibrationEntry } from "./confidence";
+
 export {
   runAgentAnalysis,
   getAgentReports,
@@ -110,6 +113,7 @@ export {
   sentimentAgent,
   volumeAgent,
   probabilityAgent,
+  confidenceAgent,
 } from "./orchestrator";
 export type { PriceContext } from "./orchestrator";
 

@@ -24,6 +24,7 @@ import { CorrelationAgent, getCorrelationAgent, type CorrelationMatrix } from ".
 import { SentimentAgent, getSentimentAgent } from "./sentiment";
 import { getVolumeAgent } from "./volume";
 import { ProbabilityAgent } from "./probability";
+import { ConfidenceAgent } from "./confidence";
 import { isKillSwitchActive, getKillSwitchReason, markApiHealthy, recordLastPrice } from "../risk-engine";
 import type {
   AgentReport,
@@ -55,6 +56,7 @@ const correlationAgent = getCorrelationAgent();
 const sentimentAgent = getSentimentAgent();
 const volumeAgent = getVolumeAgent();
 const probabilityAgent = new ProbabilityAgent();
+const confidenceAgent = new ConfidenceAgent();
 
 // ── Scoring Weights ───────────────────────────────────────────────
 
@@ -80,6 +82,7 @@ const ROLE_WEIGHTS: Record<AgentRole, number> = {
   sentiment: 0.08,
   volume: 0.09,
   probability: 0.12,
+  confidence: 0.13,
 };
 
 // ── In-memory report store ────────────────────────────────────────
@@ -717,6 +720,32 @@ async function gatherReports(ctx: PriceContext): Promise<AgentReport[]> {
       direction: "NEUTRAL",
       confidence: 0,
       reasoning: "Memory analysis unavailable.",
+      data: {},
+    });
+  }
+
+  // ── Confidence Agent: consensus, conflict detection, calibration ──
+  // Runs LAST — synthesizes ALL other agent reports.
+  try {
+    const consensusResult = confidenceAgent.computeConfidence(reports);
+    const confidenceReport = await confidenceAgent.synthesize(consensusResult);
+
+    // Map BULLISH/BEARISH/NEUTRAL to LONG/SHORT/NEUTRAL for downstream compatibility
+    if (confidenceReport.direction === "NEUTRAL" && consensusResult.consensusDirection === "BULLISH") {
+      confidenceReport.direction = "LONG";
+    } else if (confidenceReport.direction === "NEUTRAL" && consensusResult.consensusDirection === "BEARISH") {
+      confidenceReport.direction = "SHORT";
+    }
+
+    reports.push(confidenceReport);
+  } catch {
+    reports.push({
+      agentId: "confidence-agent",
+      role: "confidence" as AgentRole,
+      timestamp: Date.now(),
+      direction: "NEUTRAL",
+      confidence: 0,
+      reasoning: "Confidence analysis unavailable.",
       data: {},
     });
   }
@@ -1477,5 +1506,6 @@ export {
   sentimentAgent,
   volumeAgent,
   probabilityAgent,
+  confidenceAgent,
 };
 export type { PriceContext };

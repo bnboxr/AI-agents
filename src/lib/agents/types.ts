@@ -21,7 +21,8 @@ export type AgentRole =
   | "correlation"
   | "sentiment"
   | "volume"
-  | "probability";
+  | "probability"
+  | "confidence";
 
 export interface AgentReport {
   agentId: string;

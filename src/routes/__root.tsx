@@ -12,6 +12,7 @@ import AlertBell from "~/components/AlertBell";
 import AlertToast from "~/components/AlertToast";
 import HelpGuide from "~/components/HelpGuide";
 import ParticleField from "~/components/ParticleField";
+import ThemeTransition from "~/components/ThemeTransition";
 
 import appCss from "~/styles/app.css?url";
 
@@ -231,7 +232,14 @@ function RootDocument({ children }: { children: ReactNode }) {
         <HeadContent />
       </head>
       <body className="relative bg-[#080a0f]">
+        {/* Theme init — runs before React hydrates to prevent flash */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){var t=localStorage.getItem("paun-theme")||"fintech";document.documentElement.dataset.theme=t;})()`,
+          }}
+        />
         <ParticleField />
+        <ThemeTransition />
         <div
           className="fixed inset-0 pointer-events-none"
           style={{ zIndex: 2 }}

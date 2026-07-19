@@ -1,0 +1,178 @@
+/* ═══════════════════════════════════════════════════════════════════
+   PĂUN AI — Classic Dark Theme
+   Minimal, fast-loading dark theme. No glassmorphism, no heavy
+   effects, no backdrop-blur. Clean and lightweight.
+   Colors: #111318 | #1a1d24 | #3b82f6 | #6b7280 | #f9fafb
+   ═══════════════════════════════════════════════════════════════════ */
+
+[data-theme="classic"] {
+  /* ── Core palette ────────────────────────────────────────── */
+  --theme-bg: #111318;
+  --theme-surface: #1a1d24;
+  --theme-border: #2a2d35;
+  --theme-hover: #1f2229;
+  --theme-border-light: #353840;
+
+  --theme-primary: #3b82f6;
+  --theme-primary-dim: rgba(59, 130, 246, 0.12);
+  --theme-secondary: #6366f1;
+  --theme-secondary-dim: rgba(99, 102, 241, 0.12);
+
+  --theme-text: #9ca3af;
+  --theme-text-bright: #f9fafb;
+  --theme-text-dim: #6b7280;
+
+  --theme-danger: #ef4444;
+  --theme-danger-dim: rgba(239, 68, 68, 0.12);
+  --theme-success: #22c55e;
+  --theme-warning: #f59e0b;
+
+  /* ── Accent spectrum ─────────────────────────────────────── */
+  --theme-accent-blue: #3b82f6;
+  --theme-accent-cyan: #06b6d4;
+  --theme-accent-teal: #14b8a6;
+  --theme-accent-green: #22c55e;
+  --theme-accent-red: #ef4444;
+  --theme-accent-yellow: #f59e0b;
+  --theme-accent-purple: #8b5cf6;
+  --theme-accent-pink: #ec4899;
+  --theme-accent-blue-bright: #60a5fa;
+  --theme-accent-cyan-bright: #22d3ee;
+  --theme-accent-green-bright: #4ade80;
+
+  /* ── Glow & effects — minimal/none ────────────────────────── */
+  --theme-glow-color: rgba(59, 130, 246, 0.04);
+  --theme-glow-strong: rgba(59, 130, 246, 0.08);
+  --theme-scanline: transparent;
+  --theme-grid-dot: rgba(59, 130, 246, 0.03);
+  --theme-nav-blur: blur(0px);
+
+  /* ── Particle / Thanos snap accent ───────────────────────── */
+  --theme-accent: #3b82f6;
+  --theme-accent-rgb: 59, 130, 246;
+}
+
+/* ── Base layer overrides ──────────────────────────────────────── */
+
+[data-theme="classic"] body {
+  background-color: #111318;
+  background-image: none;
+  background-size: auto;
+  background-attachment: scroll;
+}
+
+[data-theme="classic"] body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: none;
+}
+
+[data-theme="classic"] body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: none;
+}
+
+/* Classic scrollbar */
+[data-theme="classic"] * {
+  scrollbar-width: thin;
+  scrollbar-color: #2a2d35 transparent;
+}
+
+[data-theme="classic"] ::selection {
+  background: rgba(59, 130, 246, 0.2);
+  color: #f9fafb;
+}
+
+/* ── Classic overrides — no glass, clean borders ──────────── */
+
+[data-theme="classic"] .glass-card,
+[data-theme="classic"] .card {
+  background: #1a1d24;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border: 1px solid #2a2d35;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+[data-theme="classic"] .glass-card:hover,
+[data-theme="classic"] .card:hover {
+  border-color: #353840;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  transform: translateY(-1px);
+}
+
+[data-theme="classic"] .glass-panel {
+  background: #1a1d24;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border: 1px solid #2a2d35;
+}
+
+[data-theme="classic"] .glass-nav {
+  background: #111318;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border-bottom: 1px solid #2a2d35;
+}
+
+[data-theme="classic"] .glass-input {
+  background: #16181e;
+  border: 1px solid #2a2d35;
+}
+[data-theme="classic"] .glass-input:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+[data-theme="classic"] .glass-button {
+  background: transparent;
+  border: 1px solid #3b82f6;
+  color: #60a5fa;
+}
+[data-theme="classic"] .glass-button:hover {
+  background: rgba(59, 130, 246, 0.1);
+  box-shadow: none;
+}
+
+/* Nav glow bar */
+[data-theme="classic"] .nav-glow-bar {
+  background: linear-gradient(90deg, #3b82f6, #6366f1);
+  background-size: 100% 100%;
+  animation: none;
+  opacity: 0.6;
+}
+
+/* Card hover — minimal */
+[data-theme="classic"] .glass-card:hover,
+[data-theme="classic"] .card:hover {
+  border-left: none;
+}
+
+[data-theme="classic"] .card-interactive:hover {
+  border-color: #3b82f6;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+/* Blue-glow override */
+[data-theme="classic"] .blue-glow {
+  box-shadow: 0 0 8px rgba(59, 130, 246, 0.06);
+}
+[data-theme="classic"] .blue-glow:hover {
+  box-shadow: 0 0 16px rgba(59, 130, 246, 0.12);
+}
+
+/* Disable animations for performance */
+[data-theme="classic"] .animate-pulse-slow,
+[data-theme="classic"] .animate-glow-pulse,
+[data-theme="classic"] .animate-border-glow {
+  animation: none;
+}
+[data-theme="classic"] .animate-grid-drift {
+  animation: none;
+}

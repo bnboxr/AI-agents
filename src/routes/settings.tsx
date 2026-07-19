@@ -11,6 +11,7 @@ import {
   getLLMProvider,
   setLLMProvider,
 } from "~/lib/api-keys";
+import { changeTheme } from "~/components/ThemeTransition";
 import type { ServiceKey, RpcEntry, ServiceName, LLMProvider } from "~/lib/api-keys";
 import { detectOllama, findCompatibleModel } from "~/lib/llm/local";
 import type { OllamaModel } from "~/lib/llm/local";
@@ -279,6 +280,26 @@ function SettingsPage() {
     }
   }, []);
 
+  // ── Theme state ──────────────────────────────────────────────────
+
+  const [activeTheme, setActiveTheme] = useState<string>("fintech");
+
+  useEffect(() => {
+    const current = document.documentElement.dataset.theme || "fintech";
+    setActiveTheme(current);
+  }, []);
+
+  const [themeChanging, setThemeChanging] = useState(false);
+
+  const handleThemeChange = useCallback((themeId: string) => {
+    if (themeChanging || themeId === activeTheme) return;
+    setThemeChanging(true);
+    setActiveTheme(themeId);
+    changeTheme(themeId);
+    // Reset changing flag after transition completes
+    setTimeout(() => setThemeChanging(false), 700);
+  }, [activeTheme, themeChanging]);
+
   // ── LLM Provider actions ─────────────────────────────────────────
 
   const handleProviderChange = useCallback(async (newProvider: LLMProvider) => {
@@ -486,6 +507,59 @@ function SettingsPage() {
             {providerSaving && (
               <p className="text-xs text-gray-500 mt-2">Saving preference...</p>
             )}
+          </div>
+        </div>
+
+        {/* Theme section */}
+        <div className="mb-10 animate-fade-in-up" style={{ animationDelay: "0.08s" }}>
+          <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+            <span>🎨</span> Theme
+          </h2>
+          <div className="glass-card p-5">
+            <p className="text-gray-400 text-sm mb-4">
+              Choose your terminal aesthetic. Changes apply instantly with a
+              particle disintegration effect.
+            </p>
+            <div className="flex gap-3 flex-wrap">
+              {([
+                { id: "fintech", label: "FinTech Terminal", icon: "🟢", desc: "Bloomberg-inspired dark terminal with scan lines and grid dots" },
+                { id: "peacock", label: "Blue Glassmorphism", icon: "💎", desc: "Frosted glass panels with peacock-neck blue & purple glow" },
+                { id: "classic", label: "Classic Dark", icon: "🌑", desc: "Clean, minimal dark theme. No effects, fast performance" },
+              ] as const).map((t) => {
+                const isActive = activeTheme === t.id || (!activeTheme && t.id === "fintech");
+                return (
+                  <button
+                    key={t.id}
+                    onClick={() => handleThemeChange(t.id)}
+                    disabled={themeChanging}
+                    className="flex-1 min-w-[200px] text-left p-4 rounded-xl border transition-all duration-300 hover:scale-[1.02] group disabled:opacity-60 disabled:cursor-wait"
+                    style={{
+                      borderColor: isActive
+                        ? "var(--theme-primary)"
+                        : "var(--theme-border)",
+                      background: isActive
+                        ? "var(--theme-primary-dim)"
+                        : "var(--theme-surface)",
+                    }}
+                  >
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <span className="text-xl">{t.icon}</span>
+                      <span className={`text-sm font-semibold transition-colors ${
+                        isActive ? "text-white" : "text-white group-hover:text-[var(--theme-primary)]"
+                      }`}>
+                        {t.label}
+                      </span>
+                      {isActive && (
+                        <span className="ml-auto w-2 h-2 rounded-full bg-[var(--theme-primary)] shadow-[0_0_8px_var(--theme-primary)]" />
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-500 group-hover:text-gray-400 transition-colors">
+                      {t.desc}
+                    </p>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
 

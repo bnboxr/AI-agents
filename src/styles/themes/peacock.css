@@ -1,0 +1,172 @@
+/* ═══════════════════════════════════════════════════════════════════
+   PĂUN AI — Blue Glassmorphism (Peacock) Theme
+   Original design: backdrop-blur, peacock gradient, glassmorphism
+   Colors: #0a0e1a | #131a2e | #448aff | #00e5ff | #7c4dff
+   ═══════════════════════════════════════════════════════════════════ */
+
+[data-theme="peacock"] {
+  /* ── Core palette ────────────────────────────────────────── */
+  --theme-bg: #0a0e1a;
+  --theme-surface: rgba(19, 26, 46, 0.8);
+  --theme-border: rgba(68, 138, 255, 0.15);
+  --theme-hover: rgba(68, 138, 255, 0.08);
+  --theme-border-light: rgba(68, 138, 255, 0.25);
+
+  --theme-primary: #448aff;
+  --theme-primary-dim: rgba(68, 138, 255, 0.15);
+  --theme-secondary: #00e5ff;
+  --theme-secondary-dim: rgba(0, 229, 255, 0.15);
+
+  --theme-text: #b8c5d6;
+  --theme-text-bright: #e8edf5;
+  --theme-text-dim: #5a6a82;
+
+  --theme-danger: #ff5252;
+  --theme-danger-dim: rgba(255, 82, 82, 0.15);
+  --theme-success: #69f0ae;
+  --theme-warning: #ffd740;
+
+  /* ── Accent spectrum ─────────────────────────────────────── */
+  --theme-accent-blue: #448aff;
+  --theme-accent-cyan: #00e5ff;
+  --theme-accent-teal: #1de9b6;
+  --theme-accent-green: #69f0ae;
+  --theme-accent-red: #ff5252;
+  --theme-accent-yellow: #ffd740;
+  --theme-accent-purple: #7c4dff;
+  --theme-accent-pink: #ff4081;
+  --theme-accent-blue-bright: #82b1ff;
+  --theme-accent-cyan-bright: #18ffff;
+  --theme-accent-green-bright: #b9f6ca;
+
+  /* ── Glow & effects — peacock glow is blue/purple ────────── */
+  --theme-glow-color: rgba(68, 138, 255, 0.08);
+  --theme-glow-strong: rgba(124, 77, 255, 0.2);
+  --theme-scanline: transparent;
+  --theme-grid-dot: rgba(68, 138, 255, 0.05);
+  --theme-nav-blur: blur(20px);
+
+  /* ── Particle / Thanos snap accent ───────────────────────── */
+  --theme-accent: #7c4dff;
+  --theme-accent-rgb: 124, 77, 255;
+}
+
+/* ── Base layer overrides ──────────────────────────────────────── */
+
+[data-theme="peacock"] body {
+  background-color: #0a0e1a;
+  background-image:
+    radial-gradient(circle at 1px 1px, rgba(68, 138, 255, 0.05) 1px, transparent 1px);
+  background-size: 40px 40px;
+  background-attachment: fixed;
+}
+
+[data-theme="peacock"] body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: none;
+}
+
+[data-theme="peacock"] body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse at 20% 20%, rgba(68, 138, 255, 0.05) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 80%, rgba(124, 77, 255, 0.05) 0%, transparent 50%),
+    radial-gradient(ellipse at 50% 50%, rgba(0, 229, 255, 0.03) 0%, transparent 60%);
+}
+
+/* Peacock scrollbar */
+[data-theme="peacock"] * {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(68, 138, 255, 0.2) transparent;
+}
+
+[data-theme="peacock"] ::selection {
+  background: rgba(68, 138, 255, 0.25);
+  color: #e8edf5;
+}
+
+/* ── Peacock-specific glass effects ────────────────────────── */
+
+[data-theme="peacock"] .glass-card,
+[data-theme="peacock"] .card {
+  background: rgba(19, 26, 46, 0.75);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(68, 138, 255, 0.15);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+[data-theme="peacock"] .glass-card:hover,
+[data-theme="peacock"] .card:hover {
+  border-color: rgba(68, 138, 255, 0.35);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), 0 0 30px rgba(68, 138, 255, 0.08);
+  transform: translateY(-2px);
+}
+
+[data-theme="peacock"] .glass-panel {
+  background: rgba(19, 26, 46, 0.75);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(68, 138, 255, 0.12);
+}
+
+[data-theme="peacock"] .glass-nav {
+  background: rgba(10, 14, 26, 0.85);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-bottom: 1px solid rgba(68, 138, 255, 0.15);
+}
+
+[data-theme="peacock"] .glass-input {
+  background: rgba(10, 14, 26, 0.6);
+  border: 1px solid rgba(68, 138, 255, 0.15);
+}
+[data-theme="peacock"] .glass-input:focus {
+  border-color: rgba(68, 138, 255, 0.5);
+  box-shadow: 0 0 15px rgba(68, 138, 255, 0.1);
+}
+
+[data-theme="peacock"] .glass-button {
+  background: rgba(68, 138, 255, 0.1);
+  border: 1px solid rgba(68, 138, 255, 0.3);
+  color: #82b1ff;
+}
+[data-theme="peacock"] .glass-button:hover {
+  background: rgba(68, 138, 255, 0.18);
+  box-shadow: 0 0 20px rgba(68, 138, 255, 0.15);
+}
+
+/* Nav glow bar — blue→purple gradient */
+[data-theme="peacock"] .nav-glow-bar {
+  background: linear-gradient(90deg, #448aff, #7c4dff, #00e5ff, #448aff);
+  background-size: 300% 100%;
+}
+
+/* Peacock card hover accent */
+[data-theme="peacock"] .glass-card:hover,
+[data-theme="peacock"] .card:hover {
+  border-left: none;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), 0 0 30px rgba(68, 138, 255, 0.1);
+}
+
+[data-theme="peacock"] .card-interactive:hover {
+  border-color: rgba(124, 77, 255, 0.5);
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.5),
+    0 0 40px rgba(124, 77, 255, 0.15);
+}
+
+/* Blue-glow override for peacock */
+[data-theme="peacock"] .blue-glow {
+  box-shadow: 0 0 15px rgba(68, 138, 255, 0.12);
+}
+[data-theme="peacock"] .blue-glow:hover {
+  box-shadow: 0 0 30px rgba(68, 138, 255, 0.25), 0 0 60px rgba(68, 138, 255, 0.08);
+}

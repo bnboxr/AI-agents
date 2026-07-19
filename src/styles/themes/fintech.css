@@ -1,0 +1,105 @@
+/* ═══════════════════════════════════════════════════════════════════
+   PĂUN AI — FinTech Terminal Theme
+   Colors: #080a0f | #0d1117 | #00e676 | #00bcd4 | #b0bec5 | #ff3d00
+   ═══════════════════════════════════════════════════════════════════ */
+
+[data-theme="fintech"],
+:root {
+  /* ── Core palette ────────────────────────────────────────── */
+  --theme-bg: #080a0f;
+  --theme-surface: #0d1117;
+  --theme-border: #1a1f2e;
+  --theme-hover: #141a28;
+  --theme-border-light: #242b3a;
+
+  --theme-primary: #00e676;
+  --theme-primary-dim: rgba(0, 230, 118, 0.15);
+  --theme-secondary: #00bcd4;
+  --theme-secondary-dim: rgba(0, 188, 212, 0.15);
+
+  --theme-text: #b0bec5;
+  --theme-text-bright: #e0e6ed;
+  --theme-text-dim: #546e7a;
+
+  --theme-danger: #ff3d00;
+  --theme-danger-dim: rgba(255, 61, 0, 0.15);
+  --theme-success: #00e676;
+  --theme-warning: #ffab00;
+
+  /* ── Accent spectrum ─────────────────────────────────────── */
+  --theme-accent-blue: #00bcd4;
+  --theme-accent-cyan: #00bcd4;
+  --theme-accent-teal: #00e676;
+  --theme-accent-green: #00e676;
+  --theme-accent-red: #ff3d00;
+  --theme-accent-yellow: #ffab00;
+  --theme-accent-purple: #7c4dff;
+  --theme-accent-pink: #ff4081;
+  --theme-accent-blue-bright: #18ffff;
+  --theme-accent-cyan-bright: #84ffff;
+  --theme-accent-green-bright: #69f0ae;
+
+  /* ── Glow & effects ──────────────────────────────────────── */
+  --theme-glow-color: rgba(0, 230, 118, 0.08);
+  --theme-glow-strong: rgba(0, 230, 118, 0.2);
+  --theme-scanline: rgba(0, 0, 0, 0.03);
+  --theme-grid-dot: rgba(0, 188, 212, 0.06);
+  --theme-nav-blur: blur(16px);
+
+  /* ── Particle / Thanos snap accent ───────────────────────── */
+  --theme-accent: #00e676;
+  --theme-accent-rgb: 0, 230, 118;
+}
+
+/* ── Base layer overrides ──────────────────────────────────────── */
+
+[data-theme="fintech"] body,
+:root body {
+  background-color: #080a0f;
+  background-image:
+    radial-gradient(circle at 1px 1px, rgba(0, 188, 212, 0.06) 1px, transparent 1px);
+  background-size: 40px 40px;
+  background-attachment: fixed;
+}
+
+[data-theme="fintech"] body::before,
+:root body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 0, 0, 0.03) 2px,
+    rgba(0, 0, 0, 0.03) 4px
+  );
+}
+
+[data-theme="fintech"] body::after,
+:root body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse at 30% 20%, rgba(0, 230, 118, 0.03) 0%, transparent 50%),
+    radial-gradient(ellipse at 70% 80%, rgba(0, 188, 212, 0.03) 0%, transparent 50%),
+    radial-gradient(ellipse at 50% 50%, rgba(0, 230, 118, 0.02) 0%, transparent 60%);
+}
+
+/* FinTech scrollbar */
+[data-theme="fintech"] *,
+:root * {
+  scrollbar-width: thin;
+  scrollbar-color: #1a1f2e transparent;
+}
+
+[data-theme="fintech"] ::selection,
+:root ::selection {
+  background: rgba(0, 230, 118, 0.2);
+  color: #e0e6ed;
+}

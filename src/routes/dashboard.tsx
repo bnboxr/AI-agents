@@ -4,11 +4,10 @@ import { getAllAgentStatuses } from "~/lib/agent-runner";
 import { getRiskStateRaw, type RiskSystemState } from "~/lib/risk-engine";
 import { getOpenPositions, getTradeHistory, getTradingStats, type TradePosition } from "~/lib/trading-engine";
 import { getAgentActivityLog, type AgentActivity } from "~/lib/agent-activity";
-import { getSystemAuditReport } from "~/lib/audit-runner";
-import type { AuditReport } from "~/lib/agents/system-audit";
+import { getSystemAuditReport, type AuditReport } from "~/lib/audit-runner";
 import { AGENTS } from "~/lib/agents";
 import { CHAINS } from "~/lib/chains";
-import { getCapitalState } from "~/lib/capital-manager";
+import { getCapitalState, getCapitalAndStakingState } from "~/lib/capital-manager";
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -644,6 +643,9 @@ function DashboardPage() {
 
       {/* ── Capital Manager ────────────────────────────────────────── */}
       <CapitalManagerCard />
+
+      {/* ── pSOL Auto-Staking ──────────────────────────────────────── */}
+      <PSolStakingCard />
     </div>
   );
 }
@@ -687,6 +689,104 @@ function CapitalManagerCard() {
             90% of all profits
           </p>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ── pSOL Auto-Staking Card ─────────────────────────────────────────
+
+function PSolStakingCard() {
+  const [staking, setStaking] = useState(() => {
+    const data = getCapitalAndStakingState();
+    return data.staking;
+  });
+
+  // Poll staking state every 30 seconds
+  useEffect(() => {
+    const id = setInterval(() => {
+      const data = getCapitalAndStakingState();
+      setStaking(data.staking);
+    }, 30_000);
+    return () => clearInterval(id);
+  }, []);
+
+  const stakedDisplay = staking.stakedSOL.toFixed(4);
+  const earnedDisplay = staking.earnedSOL.toFixed(6);
+  const apyDisplay = staking.apy.toFixed(2);
+  const isActive = staking.stakedSOL > 0;
+  const paperBadge = staking.paperMode ? "📝 Paper" : "🔗 Live";
+
+  return (
+    <div className="glass-panel p-5 sm:p-6">
+      <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+        <span>🥩</span> pSOL Auto-Staking
+        <span className="text-xs text-gray-400 font-normal">
+          (Marinade Finance • {paperBadge})
+        </span>
+      </h2>
+
+      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 text-sm">
+        {/* SOL Staked */}
+        <div className="text-center p-4 rounded-lg bg-dark-surface/40 border border-dark-border/30">
+          <p className="text-gray-400 mb-1">SOL Staked</p>
+          <p className={`text-2xl font-bold font-mono ${isActive ? "text-accent-teal" : "text-gray-500"}`}>
+            {stakedDisplay} SOL
+          </p>
+          <p className="text-xs text-gray-500 mt-1">
+            ~${(staking.stakedSOL * 150).toFixed(2)} USD
+          </p>
+        </div>
+
+        {/* Current APY */}
+        <div className="text-center p-4 rounded-lg bg-dark-surface/40 border border-dark-border/30">
+          <p className="text-gray-400 mb-1">Marinade APY</p>
+          <p className="text-2xl font-bold font-mono text-accent-green">
+            {apyDisplay}%
+          </p>
+          <p className="text-xs text-gray-500 mt-1">
+            updated {staking.lastAPYUpdate > 0
+              ? timeAgo(staking.lastAPYUpdate)
+              : "never"}
+          </p>
+        </div>
+
+        {/* SOL Earned */}
+        <div className="text-center p-4 rounded-lg bg-dark-surface/40 border border-dark-border/30">
+          <p className="text-gray-400 mb-1">SOL Earned</p>
+          <p className={`text-2xl font-bold font-mono ${staking.earnedSOL > 0 ? "text-accent-yellow" : "text-gray-500"}`}>
+            {earnedDisplay} SOL
+          </p>
+          <p className="text-xs text-gray-500 mt-1">
+            ~${(staking.earnedSOL * 150).toFixed(4)} USD
+          </p>
+        </div>
+
+        {/* Compound Count */}
+        <div className="text-center p-4 rounded-lg bg-dark-surface/40 border border-dark-border/30">
+          <p className="text-gray-400 mb-1">Compounds</p>
+          <p className="text-2xl font-bold font-mono text-accent-cyan">
+            {staking.compoundCount}
+          </p>
+          <p className="text-xs text-gray-500 mt-1">
+            last: {staking.lastCompound > 0
+              ? timeAgo(staking.lastCompound)
+              : "never"}
+          </p>
+        </div>
+      </div>
+
+      {/* Status line */}
+      <div className="mt-4 flex items-center gap-3 px-3 py-2 rounded-lg bg-dark-surface/30 border border-dark-border/20">
+        <span className={`w-2 h-2 rounded-full shrink-0 ${isActive ? "status-dot-online" : "bg-gray-600"}`}></span>
+        <span className="text-xs text-gray-400 truncate">
+          {staking.lastAction}
+        </span>
+        {staking.paperMode && (
+          <span className="text-[0.6rem] text-accent-yellow ml-auto shrink-0 bg-accent-yellow/10 px-2 py-0.5 rounded-full">
+            PAPER MODE
+          </span>
+        )}
       </div>
     </div>
   );

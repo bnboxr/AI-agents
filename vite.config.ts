@@ -8,9 +8,6 @@ export default defineConfig({
   server: {
     port: 3000,
     host: true,
-    // The site is reverse-proxied behind <label>.<PUBLIC_SITE_DOMAIN>; the proxy
-    // masks the Host to localhost:3000, but accept any host so a dev server never
-    // rejects a proxied request with "Blocked request".
     allowedHosts: true,
   },
   plugins: [
@@ -21,4 +18,19 @@ export default defineConfig({
     tanstackStart(),
     viteReact(),
   ],
+  ssr: {
+    noExternal: [],
+  },
+  // Prevent Vite from trying to bundle Node.js builtins for client
+  resolve: {
+    alias: {
+      "node:fs": "node:fs",
+      "node:path": "node:path",
+    },
+  },
+  build: {
+    rollupOptions: {
+      external: [],
+    },
+  },
 });

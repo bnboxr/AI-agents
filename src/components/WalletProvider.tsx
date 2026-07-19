@@ -3,6 +3,7 @@ import { WagmiProvider, useAccount, useConnect, useDisconnect, useBalance } from
 import { formatUnits } from "viem";
 import { useState, useEffect, useMemo, useCallback, type ReactNode } from "react";
 import { config, type WalletMeta, WALLET_LIST } from "~/lib/web3";
+import { TokenBalances } from "~/components/TokenBalances";
 
 // ── Provider ─────────────────────────────────────────────────────
 export function WalletProvider({ children }: { children: ReactNode }) {
@@ -48,11 +49,18 @@ export function ConnectButton() {
           </span>
         </div>
         <button
-          onClick={() => disconnect()}
+          onClick={() => setShowModal(true)}
           className="px-3 py-1.5 rounded-lg bg-dark-hover border border-dark-border hover:border-accent-blue/40 text-sm font-medium text-gray-300 hover:text-white transition-all duration-200 text-mono-sm"
           title={address}
         >
           {address.slice(0, 6)}...{address.slice(-4)}
+        </button>
+        <button
+          onClick={() => disconnect()}
+          className="px-2 py-1.5 rounded-lg text-gray-500 hover:text-red-400 text-xs transition-colors"
+          title="Disconnect"
+        >
+          ✕
         </button>
       </div>
     );
@@ -282,6 +290,9 @@ function WalletModal({ onClose }: { onClose: () => void }) {
         </div>
 
         <div className="p-6 space-y-5">
+          {/* Show token balances when connected */}
+          <TokenBalances />
+
           {/* Error display */}
           {error && (
             <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg border border-accent-red/30 bg-accent-red/5">

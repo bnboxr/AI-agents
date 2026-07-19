@@ -17,6 +17,10 @@ import { PortfolioAgent, type PortfolioSnapshot } from "./portfolio";
 import { ReasoningAgent, type ExplanationResult } from "./reasoning";
 import { SmartMoneyAgent, type SmartMoneyPatterns } from "./smart-money";
 import { LiquidityAgent, subscribeOrderBook, type LiquidityAnalysis } from "./liquidity";
+import { RegimeDetectionAgent, classifyRegime } from "./regime";
+import type { RegimeClassification } from "./regime";
+import { MultiTimeframeAgent, type MultiTimeframeAnalysis } from "./multi-timeframe";
+import { isKillSwitchActive, getKillSwitchReason, markApiHealthy, recordLastPrice } from "../risk-engine";
 import type {
   AgentReport,
   AgentRole,
@@ -41,6 +45,8 @@ const portfolioAgent = new PortfolioAgent();
 const reasoningAgent = new ReasoningAgent();
 const smartMoneyAgent = new SmartMoneyAgent();
 const liquidityAgent = new LiquidityAgent();
+const regimeAgent = new RegimeDetectionAgent();
+const multiTimeframeAgent = new MultiTimeframeAgent();
 
 // ── Scoring Weights ───────────────────────────────────────────────
 
@@ -60,6 +66,8 @@ const ROLE_WEIGHTS: Record<AgentRole, number> = {
   exit: 0,
   smart_money: 0.12,
   liquidity: 0.11,
+  regime: 0.10,
+  multi_timeframe: 0.09,
 };
 
 // ── In-memory report store ────────────────────────────────────────
@@ -380,6 +388,120 @@ async function gatherReports(ctx: PriceContext): Promise<AgentReport[]> {
     });
   }
 
+  // ── Regime Detection Agent: Market regime classification ──────
+  if (ctx.ohlcv && ctx.ohlcv.length >= 20) {
+    try {
+      // Rules-based regime classification (synchronous, no API call)
+      const classification = regimeAgent.detectRegime(ctx.ohlcv, ctx.currentPrice);
+
+      // GPT-4o synthesis for strategic recommendations
+      const synthesis = await regimeAgent.synthesize(
+        ctx.token,
+        ctx.chainId,
+        ctx.currentPrice,
+        classification,
+      );
+
+      const regimeReport: AgentReport = {
+        agentId: "regime-agent",
+        role: "regime",
+        timestamp: Date.now(),
+        direction: synthesis.direction,
+        confidence: synthesis.confidence,
+        reasoning: `Regime: ${classification.regime.replace(/_/g, " ")} (ADX ${classification.adx}, Vol ${classification.volatility}%). ${synthesis.reasoning}`,
+        data: {
+          regime: classification.regime,
+          adx: classification.adx,
+          volatility: classification.volatility,
+          trendStrength: classification.trendStrength,
+          activeStrategies: synthesis.activeStrategies,
+          disabledStrategies: synthesis.disabledStrategies,
+          riskAdjustment: synthesis.riskAdjustment,
+          parameters: classification.parameters,
+          classification,
+          synthesis,
+        },
+      };
+      reports.push(regimeReport);
+    } catch {
+      reports.push({
+        agentId: "regime-agent",
+        role: "regime",
+        timestamp: Date.now(),
+        direction: "NEUTRAL",
+        confidence: 0,
+        reasoning: "Regime detection unavailable.",
+        data: {},
+      });
+    }
+  } else {
+    reports.push({
+      agentId: "regime-agent",
+      role: "regime",
+      timestamp: Date.now(),
+      direction: "NEUTRAL",
+      confidence: 50,
+      reasoning: "Insufficient OHLCV data for regime detection (need 20+ candles).",
+      data: {},
+    });
+  }
+
+  // ── Multi-Timeframe Agent: 7-timeframe confluence analysis ─────
+  if (ctx.ohlcv && ctx.ohlcv.length >= 20) {
+    try {
+      // Rules-based multi-timeframe analysis (synchronous, no API call)
+      const mtfAnalysis = multiTimeframeAgent.analyzeMultiTimeframe(ctx.ohlcv);
+
+      // GPT-4o synthesis for directional bias
+      const mtfReport = await multiTimeframeAgent.analyzeMarket({
+        token: ctx.token,
+        chainId: ctx.chainId,
+        currentPrice: ctx.currentPrice,
+        analysis: mtfAnalysis,
+        bars: ctx.ohlcv,
+      });
+
+      // Attach full analysis data
+      mtfReport.data = {
+        ...mtfReport.data,
+        confluenceScore: mtfAnalysis.confluenceScore,
+        higherTimeframeBlocked: mtfAnalysis.higherTimeframeBlocked,
+        blockDirection: mtfAnalysis.blockDirection,
+        divergenceDetected: mtfAnalysis.divergenceDetected,
+        divergenceSeverity: mtfAnalysis.divergenceSeverity,
+        timeframeScores: mtfAnalysis.timeframeScores.map((s) => ({
+          timeframe: s.timeframe,
+          score: s.score,
+          direction: s.direction,
+          adx: s.adx,
+          rsi: s.rsi,
+        })),
+        rawAnalysis: mtfAnalysis,
+      };
+      reports.push(mtfReport);
+    } catch {
+      reports.push({
+        agentId: "multi-tf-agent",
+        role: "multi_timeframe",
+        timestamp: Date.now(),
+        direction: "NEUTRAL",
+        confidence: 0,
+        reasoning: "Multi-timeframe analysis unavailable.",
+        data: {},
+      });
+    }
+  } else {
+    reports.push({
+      agentId: "multi-tf-agent",
+      role: "multi_timeframe",
+      timestamp: Date.now(),
+      direction: "NEUTRAL",
+      confidence: 50,
+      reasoning: "Insufficient OHLCV data for multi-timeframe analysis (need 20+ candles).",
+      data: {},
+    });
+  }
+
   // Risk assessment (always run)
   const atr = ctx.atr ?? ctx.currentPrice * 0.02;
   const tentativeDirection = scoreDirection(reports).direction;
@@ -606,6 +728,43 @@ function makeDecision(
     };
   }
 
+  // ── Multi-Timeframe Block Check ────────────────────────────────
+  // If 4h+ strongly bearish → block longs; 4h+ strongly bullish → block shorts
+  const mtfReport = reports.find((r) => r.role === "multi_timeframe");
+  const mtfBlocked = mtfReport?.data?.higherTimeframeBlocked === true;
+  const mtfBlockDirection = mtfReport?.data?.blockDirection as
+    | "LONG"
+    | "SHORT"
+    | null
+    | undefined;
+
+  if (mtfBlocked && mtfBlockDirection) {
+    if (scored.direction === "LONG" && mtfBlockDirection === "LONG") {
+      return {
+        action: "HOLD",
+        confidence: scored.confidence,
+        positionSize: 0,
+        stopLoss: 0,
+        takeProfit: 0,
+        reasoning: `🚫 MULTI-TF BLOCK: Higher timeframe(s) strongly bearish — blocking LONG entries despite ${scored.direction} signal (${scored.confidence}%). ${mtfReport?.reasoning?.slice(0, 100) ?? ""}`,
+        agentReports: reports,
+        timestamp: Date.now(),
+      };
+    }
+    if (scored.direction === "SHORT" && mtfBlockDirection === "SHORT") {
+      return {
+        action: "HOLD",
+        confidence: scored.confidence,
+        positionSize: 0,
+        stopLoss: 0,
+        takeProfit: 0,
+        reasoning: `🚫 MULTI-TF BLOCK: Higher timeframe(s) strongly bullish — blocking SHORT entries despite ${scored.direction} signal (${scored.confidence}%). ${mtfReport?.reasoning?.slice(0, 100) ?? ""}`,
+        agentReports: reports,
+        timestamp: Date.now(),
+      };
+    }
+  }
+
   const action = scored.direction === "LONG" ? "BUY" : "SELL";
   const stopLoss = riskData?.stopLoss ?? 0;
   const takeProfit = riskData?.takeProfit ?? 0;
@@ -721,6 +880,35 @@ export const runAgentAnalysis = createServerFn({ method: "POST" }).handler(
     portfolio?: PortfolioSnapshot;
     explanation?: string;
   }> => {
+    // ── Kill Switch Check ─────────────────────────────────────────
+    // Runs synchronously at the start of every analysis cycle.
+    if (isKillSwitchActive()) {
+      const reason = getKillSwitchReason();
+      const killDecision: OrchestratorDecision = {
+        action: "WAIT",
+        confidence: 0,
+        positionSize: 0,
+        stopLoss: 0,
+        takeProfit: 0,
+        reasoning: `🚨 KILL SWITCH ACTIVE: ${reason}. All trading halted. Manual reset required.`,
+        agentReports: [],
+        timestamp: Date.now(),
+      };
+      return {
+        reports: [],
+        decision: killDecision,
+        state: { ...tradingState },
+      };
+    }
+
+    // Mark API as healthy (we received data successfully)
+    markApiHealthy();
+
+    // Record price for corrupt data detection
+    if (data.currentPrice > 0) {
+      recordLastPrice(data.currentPrice);
+    }
+
     const reports = await gatherReports(data);
     const decision = makeDecision(reports, tradingState, data);
 
@@ -1083,5 +1271,7 @@ export {
   portfolioAgent,
   reasoningAgent,
   liquidityAgent,
+  regimeAgent,
+  multiTimeframeAgent,
 };
 export type { PriceContext };

@@ -34,6 +34,8 @@ export interface RiskSystemState {
   agents: Record<string, AgentRiskState>;
   circuitBreakerTripped: boolean;
   circuitBreakerReason: string;
+  killSwitchTripped: boolean;
+  killSwitchReason: string;
   marketDropPct: number;
   lastMarketCheck: number;
   totalExposure: number;
@@ -63,6 +65,23 @@ let circuitBreakerTripped = false;
 let circuitBreakerReason = "";
 let marketDropPct = 0;
 let lastMarketCheck = Date.now();
+
+// ── Kill Switch State ────────────────────────────────────────────────
+// More severe than circuit breaker: requires manual reset.
+// Triggered by API failures, corrupt data, massive spreads, extreme vol, news shocks.
+
+let killSwitchTripped = false;
+let killSwitchReason = "";
+let killSwitchTimestamp = 0;
+
+/** Timestamp of last successful API health check (Binance WS + CoinGecko) */
+let lastApiHealthCheck = Date.now();
+
+/** Track last price for corrupt data detection */
+let lastKnownPrice: number | null = null;
+
+/** Track last news sentiment for shock detection */
+let lastNewsSentiment: number | null = null;
 
 // Track historical prices for market crash detection
 interface PricePoint {
@@ -357,6 +376,188 @@ export function checkStopLoss(chainId: string, positionLossPct: number): boolean
   return positionLossPct >= currentLimits.stopLossPct;
 }
 
+// ── Kill Switch: Emergency Triggers ──────────────────────────────────
+
+/**
+ * Update API health check timestamp. Call this whenever Binance WS or
+ * CoinGecko returns a successful response.
+ */
+export function markApiHealthy(): void {
+  lastApiHealthCheck = Date.now();
+}
+
+/**
+ * Check if APIs have been unavailable for too long.
+ * Returns true if both Binance WS + CoinGecko have been silent for > 60s.
+ */
+export function isApiUnavailable(): boolean {
+  const elapsed = Date.now() - lastApiHealthCheck;
+  return elapsed > 60_000;
+}
+
+/**
+ * Record the latest known good price for corrupt data detection.
+ */
+export function recordLastPrice(price: number): void {
+  lastKnownPrice = price;
+}
+
+/**
+ * Check for corrupt data: price changes > 50% in one tick.
+ */
+export function isCorruptData(currentPrice: number): boolean {
+  if (lastKnownPrice === null || lastKnownPrice <= 0) return false;
+  const changePct = Math.abs((currentPrice - lastKnownPrice) / lastKnownPrice) * 100;
+  return changePct > 50;
+}
+
+/**
+ * Record latest news sentiment for shock detection.
+ * Call after each news sentiment update.
+ */
+export function recordNewsSentiment(sentiment: number): void {
+  lastNewsSentiment = sentiment;
+}
+
+/**
+ * Check for unexpected news: sentiment swung > 80% negative in one update.
+ */
+export function isNewsShock(currentSentiment: number): boolean {
+  if (lastNewsSentiment === null) return false;
+  const swing = lastNewsSentiment - currentSentiment;
+  return swing > 80;
+}
+
+/**
+ * Check for extreme volatility: ATR spikes > 5x normal.
+ * @param currentAtrPct Current ATR as % of price
+ * @param normalAtrPct Baseline/normal ATR as % of price
+ */
+export function isExtremeVolatility(currentAtrPct: number, normalAtrPct: number): boolean {
+  if (normalAtrPct <= 0) return false;
+  return currentAtrPct > normalAtrPct * 5;
+}
+
+/**
+ * Check for massive spread on major pairs.
+ * @param spreadPct Bid/ask spread as % of price
+ */
+export function isMassiveSpread(spreadPct: number): boolean {
+  return spreadPct > 5;
+}
+
+/**
+ * Activate the kill switch. Closes all positions, sets circuitBreakerTripped,
+ * logs reason with timestamp, sends alert via agent bus.
+ * Must be called synchronously — no async operations inside.
+ */
+function activateKillSwitch(reason: string): void {
+  if (killSwitchTripped) return; // Already tripped
+
+  killSwitchTripped = true;
+  killSwitchReason = reason;
+  killSwitchTimestamp = Date.now();
+
+  // Also trip the circuit breaker
+  circuitBreakerTripped = true;
+  circuitBreakerReason = `KILL SWITCH: ${reason}`;
+
+  // Pause all agents
+  const now = Date.now();
+  for (const state of Object.values(agentRisk)) {
+    if (state.status === "active") {
+      state.status = "paused";
+      state.pauseReason = `Kill switch: ${reason}`;
+      state.lastUpdated = now;
+    }
+  }
+
+  // Emit activity event for alerting
+  agentBus.emit("activity", {
+    activity: {
+      id: `kill-switch-${now}`,
+      chainId: "system",
+      agentName: "Kill Switch",
+      action: `KILL SWITCH ACTIVATED: ${reason}`,
+      timestamp: now,
+      type: "info",
+    },
+  });
+
+  console.error(`[KILL SWITCH] ACTIVATED at ${new Date(now).toISOString()}: ${reason}`);
+
+  // Persist
+  persistRiskSystemState();
+}
+
+// ── Kill Switch Server Functions ─────────────────────────────────────
+
+/**
+ * Manually trigger the kill switch. Closes all positions and halts all trading.
+ * Requires manual resetKillSwitch() to resume.
+ */
+export const triggerKillSwitch = createServerFn({ method: "POST" }).handler(async ({
+  data,
+}: {
+  data: { reason: string };
+}): Promise<{ success: boolean; reason: string }> => {
+  if (killSwitchTripped) {
+    return { success: false, reason: "Kill switch already active" };
+  }
+  activateKillSwitch(data.reason);
+  return { success: true, reason: `Kill switch activated: ${data.reason}` };
+});
+
+/**
+ * Reset the kill switch. Manual override to resume trading after a kill switch event.
+ * Only resets the kill switch — circuit breaker state is separately managed.
+ */
+export const resetKillSwitch = createServerFn({ method: "POST" }).handler(async (): Promise<{
+  success: boolean;
+  reason: string;
+}> => {
+  if (!killSwitchTripped) {
+    return { success: false, reason: "Kill switch is not active" };
+  }
+
+  killSwitchTripped = false;
+  killSwitchReason = "";
+  killSwitchTimestamp = 0;
+
+  // Reset circuit breaker that was tripped by kill switch
+  if (circuitBreakerReason.startsWith("KILL SWITCH:")) {
+    circuitBreakerTripped = false;
+    circuitBreakerReason = "";
+  }
+
+  const now = Date.now();
+  agentBus.emit("activity", {
+    activity: {
+      id: `kill-switch-reset-${now}`,
+      chainId: "system",
+      agentName: "Kill Switch",
+      action: "Kill switch manually reset — trading resumed",
+      timestamp: now,
+      type: "info",
+    },
+  });
+
+  persistRiskSystemState();
+
+  return { success: true, reason: "Kill switch reset successfully. Trading resumed." };
+});
+
+/**
+ * Get kill switch state (for external checks).
+ */
+export function isKillSwitchActive(): boolean {
+  return killSwitchTripped || circuitBreakerTripped;
+}
+
+export function getKillSwitchReason(): string {
+  return killSwitchTripped ? killSwitchReason : circuitBreakerReason;
+}
+
 // ── Server Functions ────────────────────────────────────────────────
 
 /**
@@ -389,6 +590,8 @@ export async function getRiskStateRaw(): Promise<RiskSystemState> {
     agents,
     circuitBreakerTripped,
     circuitBreakerReason,
+    killSwitchTripped,
+    killSwitchReason,
     marketDropPct,
     lastMarketCheck,
     totalExposure,

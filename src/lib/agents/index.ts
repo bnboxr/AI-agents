@@ -68,6 +68,19 @@ export type {
   LiquidityAnalysis,
 } from "./liquidity";
 
+export { RegimeDetectionAgent, classifyRegime } from "./regime";
+export type {
+  MarketRegime,
+  RegimeClassification,
+  RegimeParameters,
+} from "./regime";
+
+export { MultiTimeframeAgent } from "./multi-timeframe";
+export type {
+  TimeframeScore,
+  MultiTimeframeAnalysis,
+} from "./multi-timeframe";
+
 export {
   runAgentAnalysis,
   getAgentReports,
@@ -88,6 +101,8 @@ export {
   portfolioAgent,
   reasoningAgent,
   liquidityAgent,
+  regimeAgent,
+  multiTimeframeAgent,
 } from "./orchestrator";
 export type { PriceContext } from "./orchestrator";
 

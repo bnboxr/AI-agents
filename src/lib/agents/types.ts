@@ -15,7 +15,9 @@ export type AgentRole =
   | "reasoning"
   | "exit"
   | "smart_money"
-  | "liquidity";
+  | "liquidity"
+  | "regime"
+  | "multi_timeframe";
 
 export interface AgentReport {
   agentId: string;

@@ -21,6 +21,7 @@ import { RegimeDetectionAgent, classifyRegime } from "./regime";
 import type { RegimeClassification } from "./regime";
 import { MultiTimeframeAgent, type MultiTimeframeAnalysis } from "./multi-timeframe";
 import { CorrelationAgent, getCorrelationAgent, type CorrelationMatrix } from "./correlation";
+import { SentimentAgent, getSentimentAgent } from "./sentiment";
 import { isKillSwitchActive, getKillSwitchReason, markApiHealthy, recordLastPrice } from "../risk-engine";
 import type {
   AgentReport,
@@ -49,6 +50,7 @@ const liquidityAgent = new LiquidityAgent();
 const regimeAgent = new RegimeDetectionAgent();
 const multiTimeframeAgent = new MultiTimeframeAgent();
 const correlationAgent = getCorrelationAgent();
+const sentimentAgent = getSentimentAgent();
 
 // ── Scoring Weights ───────────────────────────────────────────────
 
@@ -71,6 +73,7 @@ const ROLE_WEIGHTS: Record<AgentRole, number> = {
   regime: 0.10,
   multi_timeframe: 0.09,
   correlation: 0.10,
+  sentiment: 0.08,
 };
 
 // ── In-memory report store ────────────────────────────────────────
@@ -548,6 +551,22 @@ async function gatherReports(ctx: PriceContext): Promise<AgentReport[]> {
       direction: "NEUTRAL",
       confidence: 0,
       reasoning: "Correlation analysis unavailable.",
+      data: {},
+    });
+  }
+
+  // ── Sentiment Agent: Fear & Greed + contrarian psychology ─────────
+  try {
+    const sentimentReport = await sentimentAgent.analyzeMarket({});
+    reports.push(sentimentReport);
+  } catch {
+    reports.push({
+      agentId: "sentiment-agent",
+      role: "sentiment",
+      timestamp: Date.now(),
+      direction: "NEUTRAL",
+      confidence: 0,
+      reasoning: "Sentiment analysis unavailable.",
       data: {},
     });
   }
@@ -1348,5 +1367,6 @@ export {
   regimeAgent,
   multiTimeframeAgent,
   correlationAgent,
+  sentimentAgent,
 };
 export type { PriceContext };

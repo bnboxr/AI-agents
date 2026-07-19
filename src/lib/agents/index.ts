@@ -113,6 +113,9 @@ export type {
   CorrelationMatrix,
 } from "./correlation";
 
+export { SentimentAgent, getSentimentAgent } from "./sentiment";
+export type { FearGreedData, SentimentContext } from "./sentiment";
+
 export type {
   AgentRole,
   AgentReport,

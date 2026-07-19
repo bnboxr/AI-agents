@@ -18,7 +18,8 @@ export type AgentRole =
   | "liquidity"
   | "regime"
   | "multi_timeframe"
-  | "correlation";
+  | "correlation"
+  | "sentiment";
 
 export interface AgentReport {
   agentId: string;

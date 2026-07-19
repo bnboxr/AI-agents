@@ -7,6 +7,7 @@ import {
 } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { WalletProvider, ConnectButton } from "~/components/WalletProvider";
+import ParticleField from "~/components/ParticleField";
 
 import appCss from "~/styles/app.css?url";
 
@@ -120,7 +121,9 @@ function RootDocument({ children }: { children: ReactNode }) {
       <head>
         <HeadContent />
       </head>
-      <body className="bg-darker">
+      <body className="bg-darker relative">
+        <ParticleField />
+        <div className="fixed inset-0 pointer-events-none" style={{ zIndex: 2, background: "radial-gradient(ellipse at 20% 50%, rgba(59,130,246,0.03) 0%, transparent 50%), radial-gradient(ellipse at 80% 20%, rgba(6,182,212,0.03) 0%, transparent 50%), radial-gradient(ellipse at 50% 80%, rgba(139,92,246,0.03) 0%, transparent 50%)" }} />
         {children}
         <Scripts />
       </body>

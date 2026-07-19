@@ -9,6 +9,14 @@ import {
   type AgentScanResult,
 } from "~/lib/agent-runner";
 import { CHAINS } from "~/lib/chains";
+import {
+  listDestinations,
+  addDestination,
+  setDefaultDestination,
+  type PaymentDestination,
+  DEST_TYPE_LABELS,
+  DEST_TYPE_ICONS,
+} from "~/lib/payment-destinations";
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -119,6 +127,37 @@ export const CHAT_TOOLS: ToolDefinition[] = [
         },
       },
       required: ["fromToken", "toToken", "amount"],
+    },
+  },
+  {
+    name: "configurePaymentDestination",
+    description:
+      "Manage payment destinations for receiving earnings and payouts. List configured destinations, add a new crypto wallet or Stripe destination, or set a default. Use 'list' to see current destinations, 'add' to create a new one, or 'set_default' to change which one receives payments.",
+    parameters: {
+      type: "object",
+      properties: {
+        action: {
+          type: "string",
+          description: "Action to perform: 'list', 'add', or 'set_default'",
+        },
+        destType: {
+          type: "string",
+          description: "For 'add' action: type of destination — 'crypto', 'stripe_card', or 'stripe_deposit'",
+        },
+        label: {
+          type: "string",
+          description: "For 'add' action: a friendly label for this destination (e.g., 'My ETH Wallet')",
+        },
+        chainId: {
+          type: "string",
+          description: "For 'add' action with crypto type: the chain ID (e.g., 'ethereum', 'solana', 'bnb')",
+        },
+        address: {
+          type: "string",
+          description: "For 'add' action: the wallet address or Stripe account identifier",
+        },
+      },
+      required: ["action"],
     },
   },
 ];
@@ -263,6 +302,47 @@ export async function executeToolCall(toolCall: ToolCall): Promise<ToolResult> {
         note: "⚠ This is a simulated read-only quote. No real transaction is executed.",
       };
       return { toolCallId: id, result };
+    }
+
+    case "configurePaymentDestination": {
+      const action = (args.action as string) || "list";
+      if (action === "list") {
+        const destinations: PaymentDestination[] = await listDestinations();
+        return { toolCallId: id, result: { action: "list", destinations } };
+      }
+      if (action === "add") {
+        const destType = (args.destType as string) || "crypto";
+        const label = (args.label as string) || "Payment Destination";
+        const chainId = args.chainId as string | undefined;
+        const destAddress = args.address as string | undefined;
+        if (destType !== "crypto" && destType !== "stripe_card" && destType !== "stripe_deposit") {
+          return { toolCallId: id, result: { error: `Invalid destType: ${destType}. Must be 'crypto', 'stripe_card', or 'stripe_deposit'.` } };
+        }
+        try {
+          const dest = await addDestination({
+            data: { label, destType: destType as "crypto" | "stripe_card" | "stripe_deposit", chainId, destAddress },
+          });
+          return { toolCallId: id, result: { action: "add", destination: dest } };
+        } catch (err: unknown) {
+          return { toolCallId: id, result: { error: (err as Error).message } };
+        }
+      }
+      if (action === "set_default") {
+        const addr = args.address as string;
+        if (!addr) {
+          return { toolCallId: id, result: { error: "Provide the destination ID or address to set as default." } };
+        }
+        const all = await listDestinations();
+        const match = all.find(
+          (d) => d.id === addr || d.destAddress === addr,
+        );
+        if (!match) {
+          return { toolCallId: id, result: { error: `No destination found matching "${addr}".` } };
+        }
+        const updated = await setDefaultDestination({ data: { id: match.id } });
+        return { toolCallId: id, result: { action: "set_default", destination: updated } };
+      }
+      return { toolCallId: id, result: { error: `Unknown action: ${action}. Use 'list', 'add', or 'set_default'.` } };
     }
 
     default:

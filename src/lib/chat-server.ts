@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { executeToolCall, type ToolCall } from "~/lib/chat-tools";
+import { listDestinations, type PaymentDestination } from "~/lib/payment-destinations";
 
 interface ChatMessage {
   role: "user" | "assistant" | "system";
@@ -23,6 +24,7 @@ function detectTool(messages: ChatMessage[]): string {
     [/agent|astra|neuron|vortex|spectra|nova|zenith|frost|phantom|oracle|prism/, "getAgentStatus"],
     [/price|worth|token.*price|how much|cost/, "getTokenPrice"],
     [/status|chain|network|block.*height|gas.*price/, "getChainStatus"],
+    [/money|earning|payout|payment|destination|receive.*fund/, "configurePaymentDestination"],
   ];
   for (const [re, tool] of patterns) if (re.test(combined)) return tool;
   return "getAgentStatus";
@@ -48,6 +50,9 @@ function getToolArgs(toolName: string, messages: ChatMessage[]): Record<string, 
     if (!args.amount) args.amount = 1;
     if (!args.fromToken) args.fromToken = "ETH";
     if (!args.toToken) args.toToken = "USDC";
+  }
+  if (toolName === "configurePaymentDestination") {
+    args.action = "list";
   }
   return args;
 }
@@ -98,11 +103,67 @@ function fmtPortfolio(r: unknown): string {
 function fmtSwap(r: unknown): string {
   const d=r as {error?:string;fromToken:string;toToken:string;amount:number;estimatedOutput:number;effectiveRate:number;usdValue:number};
   if(!d) return "No quote."; if(d.error) return `⚠ ${d.error}`;
-  return [`**🔄 Quote:**\n`,`• ${d.amount} ${d.fromToken} → ${d.estimatedOutput} ${d.toToken}`,`• Rate: 1 ${d.fromToken} = ${d.effectiveRate} ${d.toToken}`,`• ~$${d.usdValue.toLocaleString()} | Fee: 0.5%`,"","⚠ Simulated — no real tx."].join("\n");
+  return [`**🔄 Quote:**\n`,`• ${d.amount} ${d.fromToken} → ${d.estimatedOutput} ${d.toToken}`,`• Rate: 1 ${d.fromToken} = ${d.effectiveRate} ${d.toToken}`,`• ~${d.usdValue.toLocaleString()} | Fee: 0.5%`,"","⚠ Simulated — no real tx."].join("\n");
+}
+
+function fmtPayDest(r: unknown): string {
+  const d = r as { action: string; destinations?: PaymentDestination[]; destination?: PaymentDestination; error?: string };
+  if (!d) return "No payment data.";
+  if (d.error) return `⚠ ${d.error}`;
+
+  if (d.action === "add" && d.destination) {
+    const dest = d.destination;
+    const icon = dest.destType === "crypto" ? "₿" : dest.destType === "stripe_card" ? "💳" : "🏦";
+    const typeLabel = dest.destType === "crypto" ? "Crypto Wallet" : dest.destType === "stripe_card" ? "Stripe Card" : "Stripe Bank Deposit";
+    const chainInfo = dest.chainId ? ` on **${dest.chainId}**` : "";
+    const addrDisplay = dest.destAddress
+      ? dest.destAddress.length > 16
+        ? `${dest.destAddress.slice(0, 8)}...${dest.destAddress.slice(-6)}`
+        : dest.destAddress
+      : "";
+    return [
+      `**✅ Payment destination added:**\n`,
+      `• ${icon} **${dest.label}** — ${typeLabel}${chainInfo}`,
+      `• Address: \`${addrDisplay}\``,
+      dest.isDefault ? `• ⭐ This is now the default destination` : "",
+    ].join("\n");
+  }
+
+  if (d.action === "set_default" && d.destination) {
+    return `**⭐ Default payment destination set to "${d.destination.label}"** — funds will be sent to ${d.destination.destAddress?.slice(0, 8)}...`;
+  }
+
+  // list action
+  const dests = d.destinations ?? [];
+  if (!dests.length) {
+    return [
+      `**💸 Payment Destinations:**\n`,
+      `No payment destinations configured yet.`,
+      ``,
+      `To receive earnings, add a destination:`,
+      `• **Crypto wallet** — send funds to an on-chain address`,
+      `• **Stripe** — receive via card or bank deposit`,
+      ``,
+      `Go to **Settings → Payment Destinations** or tell me:`,
+      `_"add a crypto wallet on Ethereum"_`,
+    ].join("\n");
+  }
+
+  const lines: string[] = [`**💸 Payment Destinations (${dests.length}):**\n`];
+  for (const dest of dests) {
+    const icon = dest.destType === "crypto" ? "₿" : dest.destType === "stripe_card" ? "💳" : "🏦";
+    const addr = dest.destAddress ?? "—";
+    const shortAddr = addr.length > 16 ? `${addr.slice(0, 8)}...${addr.slice(-6)}` : addr;
+    const defMark = dest.isDefault ? " ⭐" : "";
+    const chainStr = dest.chainId ? ` (${dest.chainId})` : "";
+    lines.push(`• ${icon} **${dest.label}**${defMark}${chainStr}: \`${shortAddr}\``);
+  }
+  lines.push(``, `Manage in **Settings → Payment Destinations**.`);
+  return lines.join("\n");
 }
 
 function fmtResult(name: string, r: unknown): string {
-  switch(name){case"getChainStatus":return fmtChainStatus(r);case"getTokenPrice":return fmtPrices(r);case"scanOpportunities":return fmtScan(r);case"getAgentStatus":return fmtAgents(r);case"getPortfolioValue":return fmtPortfolio(r);case"executeSwap":return fmtSwap(r);default:return JSON.stringify(r);}
+  switch(name){case"getChainStatus":return fmtChainStatus(r);case"getTokenPrice":return fmtPrices(r);case"scanOpportunities":return fmtScan(r);case"getAgentStatus":return fmtAgents(r);case"getPortfolioValue":return fmtPortfolio(r);case"executeSwap":return fmtSwap(r);case"configurePaymentDestination":return fmtPayDest(r);default:return JSON.stringify(r);}
 }
 
 export const processChat = createServerFn({ method: "POST" })

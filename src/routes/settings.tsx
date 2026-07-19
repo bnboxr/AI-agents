@@ -10,6 +10,16 @@ import {
   deleteRpcEndpoint,
 } from "~/lib/api-keys";
 import type { ServiceKey, RpcEntry, ServiceName } from "~/lib/api-keys";
+import {
+  listDestinations,
+  addDestination,
+  deleteDestination,
+  setDefaultDestination,
+  DEST_TYPE_LABELS,
+  DEST_TYPE_ICONS,
+} from "~/lib/payment-destinations";
+import type { PaymentDestination, DestType } from "~/lib/payment-destinations";
+import { CHAINS } from "~/lib/chains";
 
 // ── Service definitions ────────────────────────────────────────────
 
@@ -70,7 +80,11 @@ const SERVICES: ServiceDef[] = [
 
 export const Route = createFileRoute("/settings")({
   loader: async () => {
-    return await getSettings();
+    const [settings, destinations] = await Promise.all([
+      getSettings(),
+      listDestinations(),
+    ]);
+    return { ...settings, destinations };
   },
   component: SettingsPage,
 });
@@ -81,6 +95,9 @@ function SettingsPage() {
   const initial = Route.useLoaderData();
   const [keys, setKeys] = useState<ServiceKey[]>(initial.keys);
   const [rpcs, setRpcs] = useState<RpcEntry[]>(initial.rpcs);
+  const [destinations, setDestinations] = useState<PaymentDestination[]>(
+    initial.destinations,
+  );
   const [inputs, setInputs] = useState<Record<string, string>>({});
   const [testing, setTesting] = useState<Record<string, boolean>>({});
   const [testResults, setTestResults] = useState<Record<string, { ok: boolean; message: string } | null>>({});
@@ -90,6 +107,15 @@ function SettingsPage() {
   const [newRpcLabel, setNewRpcLabel] = useState("");
   const [newRpcUrl, setNewRpcUrl] = useState("");
   const [addingRpc, setAddingRpc] = useState(false);
+
+  // ── Payment destinations form state ────────────────────────────
+  const [showAddDest, setShowAddDest] = useState(false);
+  const [newDestType, setNewDestType] = useState<DestType>("crypto");
+  const [newDestLabel, setNewDestLabel] = useState("");
+  const [newDestChain, setNewDestChain] = useState("ethereum");
+  const [newDestAddress, setNewDestAddress] = useState("");
+  const [addingDest, setAddingDest] = useState(false);
+  const [destError, setDestError] = useState<string | null>(null);
 
   // ── Key actions ────────────────────────────────────────────────
 
@@ -164,6 +190,52 @@ function SettingsPage() {
     try {
       await deleteRpcEndpoint({ data: { id } });
       setRpcs((prev) => prev.filter((r) => r.id !== id));
+    } catch {
+      // keep current state
+    }
+  }, []);
+
+  // ── Payment destination actions ────────────────────────────────
+
+  const handleAddDest = useCallback(async () => {
+    if (!newDestLabel.trim() || !newDestAddress.trim()) return;
+    setAddingDest(true);
+    setDestError(null);
+    try {
+      const dest = await addDestination({
+        data: {
+          label: newDestLabel.trim(),
+          destType: newDestType,
+          chainId: newDestType === "crypto" ? newDestChain : undefined,
+          destAddress: newDestAddress.trim(),
+        },
+      });
+      setDestinations((prev) => [dest, ...prev]);
+      setNewDestLabel("");
+      setNewDestAddress("");
+      setShowAddDest(false);
+    } catch (err: unknown) {
+      setDestError((err as Error).message);
+    } finally {
+      setAddingDest(false);
+    }
+  }, [newDestLabel, newDestAddress, newDestType, newDestChain]);
+
+  const handleDeleteDest = useCallback(async (id: string) => {
+    try {
+      await deleteDestination({ data: { id } });
+      setDestinations((prev) => prev.filter((d) => d.id !== id));
+    } catch {
+      // keep current state
+    }
+  }, []);
+
+  const handleSetDefaultDest = useCallback(async (id: string) => {
+    try {
+      const updated = await setDefaultDestination({ data: { id } });
+      setDestinations((prev) =>
+        prev.map((d) => (d.id === id ? updated : { ...d, isDefault: false })),
+      );
     } catch {
       // keep current state
     }
@@ -434,6 +506,205 @@ function SettingsPage() {
               </button>
             </div>
           </div>
+        </div>
+
+        {/* Payment Destinations section */}
+        <div className="mt-10 animate-fade-in-up" style={{ animationDelay: "0.3s" }}>
+          <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+            <span>💸</span> Payment Destinations
+          </h2>
+          <p className="text-gray-400 text-sm mb-6">
+            Configure where earnings and payouts are sent. Add crypto wallets or
+            Stripe destinations to receive funds.
+          </p>
+
+          {/* Existing destinations */}
+          {destinations.length > 0 && (
+            <div className="space-y-3 mb-6">
+              {destinations.map((dest) => {
+                const addr = dest.destAddress ?? "—";
+                const shortAddr =
+                  addr.length > 16
+                    ? `${addr.slice(0, 8)}...${addr.slice(-6)}`
+                    : addr;
+                const chain = dest.chainId
+                  ? CHAINS.find((c) => c.id === dest.chainId)
+                  : null;
+
+                return (
+                  <div
+                    key={dest.id}
+                    className="glass-card p-4 flex items-center gap-3 flex-wrap"
+                  >
+                    <span className="text-xl">
+                      {DEST_TYPE_ICONS[dest.destType]}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-medium text-white">
+                          {dest.label}
+                        </p>
+                        {dest.isDefault && (
+                          <span className="badge-cyan text-[0.6rem]">
+                            DEFAULT
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-gray-500">
+                        {DEST_TYPE_LABELS[dest.destType]}
+                        {chain ? ` · ${chain.name}` : ""}
+                      </p>
+                      <code className="text-xs text-gray-400 font-mono truncate block mt-0.5">
+                        {shortAddr}
+                      </code>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {!dest.isDefault && (
+                        <button
+                          onClick={() => handleSetDefaultDest(dest.id)}
+                          className="text-xs px-2 py-1 rounded-md text-gray-500 hover:text-accent-cyan hover:bg-accent-cyan/10 transition-colors"
+                          title="Set as default"
+                        >
+                          ⭐
+                        </button>
+                      )}
+                      <button
+                        onClick={() => handleDeleteDest(dest.id)}
+                        className="text-xs px-2 py-1 rounded-md text-gray-500 hover:text-accent-red hover:bg-accent-red/10 transition-colors"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {destinations.length === 0 && !showAddDest && (
+            <div className="glass-card p-6 text-center mb-6">
+              <p className="text-gray-500 text-sm">
+                No payment destinations configured. Add one to start receiving
+                earnings.
+              </p>
+            </div>
+          )}
+
+          {/* Add destination form */}
+          {showAddDest ? (
+            <div className="glass-card p-5 animate-fade-in-up">
+              <h3 className="text-sm font-semibold text-white mb-4">
+                Add Payment Destination
+              </h3>
+
+              {/* Type selector */}
+              <div className="flex gap-2 mb-4 flex-wrap">
+                {(
+                  ["crypto", "stripe_card", "stripe_deposit"] as DestType[]
+                ).map((t) => (
+                  <button
+                    key={t}
+                    onClick={() => {
+                      setNewDestType(t);
+                      setDestError(null);
+                    }}
+                    className={`text-xs px-3 py-2 rounded-lg border transition-all duration-200 ${
+                      newDestType === t
+                        ? "border-accent-blue bg-accent-blue/10 text-white"
+                        : "border-dark-border text-gray-500 hover:border-dark-border-light hover:text-gray-300"
+                    }`}
+                  >
+                    {DEST_TYPE_ICONS[t]} {DEST_TYPE_LABELS[t]}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+                <input
+                  type="text"
+                  value={newDestLabel}
+                  onChange={(e) => {
+                    setNewDestLabel(e.target.value);
+                    setDestError(null);
+                  }}
+                  placeholder="Label (e.g. My ETH Wallet)"
+                  className="glass-input flex-1 text-sm min-w-[200px]"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleAddDest();
+                  }}
+                />
+
+                {newDestType === "crypto" && (
+                  <select
+                    value={newDestChain}
+                    onChange={(e) => setNewDestChain(e.target.value)}
+                    className="glass-input text-sm min-w-[140px] bg-dark-hover"
+                  >
+                    {CHAINS.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+
+                <input
+                  type="text"
+                  value={newDestAddress}
+                  onChange={(e) => {
+                    setNewDestAddress(e.target.value);
+                    setDestError(null);
+                  }}
+                  placeholder={
+                    newDestType === "crypto"
+                      ? "0x... wallet address"
+                      : newDestType === "stripe_card"
+                        ? "card_... or account ID"
+                        : "ba_... or account ID"
+                  }
+                  className="glass-input flex-[2] text-sm font-mono min-w-[240px]"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleAddDest();
+                  }}
+                />
+
+                <button
+                  onClick={handleAddDest}
+                  disabled={
+                    !newDestLabel.trim() ||
+                    !newDestAddress.trim() ||
+                    addingDest
+                  }
+                  className="glass-button text-sm px-5 py-2 whitespace-nowrap"
+                >
+                  {addingDest ? "Adding…" : "Save"}
+                </button>
+
+                <button
+                  onClick={() => {
+                    setShowAddDest(false);
+                    setDestError(null);
+                  }}
+                  className="text-sm px-4 py-2 rounded-lg border border-dark-border text-gray-400 hover:text-white hover:border-dark-border-light transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+
+              {destError && (
+                <div className="mt-3 text-xs px-3 py-2 rounded-lg border border-accent-red/30 bg-accent-red/5 text-accent-red">
+                  {destError}
+                </div>
+              )}
+            </div>
+          ) : (
+            <button
+              onClick={() => setShowAddDest(true)}
+              className="glass-button text-sm px-5 py-2"
+            >
+              + Add Destination
+            </button>
+          )}
         </div>
       </div>
     </div>

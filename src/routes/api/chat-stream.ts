@@ -1,4 +1,5 @@
-import { json } from "@tanstack/react-start";
+import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute } from "@tanstack/react-start";
 import { executeToolCall, type ToolCall } from "~/lib/chat-tools";
 
 // ── Types ─────────────────────────────────────────────────────────
@@ -246,19 +247,15 @@ function formatToolResult(toolName: string, result: unknown): string {
   }
 }
 
-// ── API Route Handler ─────────────────────────────────────────────
+// ── SSE Stream Builder ────────────────────────────────────────────
 
-export async function POST({ request }: { request: Request }) {
-  let body: ChatRequest;
-  try {
-    body = await request.json();
-  } catch {
-    return json({ error: "Invalid JSON" }, { status: 400 });
-  }
-
+async function buildSSEStream(body: ChatRequest): Promise<Response> {
   const { messages } = body;
   if (!messages || !Array.isArray(messages) || messages.length === 0) {
-    return json({ error: "Messages array required" }, { status: 400 });
+    return new Response(JSON.stringify({ error: "Messages array required" }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 
   const toolName = detectTool(messages);
@@ -271,34 +268,26 @@ export async function POST({ request }: { request: Request }) {
     arguments: args,
   };
 
-  // Build SSE stream
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     async start(controller) {
       const enqueue = (data: string) => controller.enqueue(encoder.encode(data));
 
       try {
-        // 1. Emit tool_call event
         enqueue(sseEvent("tool_call", { id: toolCall.id, name: toolCall.name, arguments: toolCall.arguments }));
 
-        // 2. Execute the tool
         const toolResult = await executeToolCall(toolCall);
 
-        // 3. Emit tool_result
         enqueue(sseEvent("tool_result", { toolCallId: toolResult.toolCallId, result: toolResult.result }));
 
-        // 4. Stream text response word by word for a natural effect
         const responseText = formatToolResult(toolCall.name, toolResult.result);
 
-        // Split into chunks for streaming effect
         const words = responseText.split(/(\s+)/);
         for (const word of words) {
           enqueue(tokenChunk(word));
-          // Small delay for natural streaming feel
           await new Promise((r) => setTimeout(r, 15));
         }
 
-        // 5. Emit done
         enqueue(sseEvent("done", { toolCallId: toolCall.id }));
       } catch (err: any) {
         enqueue(sseEvent("error", { message: err.message || "Tool execution failed", toolCallId: toolCall.id }));
@@ -318,3 +307,27 @@ export async function POST({ request }: { request: Request }) {
     },
   });
 }
+
+// ── Route ─────────────────────────────────────────────────────────
+
+export const Route = createFileRoute("/api/chat-stream")({
+  loader: async ({ request }) => {
+    if (request.method === "POST") {
+      let body: ChatRequest;
+      try {
+        body = await request.json();
+      } catch {
+        return new Response(JSON.stringify({ error: "Invalid JSON" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return buildSSEStream(body);
+    }
+
+    return new Response(JSON.stringify({ error: "Method not allowed" }), {
+      status: 405,
+      headers: { "Content-Type": "application/json" },
+    });
+  },
+});

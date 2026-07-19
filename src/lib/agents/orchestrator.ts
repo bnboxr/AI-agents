@@ -25,6 +25,7 @@ import { SentimentAgent, getSentimentAgent } from "./sentiment";
 import { getVolumeAgent } from "./volume";
 import { ProbabilityAgent } from "./probability";
 import { ConfidenceAgent } from "./confidence";
+import { DevilsAdvocateAgent } from "./devils-advocate";
 import { isKillSwitchActive, getKillSwitchReason, markApiHealthy, recordLastPrice } from "../risk-engine";
 import type {
   AgentReport,
@@ -57,6 +58,7 @@ const sentimentAgent = getSentimentAgent();
 const volumeAgent = getVolumeAgent();
 const probabilityAgent = new ProbabilityAgent();
 const confidenceAgent = new ConfidenceAgent();
+const devilsAdvocateAgent = new DevilsAdvocateAgent();
 
 // ── Scoring Weights ───────────────────────────────────────────────
 
@@ -83,6 +85,7 @@ const ROLE_WEIGHTS: Record<AgentRole, number> = {
   volume: 0.09,
   probability: 0.12,
   confidence: 0.13,
+  devils_advocate: 0.15,
 };
 
 // ── In-memory report store ────────────────────────────────────────
@@ -906,6 +909,92 @@ function makeDecision(
     }
   }
 
+  // ── Devil's Advocate: find reasons NOT to trade ───────────────
+  // Owner's most-requested agent. Runs BEFORE final decision.
+  // Uses synchronous red-flag detection (rules-based) + optional GPT-4o synthesis.
+  // If VETO → override to WAIT/NEUTRAL immediately.
+  try {
+    const daContext = {
+      token: priceContext.token,
+      currentPrice: priceContext.currentPrice,
+      ohlcv: priceContext.ohlcv,
+      reports,
+      // Optional: extract from liquidity agent report if available
+    };
+
+    // Attempt to enrich with liquidity data from agent reports
+    const liqReport = reports.find((r) => r.role === "liquidity");
+    if (liqReport?.data) {
+      const liqData = liqReport.data as Record<string, any>;
+      if (liqData.fundingRate !== undefined) {
+        (daContext as any).fundingRate = liqData.fundingRate;
+      }
+      if (liqData.openInterestChange24h !== undefined) {
+        (daContext as any).openInterestChange24h = liqData.openInterestChange24h;
+      }
+      if (liqData.spread !== undefined) {
+        (daContext as any).spread = liqData.spread;
+      }
+      if (liqData.avgSpread !== undefined) {
+        (daContext as any).avgSpread = liqData.avgSpread;
+      }
+    }
+
+    // Also check for funding/oi directly in report data
+    const marketReport = reports.find((r) => r.role === "market");
+    if ((daContext as any).fundingRate === undefined && (marketReport?.data as any)?.fundingRate !== undefined) {
+      (daContext as any).fundingRate = (marketReport?.data as any).fundingRate;
+    }
+
+    const daResult = devilsAdvocateAgent.detectRedFlags(daContext as any);
+
+    // ── VETO: Block trade immediately ──
+    if (daResult.veto || daResult.severity === "VETO") {
+      const flagReasons = daResult.flags.map((f) => f.label).join(" + ");
+      return {
+        action: "WAIT",
+        confidence: 0,
+        positionSize: 0,
+        stopLoss: 0,
+        takeProfit: 0,
+        reasoning: `🚨 DEVIL'S ADVOCATE VETO: ${daResult.flagCount} red flags — ${flagReasons}. Trade blocked. ${daResult.flags.map((f) => f.detail).join("; ")}`,
+        agentReports: reports,
+        timestamp: Date.now(),
+      };
+    }
+
+    // ── OBJECTION: Reduce position and confidence ──
+    if (daResult.severity === "OBJECTION") {
+      const flagReasons = daResult.flags.map((f) => f.label).join(" + ");
+      // Apply confidence reduction
+      const originalConfidence = scored.confidence;
+      scored.confidence = Math.max(0, originalConfidence - daResult.confidenceReduction);
+
+      // Apply position multiplier (only if lower than current)
+      positionMultiplier = Math.min(positionMultiplier, daResult.positionMultiplier);
+
+      // Push a report for visibility
+      reports.push({
+        agentId: "devils-advocate-agent",
+        role: "devils_advocate" as AgentRole,
+        timestamp: Date.now(),
+        direction: "NEUTRAL",
+        confidence: daResult.flagCount * 15,
+        reasoning: `OBJECTION (${daResult.flagCount} flags): ${flagReasons}. Confidence reduced by ${daResult.confidenceReduction}%, position ×${daResult.positionMultiplier}.`,
+        data: {
+          flags: daResult.flags.map((f) => ({ id: f.id, label: f.label, detail: f.detail })),
+          severity: daResult.severity,
+          positionMultiplier: daResult.positionMultiplier,
+          confidenceReduction: daResult.confidenceReduction,
+          veto: false,
+        },
+      });
+    }
+  } catch (err) {
+    // Devil's Advocate is best-effort — don't block pipeline on errors
+    console.error("[DevilsAdvocate] Error in red flag detection:", err);
+  }
+
   // Extract risk data
   const riskReport = reports.find((r) => r.role === "risk");
   const riskData = riskReport?.data as unknown as RiskAssessment | undefined;
@@ -1507,5 +1596,6 @@ export {
   volumeAgent,
   probabilityAgent,
   confidenceAgent,
+  devilsAdvocateAgent,
 };
 export type { PriceContext };

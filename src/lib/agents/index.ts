@@ -87,6 +87,9 @@ export type { ProbabilityResult } from "./probability";
 export { ConfidenceAgent } from "./confidence";
 export type { ConsensusResult, ConflictPair, AgentAccuracyRecord, CalibrationEntry } from "./confidence";
 
+export { DevilsAdvocateAgent } from "./devils-advocate";
+export type { RedFlag, SeverityLevel, DevilsAdvocateResult, DevilsAdvocateContext } from "./devils-advocate";
+
 export {
   runAgentAnalysis,
   getAgentReports,
@@ -114,6 +117,7 @@ export {
   volumeAgent,
   probabilityAgent,
   confidenceAgent,
+  devilsAdvocateAgent,
 } from "./orchestrator";
 export type { PriceContext } from "./orchestrator";
 

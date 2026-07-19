@@ -20,6 +20,8 @@ import {
 } from "~/lib/payment-destinations";
 import type { PaymentDestination, DestType } from "~/lib/payment-destinations";
 import { CHAINS } from "~/lib/chains";
+import { getExchangeConfigs, toggleExchange } from "~/lib/exchange";
+import type { ExchangeConfig } from "~/lib/exchange";
 
 // ── Service definitions ────────────────────────────────────────────
 
@@ -80,11 +82,12 @@ const SERVICES: ServiceDef[] = [
 
 export const Route = createFileRoute("/settings")({
   loader: async () => {
-    const [settings, destinations] = await Promise.all([
+    const [settings, destinations, exchangeConfigs] = await Promise.all([
       getSettings(),
       listDestinations(),
+      getExchangeConfigs(),
     ]);
-    return { ...settings, destinations };
+    return { ...settings, destinations, exchangeConfigs };
   },
   component: SettingsPage,
 });
@@ -98,10 +101,14 @@ function SettingsPage() {
   const [destinations, setDestinations] = useState<PaymentDestination[]>(
     initial.destinations,
   );
+  const [exchangeCfgs, setExchangeCfgs] = useState<ExchangeConfig[]>(
+    initial.exchangeConfigs,
+  );
   const [inputs, setInputs] = useState<Record<string, string>>({});
   const [testing, setTesting] = useState<Record<string, boolean>>({});
   const [testResults, setTestResults] = useState<Record<string, { ok: boolean; message: string } | null>>({});
   const [saving, setSaving] = useState<Record<string, boolean>>({});
+  const [exchangeToggling, setExchangeToggling] = useState<Record<string, boolean>>({});
 
   // ── RPC form state ─────────────────────────────────────────────
   const [newRpcLabel, setNewRpcLabel] = useState("");
@@ -238,6 +245,20 @@ function SettingsPage() {
       );
     } catch {
       // keep current state
+    }
+  }, []);
+
+  // ── Exchange toggle actions ────────────────────────────────────
+
+  const handleExchangeToggle = useCallback(async (exchangeId: string, currentEnabled: boolean) => {
+    setExchangeToggling((p) => ({ ...p, [exchangeId]: true }));
+    try {
+      const updated = await toggleExchange({ data: { exchangeId, enabled: !currentEnabled } });
+      setExchangeCfgs((prev) => prev.map((e) => (e.exchangeId === exchangeId ? updated : e)));
+    } catch {
+      // keep current state
+    } finally {
+      setExchangeToggling((p) => ({ ...p, [exchangeId]: false }));
     }
   }, []);
 
@@ -704,6 +725,110 @@ function SettingsPage() {
             >
               + Add Destination
             </button>
+          )}
+        </div>
+        {/* Exchange Toggles section */}
+        <div className="mt-10 animate-fade-in-up" style={{ animationDelay: "0.4s" }}>
+          <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+            <span>🏦</span> Exchange Connections
+          </h2>
+          <p className="text-gray-400 text-sm mb-6">
+            Enable or disable exchange integrations. All exchanges run in paper
+            trading mode by default — no real API keys are needed. Add API keys
+            to enable live trading when ready.
+          </p>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            {exchangeCfgs.map((exchange, i) => {
+              const isEnabled = exchange.enabled;
+              const isToggling = exchangeToggling[exchange.exchangeId] ?? false;
+
+              // Exchange-specific icons and colors
+              const exchangeMeta: Record<string, { icon: string; color: string }> = {
+                binance: { icon: "🟡", color: "border-accent-yellow/40" },
+                bitunix: { icon: "🔵", color: "border-accent-blue/40" },
+                bybit: { icon: "🟠", color: "border-accent-orange/40" },
+                coinbase: { icon: "🔷", color: "border-blue-400/40" },
+              };
+              const meta = exchangeMeta[exchange.exchangeId] ?? { icon: "🏦", color: "border-dark-border" };
+
+              return (
+                <div
+                  key={exchange.exchangeId}
+                  className={`glass-card p-5 animate-fade-in-up border-l-2 ${meta.color}`}
+                  style={{ animationDelay: `${0.45 + i * 0.05}s` }}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl">{meta.icon}</span>
+                      <div>
+                        <h3 className="text-sm font-semibold text-white">
+                          {exchange.name}
+                        </h3>
+                        <p className="text-xs text-gray-500">
+                          {exchange.isLive
+                            ? "Live — API keys configured"
+                            : "Paper trading mode"}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Toggle switch */}
+                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={isEnabled}
+                        disabled={isToggling}
+                        onClick={() => handleExchangeToggle(exchange.exchangeId, isEnabled)}
+                        className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none disabled:opacity-40 ${
+                          isEnabled ? "bg-accent-blue" : "bg-dark-border"
+                        }`}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                            isEnabled ? "translate-x-4" : "translate-x-0"
+                          }`}
+                        />
+                      </button>
+                      <span className="text-xs text-gray-400 w-7">
+                        {isToggling ? "…" : isEnabled ? "ON" : "OFF"}
+                      </span>
+                    </label>
+                  </div>
+
+                  {/* Status indicator */}
+                  <div className="mt-3 flex items-center gap-2">
+                    <span
+                      className={
+                        isEnabled
+                          ? "status-dot-online"
+                          : "status-dot-offline"
+                      }
+                    />
+                    <span className="text-xs text-gray-500">
+                      {isEnabled ? "Connected & active" : "Disabled"}
+                    </span>
+                    {exchange.apiKeyConfigured && (
+                      <span className="badge-cyan text-[0.6rem] ml-auto">LIVE</span>
+                    )}
+                    {!exchange.apiKeyConfigured && (
+                      <span className="text-[0.6rem] px-2 py-0.5 rounded-full bg-dark-border text-gray-500 ml-auto">
+                        PAPER
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {exchangeCfgs.length === 0 && (
+            <div className="glass-card p-6 text-center">
+              <p className="text-gray-500 text-sm">
+                No exchange connections configured.
+              </p>
+            </div>
           )}
         </div>
       </div>

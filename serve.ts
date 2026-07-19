@@ -13,6 +13,7 @@ import { startOrchestrator, getState } from "./src/lib/orchestrator/orchestrator
 import { getAgentState, getActivities } from "./src/lib/agent-runner";
 import { CHAINS } from "./src/lib/chains";
 import { agentBus } from "./src/lib/agent-bus";
+import { runMigrations } from "./src/lib/db/migrations";
 import type { AgentBusEvent, AgentBusEvents } from "./src/lib/agent-bus";
 import type { ServerWebSocket } from "bun";
 
@@ -102,6 +103,12 @@ function startHeartbeat(): void {
     });
   }, 10_000);
 }
+
+// ── Run DB migrations ───────────────────────────────────────────────
+
+runMigrations().catch((err) => {
+  console.error("[DB] Migration runner failed:", err);
+});
 
 // ── Start orchestrator ───────────────────────────────────────────────
 

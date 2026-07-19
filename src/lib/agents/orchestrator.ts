@@ -21,6 +21,7 @@ import type {
   OrchestratorDecision,
   TradingState,
 } from "./types";
+import { sql, isDbAvailable } from "../db";
 
 // ── Agent Registry ────────────────────────────────────────────────
 
@@ -567,6 +568,31 @@ function makeDecision(
 
 function updateTradingState(updates: Partial<TradingState>): TradingState {
   tradingState = { ...tradingState, ...updates };
+
+  // Write-through to DB
+  if (isDbAvailable()) {
+    sql`
+      INSERT INTO trading_state (id, capital, initial_capital, open_position, position_direction, entry_price, current_price, pnl, pnl_pct, consecutive_losses, consecutive_wins, total_trades, win_rate, anti_tilt_mode, probe_mode, updated_at)
+      VALUES (1, ${tradingState.capital}, ${tradingState.initialCapital}, ${tradingState.openPosition}, ${tradingState.positionDirection ?? null}, ${tradingState.entryPrice ?? null}, ${tradingState.currentPrice ?? null}, ${tradingState.pnl}, ${tradingState.pnlPct}, ${tradingState.consecutiveLosses}, ${tradingState.consecutiveWins}, ${tradingState.totalTrades}, ${tradingState.winRate}, ${tradingState.antiTiltMode}, ${tradingState.probeMode}, now())
+      ON CONFLICT (id) DO UPDATE SET
+        capital = EXCLUDED.capital,
+        initial_capital = EXCLUDED.initial_capital,
+        open_position = EXCLUDED.open_position,
+        position_direction = EXCLUDED.position_direction,
+        entry_price = EXCLUDED.entry_price,
+        current_price = EXCLUDED.current_price,
+        pnl = EXCLUDED.pnl,
+        pnl_pct = EXCLUDED.pnl_pct,
+        consecutive_losses = EXCLUDED.consecutive_losses,
+        consecutive_wins = EXCLUDED.consecutive_wins,
+        total_trades = EXCLUDED.total_trades,
+        win_rate = EXCLUDED.win_rate,
+        anti_tilt_mode = EXCLUDED.anti_tilt_mode,
+        probe_mode = EXCLUDED.probe_mode,
+        updated_at = EXCLUDED.updated_at
+    `.catch((err) => console.error("[DB] updateTradingState UPSERT failed:", err));
+  }
+
   return tradingState;
 }
 
@@ -587,6 +613,31 @@ export const runAgentAnalysis = createServerFn({ method: "POST" }).handler(
   }> => {
     const reports = await gatherReports(data);
     const decision = makeDecision(reports, tradingState, data);
+
+    // Write-through to DB: orchestrator_decisions + agent_reports
+    if (isDbAvailable()) {
+      // Insert agent reports and collect IDs
+      const reportIds: number[] = [];
+      for (const report of reports) {
+        sql`
+          INSERT INTO agent_reports (agent_id, role, chain_id, token, direction, confidence, reasoning, data)
+          VALUES (${report.agentId}, ${report.role}, ${data.chainId ?? null}, ${data.token ?? null}, ${report.direction}, ${report.confidence}, ${report.reasoning}, ${JSON.stringify(report.data)}::jsonb)
+          RETURNING id
+        `.then((res) => {
+          if (res.rows[0]?.id) reportIds.push(res.rows[0].id as number);
+        }).catch((err) => console.error("[DB] agent_reports insert failed:", err));
+      }
+
+      // Insert orchestrator decision (after a small delay to allow report IDs to resolve)
+      const persistDecision = () => {
+        sql`
+          INSERT INTO orchestrator_decisions (action, confidence, position_size, stop_loss, take_profit, reasoning, chain_id, token, current_price, report_ids)
+          VALUES (${decision.action}, ${decision.confidence}, ${decision.positionSize}, ${decision.stopLoss}, ${decision.takeProfit}, ${decision.reasoning}, ${data.chainId ?? null}, ${data.token ?? null}, ${data.currentPrice ?? null}, ${reportIds.length > 0 ? reportIds : null})
+        `.catch((err) => console.error("[DB] orchestrator_decisions insert failed:", err));
+      };
+      // Use setTimeout to give agent_reports inserts a chance to resolve
+      setTimeout(persistDecision, 100);
+    }
 
     // ── Execution Agent: execute the decision ──────────────────
     let execution: ExecutionResult | undefined;
@@ -803,6 +854,42 @@ export const recordTradeOutcome = createServerFn({ method: "POST" }).handler(
     // Record trade result in portfolio agent
     portfolioAgent.recordTradeResult(pnlPct);
     portfolioAgent.recordEquitySnapshot(tradingState.capital);
+
+    // ── DB Write-through: UPDATE corresponding trade + UPSERT trading_state
+    if (isDbAvailable()) {
+      // Update the most recent open trade for this symbol/direction that was recently closed
+      sql`
+        UPDATE trades
+        SET status = 'closed', exit_price = ${data.exitPrice}, pnl = ${tradingState.capital - tradingState.initialCapital}, pnl_pct = ${pnlPct}, closed_at = now(), updated_at = now()
+        WHERE id = (
+          SELECT id FROM trades
+          WHERE token = ${data.symbol} AND direction = ${data.direction} AND status = 'open'
+          ORDER BY opened_at DESC LIMIT 1
+        )
+      `.catch((err) => console.error("[DB] recordTradeOutcome trade UPDATE failed:", err));
+
+      // UPSERT trading_state
+      sql`
+        INSERT INTO trading_state (id, capital, initial_capital, open_position, position_direction, entry_price, current_price, pnl, pnl_pct, consecutive_losses, consecutive_wins, total_trades, win_rate, anti_tilt_mode, probe_mode, updated_at)
+        VALUES (1, ${tradingState.capital}, ${tradingState.initialCapital}, ${tradingState.openPosition}, ${tradingState.positionDirection ?? null}, ${tradingState.entryPrice ?? null}, ${tradingState.currentPrice ?? null}, ${tradingState.pnl}, ${tradingState.pnlPct}, ${tradingState.consecutiveLosses}, ${tradingState.consecutiveWins}, ${tradingState.totalTrades}, ${tradingState.winRate}, ${tradingState.antiTiltMode}, ${tradingState.probeMode}, now())
+        ON CONFLICT (id) DO UPDATE SET
+          capital = EXCLUDED.capital,
+          initial_capital = EXCLUDED.initial_capital,
+          open_position = EXCLUDED.open_position,
+          position_direction = EXCLUDED.position_direction,
+          entry_price = EXCLUDED.entry_price,
+          current_price = EXCLUDED.current_price,
+          pnl = EXCLUDED.pnl,
+          pnl_pct = EXCLUDED.pnl_pct,
+          consecutive_losses = EXCLUDED.consecutive_losses,
+          consecutive_wins = EXCLUDED.consecutive_wins,
+          total_trades = EXCLUDED.total_trades,
+          win_rate = EXCLUDED.win_rate,
+          anti_tilt_mode = EXCLUDED.anti_tilt_mode,
+          probe_mode = EXCLUDED.probe_mode,
+          updated_at = EXCLUDED.updated_at
+      `.catch((err) => console.error("[DB] recordTradeOutcome trading_state UPSERT failed:", err));
+    }
 
     // Update trading state
     const isWin = pnlPct > 0;

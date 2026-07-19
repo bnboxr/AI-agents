@@ -106,6 +106,13 @@ export {
 } from "./orchestrator";
 export type { PriceContext } from "./orchestrator";
 
+export { CorrelationAgent, getCorrelationAgent, pearsonR, logReturns } from "./correlation";
+export type {
+  PricePoint,
+  CorrelationPairData,
+  CorrelationMatrix,
+} from "./correlation";
+
 export type {
   AgentRole,
   AgentReport,

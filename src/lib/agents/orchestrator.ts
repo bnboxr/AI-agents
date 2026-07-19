@@ -20,6 +20,7 @@ import { LiquidityAgent, subscribeOrderBook, type LiquidityAnalysis } from "./li
 import { RegimeDetectionAgent, classifyRegime } from "./regime";
 import type { RegimeClassification } from "./regime";
 import { MultiTimeframeAgent, type MultiTimeframeAnalysis } from "./multi-timeframe";
+import { CorrelationAgent, getCorrelationAgent, type CorrelationMatrix } from "./correlation";
 import { isKillSwitchActive, getKillSwitchReason, markApiHealthy, recordLastPrice } from "../risk-engine";
 import type {
   AgentReport,
@@ -47,6 +48,7 @@ const smartMoneyAgent = new SmartMoneyAgent();
 const liquidityAgent = new LiquidityAgent();
 const regimeAgent = new RegimeDetectionAgent();
 const multiTimeframeAgent = new MultiTimeframeAgent();
+const correlationAgent = getCorrelationAgent();
 
 // ── Scoring Weights ───────────────────────────────────────────────
 
@@ -68,6 +70,7 @@ const ROLE_WEIGHTS: Record<AgentRole, number> = {
   liquidity: 0.11,
   regime: 0.10,
   multi_timeframe: 0.09,
+  correlation: 0.10,
 };
 
 // ── In-memory report store ────────────────────────────────────────
@@ -233,9 +236,16 @@ async function gatherReports(ctx: PriceContext): Promise<AgentReport[]> {
     });
   }
 
-  // Macro analysis
+  // Macro analysis — uses real-time correlations from CorrelationAgent
   try {
-    const macroReport = await macroAgent.analyzeMarket();
+    // Compute correlation matrix for real-time macro correlation values
+    const corrMatrix = correlationAgent.getMatrix();
+    const corrContext = {
+      dxyCryptoCorr: corrMatrix.pairs.find((p) => p.pair === "DXY-CRYPTO")?.baseline ?? -0.5,
+      sp500CryptoCorr: corrMatrix.pairs.find((p) => p.pair === "BTC-SPX")?.baseline ?? 0.6,
+      goldCryptoCorr: corrMatrix.pairs.find((p) => p.pair === "BTC-GOLD")?.baseline ?? 0.3,
+    };
+    const macroReport = await macroAgent.analyzeMarket({ correlations: corrContext });
     reports.push(macroReport);
   } catch {
     reports.push({
@@ -502,6 +512,46 @@ async function gatherReports(ctx: PriceContext): Promise<AgentReport[]> {
     });
   }
 
+  // ── Correlation Agent: cross-asset correlation analysis ─────────
+  try {
+    // Ensure correlation agent is initialized
+    correlationAgent.initialize().catch(() => {
+      /* best-effort background init */
+    });
+
+    const corrMatrix = correlationAgent.getMatrix();
+    const corrReport = await correlationAgent.analyzeMarket({ matrix: corrMatrix });
+    // Attach full matrix data to the report
+    corrReport.data = {
+      ...corrReport.data,
+      matrix: corrMatrix,
+      riskLevel: corrMatrix.riskLevel,
+      divergenceScore: corrMatrix.divergenceScore,
+      positionMultiplier: corrMatrix.positionMultiplier,
+      pairCount: corrMatrix.pairs.length,
+      breakdownCount: corrMatrix.pairs.filter((p) => p.breakdown !== "NORMAL").length,
+      pairs: corrMatrix.pairs.map((p) => ({
+        pair: p.pair,
+        baseline: p.baseline,
+        short: p.short,
+        delta: p.delta,
+        breakdown: p.breakdown,
+        signFlipped: p.signFlipped,
+      })),
+    };
+    reports.push(corrReport);
+  } catch {
+    reports.push({
+      agentId: "correlation-agent",
+      role: "correlation",
+      timestamp: Date.now(),
+      direction: "NEUTRAL",
+      confidence: 0,
+      reasoning: "Correlation analysis unavailable.",
+      data: {},
+    });
+  }
+
   // Risk assessment (always run)
   const atr = ctx.atr ?? ctx.currentPrice * 0.02;
   const tentativeDirection = scoreDirection(reports).direction;
@@ -676,6 +726,30 @@ function makeDecision(
   // Apply position size adjustment from learning
   let positionMultiplier = 1.0 + learningAdjustments.positionSizeAdjustment;
   positionMultiplier = Math.max(0.25, Math.min(1.5, positionMultiplier)); // clamp 25%-150%
+
+  // ── Apply Correlation Agent multiplier ──────────────────────────
+  const corrReport = reports.find((r) => r.role === "correlation");
+  const corrMatrixData = corrReport?.data?.matrix as CorrelationMatrix | undefined;
+  if (corrMatrixData?.dataAvailable) {
+    // Correlation agent's position multiplier further reduces risk during breakdowns
+    const corrMult = corrMatrixData.positionMultiplier;
+    positionMultiplier = positionMultiplier * corrMult;
+    positionMultiplier = Math.max(0, Math.min(1.5, positionMultiplier));
+
+    // HALT override from correlation agent
+    if (corrMatrixData.riskLevel === "HALT") {
+      return {
+        action: "WAIT",
+        confidence: 0,
+        positionSize: 0,
+        stopLoss: 0,
+        takeProfit: 0,
+        reasoning: `🚨 CORRELATION HALT: Severe correlation breakdown detected (divergence score: ${corrMatrixData.divergenceScore}). ${corrReport?.reasoning?.slice(0, 150) ?? "Multiple pairs have broken down — systemic risk elevated."}`,
+        agentReports: reports,
+        timestamp: Date.now(),
+      };
+    }
+  }
 
   // Extract risk data
   const riskReport = reports.find((r) => r.role === "risk");
@@ -1273,5 +1347,6 @@ export {
   liquidityAgent,
   regimeAgent,
   multiTimeframeAgent,
+  correlationAgent,
 };
 export type { PriceContext };

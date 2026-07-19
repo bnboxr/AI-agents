@@ -24,7 +24,8 @@ export type AgentRole =
   | "probability"
   | "confidence"
   | "devils_advocate"
-  | "position_manager";
+  | "position_manager"
+  | "system_audit";
 
 export interface AgentReport {
   agentId: string;

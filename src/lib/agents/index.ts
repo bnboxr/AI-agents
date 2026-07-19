@@ -142,6 +142,13 @@ export type { FearGreedData, SentimentContext } from "./sentiment";
 export { VolumeAgent, getVolumeAgent, analyzeVolume, computeOBV, computeVolumeDelta, detectVolumeClimax, detectAccumDist, computeAnchoredVWAP, computeVolumeScore } from "./volume";
 export type { VolumeAnalysis, VolumeContext } from "./volume";
 
+export { SystemAuditAgent } from "./system-audit";
+export type {
+  AuditSeverity,
+  AuditIssue,
+  AuditReport,
+} from "./system-audit";
+
 export type {
   AgentRole,
   AgentReport,

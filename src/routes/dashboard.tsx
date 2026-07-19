@@ -4,6 +4,8 @@ import { getAllAgentStatuses } from "~/lib/agent-runner";
 import { getRiskStateRaw, type RiskSystemState } from "~/lib/risk-engine";
 import { getOpenPositions, getTradeHistory, getTradingStats, type TradePosition } from "~/lib/trading-engine";
 import { getAgentActivityLog, type AgentActivity } from "~/lib/agent-activity";
+import { getSystemAuditReport } from "~/lib/audit-runner";
+import type { AuditReport } from "~/lib/agents/system-audit";
 import { AGENTS } from "~/lib/agents";
 import { CHAINS } from "~/lib/chains";
 
@@ -25,6 +27,7 @@ interface DashboardData {
   activities: AgentActivity[];
   totalTrades: number;
   winRate: string;
+  auditReport: AuditReport | null;
 }
 
 // ── System Agents (non-chain, business-plan architecture) ─────────
@@ -197,6 +200,21 @@ function DashboardPage() {
     return () => window.removeEventListener("focus", onFocus);
   }, [poll]);
 
+  // System Audit polling (every 60s)
+  useEffect(() => {
+    const fetchAudit = async () => {
+      try {
+        const report = await getSystemAuditReport();
+        setData((prev) => ({ ...prev, auditReport: report }));
+      } catch {
+        // silent — keep last known audit state
+      }
+    };
+    fetchAudit(); // initial fetch
+    const id = setInterval(fetchAudit, 60_000);
+    return () => clearInterval(id);
+  }, []);
+
   const systemAgents = buildSystemAgents(data.riskState);
   const chainAgents = data.agentStatuses.filter(
     (a) => CHAINS.some((c) => c.id === a.id)
@@ -249,6 +267,116 @@ function DashboardPage() {
           </div>
         )}
       </div>
+
+      {/* ── System Health Card ─────────────────────────────────────── */}
+      {data.auditReport && (
+        <div className="glass-panel p-5 sm:p-6">
+          <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+            <span>🩺</span> System Health
+            <span className="text-xs text-gray-400 font-normal">
+              last scan: {formatTime(data.auditReport.timestamp)}
+            </span>
+          </h2>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            {/* Overall Score */}
+            <div className="text-center p-3 rounded-lg bg-dark-surface/40 border border-dark-border/30">
+              <p className="text-gray-400 text-xs mb-1">Audit Score</p>
+              <p
+                className={`text-3xl font-bold font-mono ${
+                  data.auditReport.score >= 90
+                    ? "text-accent-green"
+                    : data.auditReport.score >= 70
+                      ? "text-accent-yellow"
+                      : "text-accent-red"
+                }`}
+              >
+                {data.auditReport.score}
+                <span className="text-sm text-gray-400">/100</span>
+              </p>
+            </div>
+            {/* Critical Issues */}
+            <div className="text-center p-3 rounded-lg bg-dark-surface/40 border border-dark-border/30">
+              <p className="text-gray-400 text-xs mb-1">Critical</p>
+              <p
+                className={`text-3xl font-bold font-mono ${
+                  (data.auditReport.issues.filter((i) => i.severity === "CRITICAL").length) === 0
+                    ? "text-accent-green"
+                    : "text-accent-red"
+                }`}
+              >
+                {data.auditReport.issues.filter((i) => i.severity === "CRITICAL").length}
+              </p>
+            </div>
+            {/* Passed / Failed */}
+            <div className="text-center p-3 rounded-lg bg-dark-surface/40 border border-dark-border/30">
+              <p className="text-gray-400 text-xs mb-1">Checks</p>
+              <p className="text-3xl font-bold font-mono text-white">
+                <span className="text-accent-green">{data.auditReport.passedChecks}</span>
+                <span className="text-gray-500">/</span>
+                <span className={data.auditReport.failedChecks > 0 ? "text-accent-red" : "text-gray-400"}>
+                  {data.auditReport.failedChecks}
+                </span>
+              </p>
+            </div>
+            {/* Total Issues */}
+            <div className="text-center p-3 rounded-lg bg-dark-surface/40 border border-dark-border/30">
+              <p className="text-gray-400 text-xs mb-1">Total Issues</p>
+              <p
+                className={`text-3xl font-bold font-mono ${
+                  data.auditReport.issues.length === 0
+                    ? "text-accent-green"
+                    : data.auditReport.issues.length <= 3
+                      ? "text-accent-yellow"
+                      : "text-accent-red"
+                }`}
+              >
+                {data.auditReport.issues.length}
+              </p>
+            </div>
+          </div>
+          {/* Top Issues (if any) */}
+          {data.auditReport.issues.length > 0 && (
+            <div className="mt-4 space-y-1 max-h-32 overflow-y-auto">
+              {data.auditReport.issues
+                .filter((i) => i.severity === "CRITICAL" || i.severity === "HIGH")
+                .slice(0, 3)
+                .map((issue, idx) => (
+                  <div
+                    key={idx}
+                    className={`flex items-start gap-2 px-3 py-1.5 rounded text-xs ${
+                      issue.severity === "CRITICAL"
+                        ? "bg-accent-red/10 border border-accent-red/20 text-accent-red"
+                        : "bg-accent-yellow/10 border border-accent-yellow/20 text-accent-yellow"
+                    }`}
+                  >
+                    <span className="font-mono font-bold shrink-0 mt-0.5">
+                      {issue.severity === "CRITICAL" ? "🔴" : "🟡"}
+                    </span>
+                    <span className="truncate">
+                      [{issue.category}] {issue.description}
+                    </span>
+                  </div>
+                ))}
+              {data.auditReport.issues.filter((i) => i.severity === "MEDIUM" || i.severity === "LOW").length > 0 && (
+                <p className="text-xs text-gray-400 px-3">
+                  +{data.auditReport.issues.filter((i) => i.severity === "MEDIUM" || i.severity === "LOW").length} medium/low issues
+                </p>
+              )}
+            </div>
+          )}
+          {/* Recommendations */}
+          {data.auditReport.recommendations.length > 0 && (
+            <div className="mt-3 pt-3 border-t border-dark-border/30">
+              <p className="text-xs text-gray-400 mb-1 font-medium">Recommendations:</p>
+              {data.auditReport.recommendations.slice(0, 3).map((rec, idx) => (
+                <p key={idx} className="text-xs text-gray-300 ml-1">
+                  {rec}
+                </p>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ── Agent Status Grid ─────────────────────────────────────── */}
       <div className="glass-panel p-5 sm:p-6">
@@ -532,14 +660,17 @@ function mapInitialData(initial: {
   stats: Awaited<ReturnType<typeof getTradingStats>>;
   activities: Awaited<ReturnType<typeof getAgentActivityLog>>;
 }): DashboardData {
-  return mapToData(
-    initial.agentStatuses,
-    initial.riskState,
-    initial.positions,
-    initial.trades,
-    initial.stats,
-    initial.activities,
-  );
+  return {
+    ...mapToData(
+      initial.agentStatuses,
+      initial.riskState,
+      initial.positions,
+      initial.trades,
+      initial.stats,
+      initial.activities,
+    ),
+    auditReport: null,
+  };
 }
 
 function mapToData(

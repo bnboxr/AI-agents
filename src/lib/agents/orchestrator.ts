@@ -91,6 +91,7 @@ const ROLE_WEIGHTS: Record<AgentRole, number> = {
   confidence: 0.13,
   devils_advocate: 0.15,
   position_manager: 0.08,
+  system_audit: 0, // Monitoring only — not a trading signal agent
 };
 
 // ── In-memory report store ────────────────────────────────────────

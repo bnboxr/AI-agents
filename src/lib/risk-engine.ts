@@ -83,6 +83,21 @@ let lastKnownPrice: number | null = null;
 /** Track last news sentiment for shock detection */
 let lastNewsSentiment: number | null = null;
 
+/** Current tracked price for corrupt data detection (no-arg mode) */
+let currentTrackedPrice: number | null = null;
+
+/** Current tracked sentiment for news shock detection (no-arg mode) */
+let currentTrackedSentiment: number | null = null;
+
+/** Current ATR as % of price for extreme volatility detection */
+let currentTrackedAtrPct: number | null = null;
+
+/** Normal/baseline ATR as % of price */
+let normalTrackedAtrPct: number | null = null;
+
+/** Current tracked spread as % of price */
+let currentTrackedSpreadPct: number | null = null;
+
 // Track historical prices for market crash detection
 interface PricePoint {
   timestamp: number;
@@ -404,11 +419,20 @@ export function recordLastPrice(price: number): void {
 
 /**
  * Check for corrupt data: price changes > 50% in one tick.
+ * If called with no argument, uses internally tracked current price (from recordCurrentPrice).
  */
-export function isCorruptData(currentPrice: number): boolean {
-  if (lastKnownPrice === null || lastKnownPrice <= 0) return false;
-  const changePct = Math.abs((currentPrice - lastKnownPrice) / lastKnownPrice) * 100;
+export function isCorruptData(currentPrice?: number): boolean {
+  const price = currentPrice ?? currentTrackedPrice;
+  if (price === null || lastKnownPrice === null || lastKnownPrice <= 0) return false;
+  const changePct = Math.abs((price - lastKnownPrice) / lastKnownPrice) * 100;
   return changePct > 50;
+}
+
+/**
+ * Record the current tracked price for no-arg corrupt data checks.
+ */
+export function recordCurrentPrice(price: number): void {
+  currentTrackedPrice = price;
 }
 
 /**
@@ -420,30 +444,60 @@ export function recordNewsSentiment(sentiment: number): void {
 }
 
 /**
- * Check for unexpected news: sentiment swung > 80% negative in one update.
+ * Record the current tracked sentiment for no-arg news shock checks.
  */
-export function isNewsShock(currentSentiment: number): boolean {
-  if (lastNewsSentiment === null) return false;
-  const swing = lastNewsSentiment - currentSentiment;
+export function recordCurrentSentiment(sentiment: number): void {
+  currentTrackedSentiment = sentiment;
+}
+
+/**
+ * Check for unexpected news: sentiment swung > 80% negative in one update.
+ * If called with no argument, uses internally tracked sentiment (from recordCurrentSentiment).
+ */
+export function isNewsShock(currentSentiment?: number): boolean {
+  const sentiment = currentSentiment ?? currentTrackedSentiment;
+  if (lastNewsSentiment === null || sentiment === null) return false;
+  const swing = lastNewsSentiment - sentiment;
   return swing > 80;
 }
 
 /**
  * Check for extreme volatility: ATR spikes > 5x normal.
+ * If called with no arguments, uses internally tracked ATR values (from recordAtr).
  * @param currentAtrPct Current ATR as % of price
  * @param normalAtrPct Baseline/normal ATR as % of price
  */
-export function isExtremeVolatility(currentAtrPct: number, normalAtrPct: number): boolean {
-  if (normalAtrPct <= 0) return false;
-  return currentAtrPct > normalAtrPct * 5;
+export function isExtremeVolatility(currentAtrPct?: number, normalAtrPct?: number): boolean {
+  const atr = currentAtrPct ?? currentTrackedAtrPct;
+  const normal = normalAtrPct ?? normalTrackedAtrPct;
+  if (atr === null || normal === null || normal <= 0) return false;
+  return atr > normal * 5;
+}
+
+/**
+ * Record current ATR values for no-arg extreme volatility checks.
+ */
+export function recordAtr(currentAtrPct: number, normalAtrPct: number): void {
+  currentTrackedAtrPct = currentAtrPct;
+  normalTrackedAtrPct = normalAtrPct;
 }
 
 /**
  * Check for massive spread on major pairs.
+ * If called with no argument, uses internally tracked spread (from recordSpread).
  * @param spreadPct Bid/ask spread as % of price
  */
-export function isMassiveSpread(spreadPct: number): boolean {
-  return spreadPct > 5;
+export function isMassiveSpread(spreadPct?: number): boolean {
+  const spread = spreadPct ?? currentTrackedSpreadPct;
+  if (spread === null) return false;
+  return spread > 5;
+}
+
+/**
+ * Record current spread for no-arg massive spread checks.
+ */
+export function recordSpread(spreadPct: number): void {
+  currentTrackedSpreadPct = spreadPct;
 }
 
 /**
@@ -451,7 +505,7 @@ export function isMassiveSpread(spreadPct: number): boolean {
  * logs reason with timestamp, sends alert via agent bus.
  * Must be called synchronously — no async operations inside.
  */
-function activateKillSwitch(reason: string): void {
+export function activateKillSwitch(reason: string): void {
   if (killSwitchTripped) return; // Already tripped
 
   killSwitchTripped = true;
@@ -556,6 +610,38 @@ export function isKillSwitchActive(): boolean {
 
 export function getKillSwitchReason(): string {
   return killSwitchTripped ? killSwitchReason : circuitBreakerReason;
+}
+
+/**
+ * Unified kill switch monitoring check. Calls all individual trigger checks synchronously.
+ * No async operations, no API calls — all checks read from internally tracked state.
+ * Returns immediately on first tripped trigger (short-circuit).
+ */
+export function runKillSwitchChecks(): { tripped: boolean; trigger?: string } {
+  if (killSwitchTripped) return { tripped: false };
+
+  if (isApiUnavailable()) {
+    activateKillSwitch("API unavailable: no data for >60s");
+    return { tripped: true, trigger: "API_UNAVAILABLE" };
+  }
+  if (isCorruptData()) {
+    activateKillSwitch("Corrupt data: price moved >50% in one tick");
+    return { tripped: true, trigger: "CORRUPT_DATA" };
+  }
+  if (isMassiveSpread()) {
+    activateKillSwitch("Massive spread detected");
+    return { tripped: true, trigger: "MASSIVE_SPREAD" };
+  }
+  if (isExtremeVolatility()) {
+    activateKillSwitch("Extreme volatility: ATR >5x normal");
+    return { tripped: true, trigger: "EXTREME_VOLATILITY" };
+  }
+  if (isNewsShock()) {
+    activateKillSwitch("News shock: sentiment swing >80 points");
+    return { tripped: true, trigger: "NEWS_SHOCK" };
+  }
+
+  return { tripped: false };
 }
 
 // ── Server Functions ────────────────────────────────────────────────

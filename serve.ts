@@ -15,6 +15,7 @@ import { CHAINS } from "./src/lib/chains";
 import { agentBus } from "./src/lib/agent-bus";
 import { runMigrations } from "./src/lib/db/migrations";
 import { initPriceContext, getState as getPriceState } from "./src/lib/ws/price-context";
+import { runKillSwitchChecks } from "./src/lib/risk-engine";
 import type { AgentBusEvent, AgentBusEvents } from "./src/lib/agent-bus";
 import type { ServerWebSocket } from "bun";
 
@@ -117,6 +118,16 @@ runMigrations().catch((err) => {
 
 initPriceContext();
 console.log("[MarketData] Real-time price streams initializing...");
+
+// ── Kill Switch Monitoring Loop ───────────────────────────────────────
+
+setInterval(() => {
+  try {
+    runKillSwitchChecks();
+  } catch (e) {
+    console.error("[KILL SWITCH] Monitor error:", e);
+  }
+}, 1000);
 
 // ── Start orchestrator ───────────────────────────────────────────────
 

@@ -19,7 +19,7 @@ import {
 import { injected, walletConnect, coinbaseWallet, metaMask, safe } from "@wagmi/connectors";
 
 // NOTE: Replace this with a real WalletConnect Cloud project ID from https://cloud.walletconnect.com
-const WALLETCONNECT_PROJECT_ID = "9b1a52d8e5b9c5a0f1c3d5e7f9a1b3c5d";
+const WALLETCONNECT_PROJECT_ID = "18a7b642a20b0d109a8de743b53ccb0b";
 
 export const config = createConfig({
   chains: [

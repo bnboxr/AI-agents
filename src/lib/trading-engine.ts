@@ -6,6 +6,7 @@ import { getApiKey } from "~/lib/api-keys";
 import { getRiskStateRaw } from "~/lib/risk-engine";
 import { agentBus } from "~/lib/agent-bus";
 import { sql, isDbAvailable } from "~/lib/db";
+import { getPrice } from "~/lib/ws/price-context";
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -145,6 +146,18 @@ function fallbackAnalysis(priceData: { change24h: number; high24h: number; low24
   if (priceData.change24h > 5) return { direction: "LONG", confidence: 60, reasoning: `Strong upward momentum: +${priceData.change24h}% in 24h` };
   if (priceData.change24h < -5) return { direction: "SHORT", confidence: 60, reasoning: `Strong downward momentum: ${priceData.change24h}% in 24h` };
   return { direction: null, confidence: 30, reasoning: "No clear signal — sideways market" };
+}
+
+// ── Live Price Access ──────────────────────────────────────────────
+
+/**
+ * Get the current live price for a token from the real-time WebSocket cache.
+ * Falls back to the provided default if no live data is available yet.
+ */
+export function getCurrentPrice(token: string, fallback?: number): number | null {
+  const price = getPrice(token);
+  if (price !== null) return price;
+  return fallback ?? null;
 }
 
 // ── Server Functions ───────────────────────────────────────────────

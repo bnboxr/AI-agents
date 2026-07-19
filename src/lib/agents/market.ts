@@ -1,5 +1,6 @@
 // ── Market Analysis Agent ─────────────────────────────────────────
 import { BaseAgent } from "./base";
+import { getPrice } from "../ws/price-context";
 
 export interface OHLCVBar {
   timestamp: number;
@@ -31,6 +32,14 @@ export class MarketAnalysisAgent extends BaseAgent {
       role: "market",
       systemPrompt: SYSTEM_PROMPT,
     });
+  }
+
+  /**
+   * Get the current live price for a token from the real-time WebSocket feed.
+   * Falls back to null if no live data is available.
+   */
+  static getLivePrice(token: string): number | null {
+    return getPrice(token);
   }
 
   protected buildUserPrompt(context: {

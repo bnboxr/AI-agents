@@ -14,6 +14,7 @@ import { getAgentState, getActivities } from "./src/lib/agent-runner";
 import { CHAINS } from "./src/lib/chains";
 import { agentBus } from "./src/lib/agent-bus";
 import { runMigrations } from "./src/lib/db/migrations";
+import { initPriceContext, getState as getPriceState } from "./src/lib/ws/price-context";
 import type { AgentBusEvent, AgentBusEvents } from "./src/lib/agent-bus";
 import type { ServerWebSocket } from "bun";
 
@@ -95,11 +96,13 @@ function startHeartbeat(): void {
   heartbeatId = setInterval(() => {
     const state = getState();
     const statuses = CHAINS.map((c) => getAgentState(c.id));
+    const marketState = getPriceState();
     broadcast({
       type: "heartbeat",
       timestamp: Date.now(),
       orchestrator: state,
       statuses,
+      marketData: marketState,
     });
   }, 10_000);
 }
@@ -109,6 +112,11 @@ function startHeartbeat(): void {
 runMigrations().catch((err) => {
   console.error("[DB] Migration runner failed:", err);
 });
+
+// ── Start real-time market data (Binance WebSocket) ──────────────────
+
+initPriceContext();
+console.log("[MarketData] Real-time price streams initializing...");
 
 // ── Start orchestrator ───────────────────────────────────────────────
 

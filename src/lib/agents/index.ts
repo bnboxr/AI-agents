@@ -8,6 +8,7 @@ export type { OHLCVBar } from "./market";
 
 export { TechnicalAnalysisAgent } from "./technical";
 export type { TechnicalIndicators } from "./technical";
+export { computeLiveIndicators } from "./technical";
 
 export { RiskManagementAgent } from "./risk";
 export type { RiskAssessment } from "./risk";

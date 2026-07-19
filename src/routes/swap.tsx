@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
-import { useAccount, useChainId, useReadContract, useSwitchChain } from "wagmi";
+import { useAccount, useChainId, useReadContract } from "wagmi";
 import { parseUnits, formatUnits, type Address } from "viem";
 import { getChainTokens, type TokenInfo } from "~/lib/web3";
 
@@ -45,7 +45,6 @@ export const Route = createFileRoute("/swap")({
 function SwapPage() {
   const { address, isConnected } = useAccount();
   const chainId = useChainId();
-  const { switchChain } = useSwitchChain();
   const [mounted, setMounted] = useState(false);
   const [sellToken, setSellToken] = useState<TokenInfo | null>(null);
   const [buyToken, setBuyToken] = useState<TokenInfo | null>(null);

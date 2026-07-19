@@ -16,6 +16,7 @@ import { ExecutionAgent, type ExecutionResult } from "./execution";
 import { PortfolioAgent, type PortfolioSnapshot } from "./portfolio";
 import { ReasoningAgent, type ExplanationResult } from "./reasoning";
 import { SmartMoneyAgent, type SmartMoneyPatterns } from "./smart-money";
+import { LiquidityAgent, subscribeOrderBook, type LiquidityAnalysis } from "./liquidity";
 import type {
   AgentReport,
   AgentRole,
@@ -39,6 +40,7 @@ const executionAgent = new ExecutionAgent();
 const portfolioAgent = new PortfolioAgent();
 const reasoningAgent = new ReasoningAgent();
 const smartMoneyAgent = new SmartMoneyAgent();
+const liquidityAgent = new LiquidityAgent();
 
 // ── Scoring Weights ───────────────────────────────────────────────
 
@@ -57,6 +59,7 @@ const ROLE_WEIGHTS: Record<AgentRole, number> = {
   reasoning: 0,
   exit: 0,
   smart_money: 0.12,
+  liquidity: 0.11,
 };
 
 // ── In-memory report store ────────────────────────────────────────
@@ -320,6 +323,59 @@ async function gatherReports(ctx: PriceContext): Promise<AgentReport[]> {
       direction: "NEUTRAL",
       confidence: 50,
       reasoning: "Insufficient OHLCV data for Smart Money analysis (need 20+ candles).",
+      data: {},
+    });
+  }
+
+  // ── Liquidity Agent: Order Book & Depth Analysis ────────────────
+  try {
+    // Ensure order book subscription for this token
+    const tokenSymbol = ctx.token.toUpperCase();
+    subscribeOrderBook(tokenSymbol);
+
+    // Wait briefly for any initial order book data to arrive
+    // (the WebSocket is async, but we work with whatever we have)
+    const liquidityAnalysis = liquidityAgent.analyzeLiquidity(
+      tokenSymbol,
+      ctx.currentPrice,
+      ctx.ohlcv,
+      // Use a default position size based on capital
+      tradingState.capital * 0.01, // 1% of capital as reference
+    );
+
+    const liquidityReport = await liquidityAgent.analyzeMarket({
+      token: ctx.token,
+      chainId: ctx.chainId,
+      currentPrice: ctx.currentPrice,
+      analysis: liquidityAnalysis,
+      positionSizeUSD: tradingState.capital * 0.01,
+    });
+
+    // Attach raw analysis data to the report
+    liquidityReport.data = {
+      ...liquidityReport.data,
+      hasOrderBook: liquidityAnalysis.orderBook !== null,
+      staleOrderBook: liquidityAnalysis.staleOrderBook,
+      imbalance: liquidityAnalysis.imbalance?.imbalance ?? 0,
+      imbalanceSignificant: liquidityAnalysis.imbalance?.significant ?? false,
+      liquidityZones: liquidityAnalysis.liquidityZones.length,
+      nearestZoneDistance: liquidityAnalysis.liquidityZones[0]?.proximity ?? null,
+      sweeps: liquidityAnalysis.sweeps.length,
+      slippagePct: liquidityAnalysis.slippage?.slippagePct ?? null,
+      slippageFlagged: liquidityAnalysis.slippage?.flagged ?? false,
+      icebergDetected: liquidityAnalysis.icebergSpoofing.icebergDetected,
+      spoofingDetected: liquidityAnalysis.icebergSpoofing.spoofingDetected,
+      rawAnalysis: liquidityAnalysis,
+    };
+    reports.push(liquidityReport);
+  } catch {
+    reports.push({
+      agentId: "liquidity-agent",
+      role: "liquidity",
+      timestamp: Date.now(),
+      direction: "NEUTRAL",
+      confidence: 0,
+      reasoning: "Liquidity analysis unavailable.",
       data: {},
     });
   }
@@ -1026,5 +1082,6 @@ export {
   executionAgent,
   portfolioAgent,
   reasoningAgent,
+  liquidityAgent,
 };
 export type { PriceContext };

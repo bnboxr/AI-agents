@@ -107,8 +107,8 @@ export class BaseAgent {
   /** Normalize direction strings from the LLM. */
   protected normalizeDirection(raw: string): "LONG" | "SHORT" | "NEUTRAL" {
     const d = String(raw || "").toUpperCase().trim();
-    if (d === "LONG" || d === "BUY") return "LONG";
-    if (d === "SHORT" || d === "SELL") return "SHORT";
+    if (d === "LONG" || d === "BUY" || d === "BULLISH") return "LONG";
+    if (d === "SHORT" || d === "SELL" || d === "BEARISH") return "SHORT";
     return "NEUTRAL";
   }
 

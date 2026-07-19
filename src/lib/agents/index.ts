@@ -56,6 +56,18 @@ export type {
   SmartMoneyPatterns,
 } from "./smart-money";
 
+export { LiquidityAgent, getOrderBook, subscribeOrderBook } from "./liquidity";
+export type {
+  OrderBook,
+  OrderBookLevel,
+  LiquidityZone,
+  LiquiditySweep,
+  ImbalanceResult,
+  SlippageEstimate,
+  IcebergSpoofingResult,
+  LiquidityAnalysis,
+} from "./liquidity";
+
 export {
   runAgentAnalysis,
   getAgentReports,
@@ -75,6 +87,7 @@ export {
   executionAgent,
   portfolioAgent,
   reasoningAgent,
+  liquidityAgent,
 } from "./orchestrator";
 export type { PriceContext } from "./orchestrator";
 

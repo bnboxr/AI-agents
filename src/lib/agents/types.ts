@@ -14,7 +14,8 @@ export type AgentRole =
   | "memory"
   | "reasoning"
   | "exit"
-  | "smart_money";
+  | "smart_money"
+  | "liquidity";
 
 export interface AgentReport {
   agentId: string;

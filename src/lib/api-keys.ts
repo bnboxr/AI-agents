@@ -238,7 +238,14 @@ export const testApiKey = createServerFn({ method: "POST" }).handler(
 // ── Raw key access (for internal service use) ──────────────────────
 
 export function getApiKey(service: ServiceName): string | null {
-  return apiKeys.get(service) ?? null;
+  const stored = apiKeys.get(service);
+  if (stored) return stored;
+  // Fallback: read from environment variable
+  const envMap: Record<string, string> = {
+    openai: process.env.OPENAI_API_KEY || "",
+    anthropic: process.env.ANTHROPIC_API_KEY || "",
+  };
+  return envMap[service] || null;
 }
 
 // ── RPC management ─────────────────────────────────────────────────

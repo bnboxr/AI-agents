@@ -1,10 +1,8 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { WagmiProvider, useAccount, useConnect, useDisconnect, useBalance } from "wagmi";
 import { formatUnits } from "viem";
-import { useState, useEffect, useMemo, type ReactNode } from "react";
+import { useState, useEffect, useMemo, useCallback, type ReactNode } from "react";
 import { config, WALLET_LIST, type WalletMeta } from "~/lib/web3";
-
-const queryClient = new QueryClient();
 
 // ── Auto-popup localStorage ──────────────────────────────────────
 const POPUP_KEY = "paun_wallet_popup_dismissed";
@@ -21,6 +19,11 @@ function dismissPopup() {
 
 // ── Provider ─────────────────────────────────────────────────────
 export function WalletProvider({ children }: { children: ReactNode }) {
+  const [queryClient] = useState(() => new QueryClient({
+    defaultOptions: {
+      queries: { retry: 0, refetchOnWindowFocus: false },
+    },
+  }));
   return (
     <WagmiProvider config={config} reconnectOnMount={true}>
       <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
@@ -80,42 +83,108 @@ function WalletModal({ onClose, onConnectLater }: { onClose: () => void; onConne
   const [mounted, setMounted] = useState(false);
   useEffect(() => { setMounted(true); }, []);
 
-  // Categorize
+  // Categorize wallets based on available connectors
   const { installed, qr, notDetected } = useMemo(() => {
-    const inst: WalletMeta[] = [], q: WalletMeta[] = [];
+    const inst: WalletMeta[] = [];
+    const q: WalletMeta[] = [];
     const connIds = new Set(availableConnectors.map(c => c.id));
+    const connNames = availableConnectors.map(c => c.name.toLowerCase());
+    const connRdns = availableConnectors.flatMap(c => (c as any).rdns || []).map((r: string) => r.toLowerCase());
 
     for (const w of WALLET_LIST) {
-      let detected = false;
-      if (connIds.has(w.id)) detected = true;
-      if ((w.category === "injected" || w.category === "sdk") && !detected) {
-        for (const c of availableConnectors) {
-          if (c.type === "injected") {
-            const cn = c.name.toLowerCase(), wn = w.name.toLowerCase(), wr = w.rdns?.toLowerCase() || "";
-            if (cn.includes(wn) || wn.includes(cn) || (w.rdns && c.id.includes(wr)) || c.id === w.id) { detected = true; break; }
-          }
+      // Exact ID match
+      if (connIds.has(w.id)) {
+        if (w.category === "walletconnect" || w.category === "hardware") {
+          q.push(w);
+        } else {
+          inst.push(w);
+        }
+        continue;
+      }
+      // Match by rdns
+      if (w.rdns && connRdns.includes(w.rdns.toLowerCase())) {
+        inst.push(w);
+        continue;
+      }
+      // Match by name
+      if (connNames.some(n => n.includes(w.name.toLowerCase()) || w.name.toLowerCase().includes(n))) {
+        inst.push(w);
+        continue;
+      }
+      // WalletConnect and hardware always go to QR section
+      if (w.category === "walletconnect" || w.category === "hardware") {
+        q.push(w);
+        continue;
+      }
+      // Injected wallets that weren't detected — check if any injected connector exists
+      if (w.category === "injected" || w.category === "sdk") {
+        const hasInjectedConnector = availableConnectors.some(c => c.type === "injected");
+        if (hasInjectedConnector) {
+          inst.push(w); // can connect via generic injected connector
+          continue;
         }
       }
-      if (w.category === "walletconnect" || w.category === "hardware") { q.push(w); continue; }
-      if (detected) inst.push(w);
     }
-    const nd = WALLET_LIST.filter(w => w.category !== "walletconnect" && w.category !== "hardware" && !inst.some(i => i.id === w.id));
+    const nd = WALLET_LIST.filter(
+      w => !inst.some(i => i.id === w.id) && !q.some(i => i.id === w.id)
+    );
     return { installed: inst, qr: q, notDetected: nd };
   }, [availableConnectors]);
 
-  const doConnect = async (wallet: WalletMeta) => {
+  const doConnect = useCallback(async (wallet: WalletMeta) => {
     setConnecting(wallet.id);
     try {
+      // Strategy: try to find the best connector for this wallet
       let c = availableConnectors.find(x => x.id === wallet.id);
-      if (!c && (wallet.category === "injected")) c = availableConnectors.find(x => x.type === "injected" && (x.name.toLowerCase().includes(wallet.name.toLowerCase()) || (wallet.rdns && x.id.includes(wallet.rdns))));
-      if (!c && (wallet.category === "injected")) c = availableConnectors.find(x => x.type === "injected");
-      if (!c && (wallet.category === "walletconnect" || wallet.category === "hardware")) c = availableConnectors.find(x => x.id === "walletConnect" || x.id === "safe");
-      if (!c && wallet.category === "sdk") c = availableConnectors.find(x => x.id.includes(wallet.id));
-      if (c) { await connect({ connector: c }); onClose(); }
-      else console.warn(`No connector for ${wallet.name}`);
-    } catch (e: any) { console.error(e); }
-    setConnecting(null);
-  };
+      
+      // Try rdns match
+      if (!c && wallet.rdns) {
+        c = availableConnectors.find(x => {
+          const xRdns: string[] = (x as any).rdns || [];
+          return xRdns.some((r: string) => r.toLowerCase() === wallet.rdns!.toLowerCase());
+        });
+      }
+      
+      // Try name match
+      if (!c) {
+        c = availableConnectors.find(x =>
+          x.name.toLowerCase().includes(wallet.name.toLowerCase()) ||
+          wallet.name.toLowerCase().includes(x.name.toLowerCase())
+        );
+      }
+      
+      // Fallback: injected wallets use the generic injected connector
+      if (!c && (wallet.category === "injected" || wallet.category === "sdk")) {
+        c = availableConnectors.find(x => x.type === "injected");
+      }
+      
+      // Fallback: WalletConnect category uses walletConnect connector
+      if (!c && wallet.category === "walletconnect") {
+        c = availableConnectors.find(x => x.id === "walletConnect");
+      }
+      
+      // Fallback: hardware category uses safe connector as a last resort
+      if (!c && wallet.category === "hardware") {
+        c = availableConnectors.find(x => x.id === "safe");
+      }
+
+      if (c) {
+        await connect({ connector: c });
+        onClose();
+      } else {
+        console.warn(`No connector found for ${wallet.name} (id: ${wallet.id})`);
+      }
+    } catch (e: any) {
+      // User rejection is expected, don't treat as error
+      if (e?.name === "UserRejectedRequestError" || e?.code === "ACTION_REJECTED" || e?.message?.includes("rejected")) {
+        console.log("User rejected wallet connection");
+      } else {
+        console.error("Wallet connection error:", e);
+      }
+    } finally {
+      setConnecting(null);
+    }
+  }, [availableConnectors, connect, onClose]);
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 wallet-overlay" onClick={e => { if ((e.target as HTMLElement).classList.contains("wallet-overlay")) onClose(); }}>

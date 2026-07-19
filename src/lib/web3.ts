@@ -68,10 +68,9 @@ export interface WalletMeta {
 }
 
 export const WALLET_LIST: WalletMeta[] = [
-  { id: "metaMask",        name: "MetaMask",       icon: "🦊", rdns: "io.metamask",         installUrl: "https://metamask.io/download/",       category: "injected" },
-  { id: "metaMaskSDK",     name: "MetaMask SDK",   icon: "🦊", rdns: "io.metamask",         installUrl: "https://metamask.io/download/",       category: "sdk" },
+  { id: "metaMaskSDK",     name: "MetaMask",       icon: "🦊", rdns: "io.metamask",         installUrl: "https://metamask.io/download/",       category: "injected" },
   { id: "rabby",           name: "Rabby",          icon: "🦎", rdns: "io.rabby",            installUrl: "https://rabby.io/",                   category: "injected" },
-  { id: "coinbaseWallet",  name: "Coinbase Wallet", icon: "🔵", rdns: "com.coinbase.wallet", installUrl: "https://www.coinbase.com/wallet",      category: "sdk" },
+  { id: "coinbaseWalletSDK", name: "Coinbase Wallet", icon: "🔵", rdns: "com.coinbase.wallet", installUrl: "https://www.coinbase.com/wallet",    category: "sdk" },
   { id: "rainbow",         name: "Rainbow",        icon: "🌈", rdns: "me.rainbow",           installUrl: "https://rainbow.me/",                 category: "injected" },
   { id: "phantom",         name: "Phantom",        icon: "👻", rdns: "app.phantom",          installUrl: "https://phantom.app/",                category: "injected" },
   { id: "okx",             name: "OKX Wallet",     icon: "🟢", rdns: "com.okex.wallet",      installUrl: "https://www.okx.com/web3",            category: "injected" },

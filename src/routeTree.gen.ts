@@ -10,12 +10,16 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as WithdrawRouteImport } from './routes/withdraw'
+import { Route as VaultRouteImport } from './routes/vault'
 import { Route as SwapRouteImport } from './routes/swap'
+import { Route as StakeRouteImport } from './routes/stake'
 import { Route as PortfolioRouteImport } from './routes/portfolio'
 import { Route as EarnRouteImport } from './routes/earn'
 import { Route as ContractsRouteImport } from './routes/contracts'
 import { Route as ChainsRouteImport } from './routes/chains'
 import { Route as ArbitrageRouteImport } from './routes/arbitrage'
+import { Route as AnalyticsRouteImport } from './routes/analytics'
+import { Route as AgentsRouteImport } from './routes/agents'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ChainsChainIdRouteImport } from './routes/chains.$chainId'
 
@@ -24,9 +28,19 @@ const WithdrawRoute = WithdrawRouteImport.update({
   path: '/withdraw',
   getParentRoute: () => rootRouteImport,
 } as any)
+const VaultRoute = VaultRouteImport.update({
+  id: '/vault',
+  path: '/vault',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SwapRoute = SwapRouteImport.update({
   id: '/swap',
   path: '/swap',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const StakeRoute = StakeRouteImport.update({
+  id: '/stake',
+  path: '/stake',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PortfolioRoute = PortfolioRouteImport.update({
@@ -54,6 +68,16 @@ const ArbitrageRoute = ArbitrageRouteImport.update({
   path: '/arbitrage',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AnalyticsRoute = AnalyticsRouteImport.update({
+  id: '/analytics',
+  path: '/analytics',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AgentsRoute = AgentsRouteImport.update({
+  id: '/agents',
+  path: '/agents',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -67,35 +91,47 @@ const ChainsChainIdRoute = ChainsChainIdRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/agents': typeof AgentsRoute
+  '/analytics': typeof AnalyticsRoute
   '/arbitrage': typeof ArbitrageRoute
   '/chains': typeof ChainsRouteWithChildren
   '/contracts': typeof ContractsRoute
   '/earn': typeof EarnRoute
   '/portfolio': typeof PortfolioRoute
+  '/stake': typeof StakeRoute
   '/swap': typeof SwapRoute
+  '/vault': typeof VaultRoute
   '/withdraw': typeof WithdrawRoute
   '/chains/$chainId': typeof ChainsChainIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/agents': typeof AgentsRoute
+  '/analytics': typeof AnalyticsRoute
   '/arbitrage': typeof ArbitrageRoute
   '/chains': typeof ChainsRouteWithChildren
   '/contracts': typeof ContractsRoute
   '/earn': typeof EarnRoute
   '/portfolio': typeof PortfolioRoute
+  '/stake': typeof StakeRoute
   '/swap': typeof SwapRoute
+  '/vault': typeof VaultRoute
   '/withdraw': typeof WithdrawRoute
   '/chains/$chainId': typeof ChainsChainIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/agents': typeof AgentsRoute
+  '/analytics': typeof AnalyticsRoute
   '/arbitrage': typeof ArbitrageRoute
   '/chains': typeof ChainsRouteWithChildren
   '/contracts': typeof ContractsRoute
   '/earn': typeof EarnRoute
   '/portfolio': typeof PortfolioRoute
+  '/stake': typeof StakeRoute
   '/swap': typeof SwapRoute
+  '/vault': typeof VaultRoute
   '/withdraw': typeof WithdrawRoute
   '/chains/$chainId': typeof ChainsChainIdRoute
 }
@@ -103,46 +139,62 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/agents'
+    | '/analytics'
     | '/arbitrage'
     | '/chains'
     | '/contracts'
     | '/earn'
     | '/portfolio'
+    | '/stake'
     | '/swap'
+    | '/vault'
     | '/withdraw'
     | '/chains/$chainId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/agents'
+    | '/analytics'
     | '/arbitrage'
     | '/chains'
     | '/contracts'
     | '/earn'
     | '/portfolio'
+    | '/stake'
     | '/swap'
+    | '/vault'
     | '/withdraw'
     | '/chains/$chainId'
   id:
     | '__root__'
     | '/'
+    | '/agents'
+    | '/analytics'
     | '/arbitrage'
     | '/chains'
     | '/contracts'
     | '/earn'
     | '/portfolio'
+    | '/stake'
     | '/swap'
+    | '/vault'
     | '/withdraw'
     | '/chains/$chainId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AgentsRoute: typeof AgentsRoute
+  AnalyticsRoute: typeof AnalyticsRoute
   ArbitrageRoute: typeof ArbitrageRoute
   ChainsRoute: typeof ChainsRouteWithChildren
   ContractsRoute: typeof ContractsRoute
   EarnRoute: typeof EarnRoute
   PortfolioRoute: typeof PortfolioRoute
+  StakeRoute: typeof StakeRoute
   SwapRoute: typeof SwapRoute
+  VaultRoute: typeof VaultRoute
   WithdrawRoute: typeof WithdrawRoute
 }
 
@@ -155,11 +207,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WithdrawRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/vault': {
+      id: '/vault'
+      path: '/vault'
+      fullPath: '/vault'
+      preLoaderRoute: typeof VaultRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/swap': {
       id: '/swap'
       path: '/swap'
       fullPath: '/swap'
       preLoaderRoute: typeof SwapRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/stake': {
+      id: '/stake'
+      path: '/stake'
+      fullPath: '/stake'
+      preLoaderRoute: typeof StakeRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/portfolio': {
@@ -197,6 +263,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ArbitrageRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/analytics': {
+      id: '/analytics'
+      path: '/analytics'
+      fullPath: '/analytics'
+      preLoaderRoute: typeof AnalyticsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/agents': {
+      id: '/agents'
+      path: '/agents'
+      fullPath: '/agents'
+      preLoaderRoute: typeof AgentsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -227,12 +307,16 @@ const ChainsRouteWithChildren =
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AgentsRoute: AgentsRoute,
+  AnalyticsRoute: AnalyticsRoute,
   ArbitrageRoute: ArbitrageRoute,
   ChainsRoute: ChainsRouteWithChildren,
   ContractsRoute: ContractsRoute,
   EarnRoute: EarnRoute,
   PortfolioRoute: PortfolioRoute,
+  StakeRoute: StakeRoute,
   SwapRoute: SwapRoute,
+  VaultRoute: VaultRoute,
   WithdrawRoute: WithdrawRoute,
 }
 export const routeTree = rootRouteImport

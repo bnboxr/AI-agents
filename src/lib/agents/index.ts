@@ -35,6 +35,15 @@ export type { StoredDecision, SimilarTrade } from "./memory";
 export { ExitAgent } from "./exit";
 export type { ExitContext, ExitResult } from "./exit";
 
+export { ExecutionAgent } from "./execution";
+export type { ExecutionMode, ExecutionResult } from "./execution";
+
+export { PortfolioAgent } from "./portfolio";
+export type { PortfolioSnapshot, PortfolioPosition, PortfolioMetrics } from "./portfolio";
+
+export { ReasoningAgent } from "./reasoning";
+export type { ExplanationResult } from "./reasoning";
+
 export {
   runAgentAnalysis,
   getAgentReports,
@@ -51,6 +60,9 @@ export {
   learningAgent,
   memoryAgent,
   exitAgent,
+  executionAgent,
+  portfolioAgent,
+  reasoningAgent,
 } from "./orchestrator";
 export type { PriceContext } from "./orchestrator";
 

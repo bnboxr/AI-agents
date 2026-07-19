@@ -1,6 +1,6 @@
 // ── Multi-Agent Orchestrator ─────────────────────────────────────
 // Gathers reports from all agents, scores them, and produces a final decision.
-// Integrates Learning, Memory, and Exit agents into the decision pipeline.
+// Integrates Learning, Memory, Exit, Execution, Portfolio, and Reasoning agents.
 
 import { createServerFn } from "@tanstack/react-start";
 import { MarketAnalysisAgent, type OHLCVBar } from "./market";
@@ -12,6 +12,9 @@ import { PatternRecognitionAgent } from "./pattern";
 import { LearningAgent, type MarketCondition } from "./learning";
 import { MemoryAgent } from "./memory";
 import { ExitAgent, type ExitContext } from "./exit";
+import { ExecutionAgent, type ExecutionResult } from "./execution";
+import { PortfolioAgent, type PortfolioSnapshot } from "./portfolio";
+import { ReasoningAgent, type ExplanationResult } from "./reasoning";
 import type {
   AgentReport,
   AgentRole,
@@ -30,6 +33,9 @@ const patternAgent = new PatternRecognitionAgent();
 const learningAgent = new LearningAgent();
 const memoryAgent = new MemoryAgent();
 const exitAgent = new ExitAgent();
+const executionAgent = new ExecutionAgent();
+const portfolioAgent = new PortfolioAgent();
+const reasoningAgent = new ReasoningAgent();
 
 // ── Scoring Weights ───────────────────────────────────────────────
 
@@ -575,10 +581,102 @@ export const runAgentAnalysis = createServerFn({ method: "POST" }).handler(
     reports: AgentReport[];
     decision: OrchestratorDecision;
     state: TradingState;
+    execution?: ExecutionResult;
+    portfolio?: PortfolioSnapshot;
+    explanation?: string;
   }> => {
     const reports = await gatherReports(data);
     const decision = makeDecision(reports, tradingState, data);
-    return { reports, decision, state: { ...tradingState } };
+
+    // ── Execution Agent: execute the decision ──────────────────
+    let execution: ExecutionResult | undefined;
+    if (
+      decision.action === "BUY" ||
+      decision.action === "SELL" ||
+      decision.action === "EXIT"
+    ) {
+      try {
+        execution = await executionAgent.executeDecision(
+          decision,
+          data.currentPrice,
+          data.chainId || "unknown",
+          data.token,
+        );
+
+        // Generate execution report (non-blocking)
+        executionAgent
+          .generateExecutionReport(execution, decision)
+          .catch(() => {
+            /* best-effort */
+          });
+
+        // If trade was executed, record in portfolio agent
+        if (execution.success && execution.side !== "EXIT") {
+          portfolioAgent.recordTradeResult(
+            decision.action === "BUY"
+              ? ((data.currentPrice - data.currentPrice) / data.currentPrice) * 100 // PnL will be updated on close
+              : 0,
+          );
+        }
+      } catch {
+        // Execution is best-effort; don't block the pipeline
+      }
+    }
+
+    // ── Portfolio Agent: review portfolio state ────────────────
+    let portfolio: PortfolioSnapshot | undefined;
+    try {
+      // Collect open positions from execution agent tracking
+      const openPositions: {
+        id: string;
+        token: string;
+        chainId: string;
+        direction: "LONG" | "SHORT";
+        size: number;
+        entryPrice: number;
+        currentPrice: number;
+        pnl: number;
+        pnlPct: number;
+      }[] = [];
+
+      // Portfolio review (non-blocking for report generation)
+      const portfolioReport = await portfolioAgent.reviewPortfolio(
+        tradingState,
+        openPositions,
+      );
+      portfolio = portfolioReport.data?.snapshot as PortfolioSnapshot | undefined;
+
+      // Attach portfolio report to reports array
+      reports.push(portfolioReport);
+    } catch {
+      // Portfolio review is best-effort
+    }
+
+    // ── Reasoning Agent: generate explanation ──────────────────
+    let explanation: string | undefined;
+    try {
+      const explanationResult = await reasoningAgent.explainDecision(
+        decision,
+        data.token,
+      );
+      explanation = explanationResult.explanation;
+
+      // Attach reasoning report to reports array
+      const reasoningReport =
+        await reasoningAgent.generateReasoningReport(explanationResult);
+      reports.push(reasoningReport);
+    } catch {
+      // Reasoning is best-effort
+    }
+
+    return {
+      reports,
+      decision,
+      state: { ...tradingState },
+      execution,
+      portfolio,
+      explanation,
+    };
   },
 );
 
@@ -702,6 +800,10 @@ export const recordTradeOutcome = createServerFn({ method: "POST" }).handler(
       lastStoredDecisionId = null;
     }
 
+    // Record trade result in portfolio agent
+    portfolioAgent.recordTradeResult(pnlPct);
+    portfolioAgent.recordEquitySnapshot(tradingState.capital);
+
     // Update trading state
     const isWin = pnlPct > 0;
     tradingState.capital = Math.round((tradingState.capital * (1 + pnlPct / 100)) * 100) / 100;
@@ -780,5 +882,8 @@ export {
   learningAgent,
   memoryAgent,
   exitAgent,
+  executionAgent,
+  portfolioAgent,
+  reasoningAgent,
 };
 export type { PriceContext };

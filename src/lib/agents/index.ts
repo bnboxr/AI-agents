@@ -81,6 +81,9 @@ export type {
   MultiTimeframeAnalysis,
 } from "./multi-timeframe";
 
+export { ProbabilityAgent } from "./probability";
+export type { ProbabilityResult } from "./probability";
+
 export {
   runAgentAnalysis,
   getAgentReports,
@@ -106,6 +109,7 @@ export {
   correlationAgent,
   sentimentAgent,
   volumeAgent,
+  probabilityAgent,
 } from "./orchestrator";
 export type { PriceContext } from "./orchestrator";
 

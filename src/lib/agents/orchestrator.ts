@@ -23,6 +23,7 @@ import { MultiTimeframeAgent, type MultiTimeframeAnalysis } from "./multi-timefr
 import { CorrelationAgent, getCorrelationAgent, type CorrelationMatrix } from "./correlation";
 import { SentimentAgent, getSentimentAgent } from "./sentiment";
 import { getVolumeAgent } from "./volume";
+import { ProbabilityAgent } from "./probability";
 import { isKillSwitchActive, getKillSwitchReason, markApiHealthy, recordLastPrice } from "../risk-engine";
 import type {
   AgentReport,
@@ -53,6 +54,7 @@ const multiTimeframeAgent = new MultiTimeframeAgent();
 const correlationAgent = getCorrelationAgent();
 const sentimentAgent = getSentimentAgent();
 const volumeAgent = getVolumeAgent();
+const probabilityAgent = new ProbabilityAgent();
 
 // ── Scoring Weights ───────────────────────────────────────────────
 
@@ -77,6 +79,7 @@ const ROLE_WEIGHTS: Record<AgentRole, number> = {
   correlation: 0.10,
   sentiment: 0.08,
   volume: 0.09,
+  probability: 0.12,
 };
 
 // ── In-memory report store ────────────────────────────────────────
@@ -634,6 +637,57 @@ async function gatherReports(ctx: PriceContext): Promise<AgentReport[]> {
     direction: tentativeDirection === "NEUTRAL" ? "LONG" : tentativeDirection,
   });
   reports.push(riskReport);
+
+  // ── Probability Agent: Bayesian/Monte Carlo/Kelly ──────────────────
+  try {
+    const probMarketCondition = deriveMarketCondition(ctx, reports);
+    const riskData = riskReport.data as unknown as RiskAssessment | undefined;
+
+    // Feed trade history from learning agent
+    const allTrades = (learningAgent as any).trades ?? [];
+    const conditionStats = (learningAgent as any).conditionStats ?? new Map();
+    probabilityAgent.feedTradeData(allTrades, conditionStats);
+
+    // Derive trend score from existing reports
+    let trendScore = 50;
+    const regimeReport = reports.find((r) => r.role === "regime");
+    if (regimeReport?.data?.trendStrength != null) {
+      trendScore = Number(regimeReport.data.trendStrength);
+    }
+
+    // Run probability pipeline
+    const probResult = probabilityAgent.computeProbability({
+      currentPrice: ctx.currentPrice,
+      atr,
+      trendScore,
+      direction: tentativeDirection === "NEUTRAL" ? "LONG" : tentativeDirection,
+      marketCondition: probMarketCondition,
+      riskData,
+      bars: ctx.ohlcv,
+    });
+
+    // Synthesize with GPT-4o
+    const probReport = await probabilityAgent.synthesize(probResult);
+
+    // Map BULLISH/BEARISH/NEUTRAL to LONG/SHORT/NEUTRAL for downstream compatibility
+    if (probReport.direction === "NEUTRAL" && probResult.direction === "BULLISH") {
+      probReport.direction = "LONG";
+    } else if (probReport.direction === "NEUTRAL" && probResult.direction === "BEARISH") {
+      probReport.direction = "SHORT";
+    }
+
+    reports.push(probReport);
+  } catch {
+    reports.push({
+      agentId: "probability-agent",
+      role: "probability",
+      timestamp: Date.now(),
+      direction: "NEUTRAL",
+      confidence: 0,
+      reasoning: "Probability analysis unavailable.",
+      data: {},
+    });
+  }
 
   // ── Memory Agent: recall similar past trades ─────────────────────
   try {
@@ -1422,5 +1476,6 @@ export {
   correlationAgent,
   sentimentAgent,
   volumeAgent,
+  probabilityAgent,
 };
 export type { PriceContext };

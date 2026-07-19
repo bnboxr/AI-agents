@@ -235,6 +235,12 @@ export const testApiKey = createServerFn({ method: "POST" }).handler(
   },
 );
 
+// ── Raw key access (for internal service use) ──────────────────────
+
+export function getApiKey(service: ServiceName): string | null {
+  return apiKeys.get(service) ?? null;
+}
+
 // ── RPC management ─────────────────────────────────────────────────
 
 export const addRpcEndpoint = createServerFn({ method: "POST" }).handler(

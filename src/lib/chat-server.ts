@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { executeToolCall, type ToolCall } from "~/lib/chat-tools";
 import { listDestinations, type PaymentDestination } from "~/lib/payment-destinations";
+import { getApiKey } from "~/lib/api-keys";
 
 interface ChatMessage {
   role: "user" | "assistant" | "system";
@@ -13,7 +14,111 @@ export interface ChatStreamResponse {
   responseText: string;
 }
 
-function detectTool(messages: ChatMessage[]): string {
+const TOOL_NAMES = [
+  "executeSwap",
+  "getPortfolioValue",
+  "scanOpportunities",
+  "getAgentStatus",
+  "getTokenPrice",
+  "getChainStatus",
+  "configurePaymentDestination",
+];
+
+const SYSTEM_PROMPT = `You are Păun AI, a DeFi assistant. You have access to these tools: ${TOOL_NAMES.join(", ")}. 
+Based on the user's message, determine which single tool to call. 
+Respond with ONLY the tool name — nothing else, no punctuation, no explanation.
+If no tool fits, respond with: getAgentStatus`;
+
+async function detectToolViaLLM(messages: ChatMessage[]): Promise<string | null> {
+  const userMessages = messages.filter(m => m.role === "user");
+  if (!userMessages.length) return null;
+  
+  const lastUserMsg = userMessages[userMessages.length - 1].content;
+  
+  const llmMessages = [
+    { role: "system", content: SYSTEM_PROMPT },
+    { role: "user", content: lastUserMsg },
+  ];
+
+  // Try OpenAI first
+  const openaiKey = getApiKey("openai");
+  if (openaiKey) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10_000);
+      const res = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${openaiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "gpt-4o-mini",
+          messages: llmMessages,
+          temperature: 0.3,
+          max_tokens: 50,
+        }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+
+      if (res.ok) {
+        const data = await res.json() as { choices: Array<{ message: { content: string } }> };
+        const raw = data.choices?.[0]?.message?.content?.trim() ?? "";
+        // Extract just the tool name from the response
+        for (const name of TOOL_NAMES) {
+          if (raw.includes(name)) return name;
+        }
+        // If the raw response matches a tool name exactly, use it
+        const matched = TOOL_NAMES.find(n => raw === n || raw.startsWith(n));
+        if (matched) return matched;
+      }
+    } catch {
+      // OpenAI failed, fall through to Anthropic
+    }
+  }
+
+  // Try Anthropic second
+  const anthropicKey = getApiKey("anthropic");
+  if (anthropicKey) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10_000);
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "x-api-key": anthropicKey,
+          "anthropic-version": "2023-06-01",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "claude-3-haiku-20240307",
+          messages: llmMessages,
+          max_tokens: 50,
+        }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+
+      if (res.ok) {
+        const data = await res.json() as { content: Array<{ text: string }> };
+        const raw = data.content?.[0]?.text?.trim() ?? "";
+        for (const name of TOOL_NAMES) {
+          if (raw.includes(name)) return name;
+        }
+        const matched = TOOL_NAMES.find(n => raw === n || raw.startsWith(n));
+        if (matched) return matched;
+      }
+    } catch {
+      // Anthropic failed
+    }
+  }
+
+  return null;
+}
+
+// Regex fallback when no LLM API key is configured
+function detectToolRegex(messages: ChatMessage[]): string {
   const combined = messages
     .filter(m => m.role === "user").slice(-2)
     .map(m => m.content.toLowerCase()).join(" ");
@@ -170,7 +275,39 @@ export const processChat = createServerFn({ method: "POST" })
   .handler(async ({ data }: { data: { messages: ChatMessage[] } }): Promise<ChatStreamResponse> => {
     const { messages } = data;
     if (!messages?.length) throw new Error("Messages required");
-    const toolName = detectTool(messages);
+
+    // Try LLM detection first, fall back to regex
+    let toolName: string | null = null;
+    let usedLLM = false;
+
+    // Check if any API key is configured
+    const hasOpenAI = !!getApiKey("openai");
+    const hasAnthropic = !!getApiKey("anthropic");
+
+    if (hasOpenAI || hasAnthropic) {
+      toolName = await detectToolViaLLM(messages);
+      if (toolName) usedLLM = true;
+    }
+
+    // Fall back to regex if LLM didn't return a valid tool
+    if (!toolName) {
+      toolName = detectToolRegex(messages);
+    }
+
+    // If no LLM key configured and regex matched default/fallback, be honest
+    if (!usedLLM && !hasOpenAI && !hasAnthropic && toolName === "getAgentStatus") {
+      const userMsg = messages.filter(m => m.role === "user").slice(-1)[0]?.content ?? "";
+      // Only show the no-AI message if the user wasn't clearly asking for agent status
+      const isAgentQuery = /agent|astra|neuron|vortex|spectra|nova|zenith|frost|phantom|oracle|prism/i.test(userMsg);
+      if (!isAgentQuery) {
+        return {
+          toolCall: { id: `call_${Date.now()}_noai`, name: "noop", arguments: {} },
+          toolResult: null,
+          responseText: "No AI model configured. Add an OpenAI or Anthropic API key in Settings to enable AI chat.",
+        };
+      }
+    }
+
     const args = getToolArgs(toolName, messages);
     const id = `call_${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
     const tc: ToolCall = { id, name: toolName, arguments: args };

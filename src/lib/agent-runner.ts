@@ -1,3 +1,6 @@
+// All profit figures are $0 until agents are deployed with real capital
+// and connected to live on-chain scanners. No simulated or mock data.
+
 import { createServerFn } from "@tanstack/react-start";
 import { AGENTS } from "./agents";
 import { CHAINS } from "./chains";
@@ -44,12 +47,12 @@ function initAgentState(chainId: string): AgentStatus {
     chainId,
     agentName: agent?.name ?? 'Unknown',
     icon: agent?.icon ?? '🤖',
-    status: 'active',
-    lastAction: `Monitorizare ${chain?.name ?? chainId} inițiată`,
+    status: 'idle',
+    lastAction: 'Inactive — no scan running',
     lastActionTime: now,
     nextScanTime: now + 60_000,
-    profitGenerated: Math.round(Math.random() * 500 * 100) / 100,
-    transactions: Math.floor(Math.random() * 20),
+    profitGenerated: 0,
+    transactions: 0,
     strategies: agent?.strategies ?? [],
   };
 }
@@ -159,7 +162,8 @@ export async function internalScan(chainId: string): Promise<AgentScanResult> {
   state.nextScanTime = now + 60_000;
   if (opportunities.length > 0) {
     state.transactions += 1;
-    state.profitGenerated += opportunities.reduce((s, o) => s + Math.max(0, o.estimatedProfit * 0.1), 0);
+    // Real profit tracking — currently 0 until agents are live
+    state.profitGenerated += 0;
   }
 
   // Emit status change if it actually changed
@@ -238,16 +242,16 @@ export const getAgentProfitHistory = createServerFn({ method: 'GET' }).handler(a
     if (!agent) continue;
     
     const state = getAgentState(chain.id);
+    // Use actual state profit — until agents are live this is $0
+    const totalProfit = state.profitGenerated;
     const points: { timestamp: number; profit: number }[] = [];
-    let cumulativeProfit = 0;
 
+    // Generate 31 daily data points reflecting actual state (all $0 pre-launch)
     for (let i = 30; i >= 0; i--) {
       const ts = now - (i * dayMs);
-      const dailyProfit = state.profitGenerated / 30 * (0.5 + Math.random());
-      cumulativeProfit += dailyProfit;
       points.push({
         timestamp: ts,
-        profit: Math.round(cumulativeProfit * 100) / 100,
+        profit: totalProfit,
       });
     }
 

@@ -21,39 +21,39 @@ interface DeployedContract {
 
 // ── Păun AI proprietary smart contracts ──────────────────────────
 // These are our own production-grade contracts for autonomous DeFi operations.
-// Addresses are updated post-deployment via the deploy script output.
+// Addresses are empty until deployment. Deployment requires ETH for gas.
 const DEPLOYED_CONTRACTS: DeployedContract[] = [
   {
     name: "PăunAI FlashLoanArbitrage",
-    address: "0x0000000000000000000000000000000000000000", // Updated at deploy time
+    address: "",
     chain: "ethereum",
     type: "Flash Loan Arbitrage",
     description:
       "Atomic arbitrage executor using AAVE V3 flash loans. Routes trades across Uniswap V2 & V3 with slippage protection, reentrancy guards, and owner-controlled risk parameters.",
     verified: false,
-    deployDate: "2026-07-17",
+    deployDate: "—",
     sourceFile: "FlashLoanArbitrage.sol",
   },
   {
     name: "PăunAI CrossChainArbitrage",
-    address: "0x0000000000000000000000000000000000000000",
+    address: "",
     chain: "ethereum",
     type: "Cross-Chain Arbitrage",
     description:
       "Orchestrates cross-chain arbitrage via LayerZero V2 messaging. Detects price discrepancies, buys on chain A, and sends settlement instructions to chain B with rate limiting and circuit breaker.",
     verified: false,
-    deployDate: "2026-07-17",
+    deployDate: "—",
     sourceFile: "CrossChainArbitrage.sol",
   },
   {
     name: "PăunAI YieldOptimizer",
-    address: "0x0000000000000000000000000000000000000000",
+    address: "",
     chain: "ethereum",
     type: "Yield Aggregator",
     description:
       "Auto-compounds and rebalances yield across AAVE V3, Compound V3, and Lido. Features TWAP-based slippage protection, performance fees, and emergency withdrawal. Always routes to the best APY.",
     verified: false,
-    deployDate: "2026-07-17",
+    deployDate: "—",
     sourceFile: "YieldOptimizer.sol",
   },
 ];
@@ -93,6 +93,26 @@ function ContractsPage() {
           </p>
         </section>
 
+        {/* ── Warning Banner ─────────────────────────────── */}
+        <section className="animate-fade-in-up">
+          <div className="card border border-accent-yellow/40 bg-accent-yellow/5 p-4 flex items-start gap-3">
+            <span className="text-xl">⚠️</span>
+            <div>
+              <p className="text-sm font-semibold text-accent-yellow">
+                Contracts not yet deployed
+              </p>
+              <p className="text-xs text-gray-400 mt-0.5">
+                Deployment requires ETH for gas. Contracts are ready in{" "}
+                <code className="text-accent-blue bg-dark-hover px-1 py-0.5 rounded text-[0.7rem]">
+                  src/contracts/
+                </code>{" "}
+                and will be deployed once gas funds are available. No addresses
+                exist on-chain yet.
+              </p>
+            </div>
+          </div>
+        </section>
+
         {/* ── Deployment Stats ─────────────────────────────── */}
         <section className="grid grid-cols-2 sm:grid-cols-4 gap-3 animate-fade-in-up">
           <div className="card p-4 text-center">
@@ -111,7 +131,7 @@ function ContractsPage() {
             <p className="text-2xl font-bold text-accent-yellow text-mono">
               {DEPLOYED_CONTRACTS.length - verifiedCount}
             </p>
-            <p className="text-xs text-gray-400 mt-1">Pending Deploy</p>
+            <p className="text-xs text-gray-400 mt-1">Not Deployed</p>
           </div>
           <div className="card p-4 text-center">
             <p className="text-2xl font-bold text-accent-blue text-mono">
@@ -151,9 +171,9 @@ function ContractsPage() {
                 </span>
                 <span
                   className="col-span-3 text-xs text-mono-sm text-gray-400 truncate"
-                  title={contract.address}
+                  title={contract.address || "Not deployed"}
                 >
-                  {contract.address}
+                  {contract.address || "—"}
                 </span>
                 <span className="col-span-1 text-center">
                   <span
@@ -161,15 +181,14 @@ function ContractsPage() {
                       contract.verified ? "badge-green" : "badge-yellow"
                     }`}
                   >
-                    {contract.verified ? "Verified" : "Pending"}
+                    {contract.verified ? "Verified" : "Not Deployed"}
                   </span>
                 </span>
                 <span className="col-span-2 text-xs text-gray-400 text-mono-sm truncate">
                   {contract.sourceFile}
                 </span>
                 <span className="col-span-1 text-right">
-                  {contract.address !==
-                  "0x0000000000000000000000000000000000000000" ? (
+                  {contract.address !== "" ? (
                     <a
                       href={getExplorerUrl(
                         contract.chain,

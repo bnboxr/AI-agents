@@ -33,6 +33,7 @@ import type {
   OrchestratorDecision,
   TradingState,
 } from "./types";
+import { getApiKey } from "~/lib/api-keys";
 import { sql, isDbAvailable } from "../db";
 
 // ── Agent Registry ────────────────────────────────────────────────
@@ -760,12 +761,156 @@ async function gatherReports(ctx: PriceContext): Promise<AgentReport[]> {
   return reports;
 }
 
+// ── Dialogue Phase ──────────────────────────────────────────────────
+// After gathering reports, top agents are questioned to clarify their
+// reasoning. GPT-4o synthesises a dialogue; confidence scores are
+// adjusted based on the clarity of each response.
+
+async function runDialogue(
+  reports: AgentReport[],
+  context: PriceContext,
+): Promise<{
+  enrichedReports: AgentReport[];
+  dialogueLog: string;
+}> {
+  const apiKey = getApiKey("openai");
+  if (!apiKey) {
+    return { enrichedReports: reports, dialogueLog: "" };
+  }
+
+  // ── Pick top agents by confidence ──────────────────────────────
+  const highConfidence = reports
+    .filter((r) => r.confidence > 60)
+    .sort((a, b) => b.confidence - a.confidence);
+
+  const top: AgentReport[] = highConfidence.slice(0, 3);
+
+  // ── Add conflicting agents (high confidence, opposite direction) ──
+  const scored = scoreDirection(reports);
+  const majorityDir = scored.direction;
+  if (majorityDir !== "NEUTRAL") {
+    for (const r of reports) {
+      if (
+        r.confidence > 50 &&
+        r.direction !== majorityDir &&
+        r.direction !== "NEUTRAL" &&
+        !top.some((t) => t.agentId === r.agentId)
+      ) {
+        top.push(r);
+        if (top.length >= 5) break; // cap at 5 for performance
+      }
+    }
+  }
+
+  const dialogueLines: string[] = [];
+  const enrichedReports: AgentReport[] = reports.map((r) => ({ ...r }));
+
+  for (const agent of top) {
+    try {
+      const systemPrompt =
+        `You are the ${agent.role} agent in an AI hedge fund orchestrator. ` +
+        `You are being questioned to clarify your analysis. Be concise (1-3 sentences). ` +
+        `Respond with JSON: {"direction":"LONG|SHORT|NEUTRAL","confidence":0-100,"reasoning":"..."}`;
+
+      const userPrompt =
+        `You previously analysed this trade (${context.token} @ ${context.currentPrice}) ` +
+        `and gave: direction=${agent.direction}, confidence=${agent.confidence}%. ` +
+        `Your original reasoning: "${agent.reasoning}"\n\n` +
+        `Based on your analysis, is this trade a good idea? Explain briefly.`;
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10_000);
+
+      const res = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "gpt-4o",
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+          temperature: 0.3,
+          max_tokens: 200,
+        }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+
+      if (!res.ok) {
+        dialogueLines.push(
+          `→ ${agent.role}: "${agent.reasoning.slice(0, 80)}"`,
+        );
+        continue;
+      }
+
+      const data = (await res.json()) as {
+        choices: Array<{ message: { content: string } }>;
+      };
+      const text = data.choices?.[0]?.message?.content || "";
+
+      // Parse the structured response
+      let parsedConfidence: number | null = null;
+      let parsedReasoning: string = text;
+      try {
+        const cleaned = text.replace(/```json|```/g, "").trim();
+        const json = JSON.parse(cleaned);
+        parsedConfidence = Number(json.confidence);
+        parsedReasoning = json.reasoning || text;
+      } catch {
+        parsedReasoning = text.slice(0, 120);
+      }
+
+      // Blend confidence: average original + dialogue confidence
+      if (
+        parsedConfidence !== null &&
+        !isNaN(parsedConfidence) &&
+        parsedConfidence >= 0 &&
+        parsedConfidence <= 100
+      ) {
+        const idx = enrichedReports.findIndex(
+          (r) => r.agentId === agent.agentId,
+        );
+        if (idx !== -1) {
+          enrichedReports[idx].confidence = Math.round(
+            (enrichedReports[idx].confidence + parsedConfidence) / 2,
+          );
+          // Use the clarified reasoning if it's non-trivial
+          if (parsedReasoning.length > 10) {
+            enrichedReports[idx].reasoning = parsedReasoning.slice(0, 200);
+          }
+        }
+      }
+
+      dialogueLines.push(
+        `→ ${agent.role}: "${parsedReasoning.slice(0, 120)}"`,
+      );
+    } catch {
+      // GPT-4o call failed — keep original reasoning and confidence
+      dialogueLines.push(
+        `→ ${agent.role}: "${agent.reasoning.slice(0, 80)}"`,
+      );
+    }
+  }
+
+  const dialogueLog =
+    dialogueLines.length > 0
+      ? `🤖 DIALOGUE:\n${dialogueLines.join("\n")}`
+      : "";
+
+  return { enrichedReports, dialogueLog };
+}
+
 // ── Core: Make Decision ───────────────────────────────────────────
 
 function makeDecision(
   reports: AgentReport[],
   state: TradingState,
   priceContext: PriceContext,
+  dialogueLog?: string,
 ): OrchestratorDecision {
   // ── Exit Agent: check if we need to exit an open position ──────
   if (state.openPosition && state.entryPrice !== undefined) {
@@ -854,7 +999,7 @@ function makeDecision(
       positionSize: 0,
       stopLoss: 0,
       takeProfit: 0,
-      reasoning: `ANTI-TILT active: ${state.consecutiveLosses} consecutive losses. Waiting for market conditions to improve.`,
+      reasoning: `${dialogueLog ? dialogueLog + "\n" : ""}ANTI-TILT active: ${state.consecutiveLosses} consecutive losses. Waiting for market conditions to improve.`,
       agentReports: reports,
       timestamp: Date.now(),
     };
@@ -875,7 +1020,7 @@ function makeDecision(
       positionSize: 0,
       stopLoss: 0,
       takeProfit: 0,
-      reasoning: `Learning Agent: avoiding ${marketCondition} conditions due to poor historical performance. ${learningAdjustments.summary}`,
+      reasoning: `${dialogueLog ? dialogueLog + "\n" : ""}Learning Agent: avoiding ${marketCondition} conditions due to poor historical performance. ${learningAdjustments.summary}`,
       agentReports: reports,
       timestamp: Date.now(),
     };
@@ -902,7 +1047,7 @@ function makeDecision(
         positionSize: 0,
         stopLoss: 0,
         takeProfit: 0,
-        reasoning: `🚨 CORRELATION HALT: Severe correlation breakdown detected (divergence score: ${corrMatrixData.divergenceScore}). ${corrReport?.reasoning?.slice(0, 150) ?? "Multiple pairs have broken down — systemic risk elevated."}`,
+        reasoning: `${dialogueLog ? dialogueLog + "\n" : ""}🚨 CORRELATION HALT: Severe correlation breakdown detected (divergence score: ${corrMatrixData.divergenceScore}). ${corrReport?.reasoning?.slice(0, 150) ?? "Multiple pairs have broken down — systemic risk elevated."}`,
         agentReports: reports,
         timestamp: Date.now(),
       };
@@ -913,6 +1058,7 @@ function makeDecision(
   // Owner's most-requested agent. Runs BEFORE final decision.
   // Uses synchronous red-flag detection (rules-based) + optional GPT-4o synthesis.
   // If VETO → override to WAIT/NEUTRAL immediately.
+  let daLine = "";
   try {
     const daContext = {
       token: priceContext.token,
@@ -951,13 +1097,14 @@ function makeDecision(
     // ── VETO: Block trade immediately ──
     if (daResult.veto || daResult.severity === "VETO") {
       const flagReasons = daResult.flags.map((f) => f.label).join(" + ");
+      daLine = `⚠️ devils_advocate: "VETO — ${flagReasons}"`;
       return {
         action: "WAIT",
         confidence: 0,
         positionSize: 0,
         stopLoss: 0,
         takeProfit: 0,
-        reasoning: `🚨 DEVIL'S ADVOCATE VETO: ${daResult.flagCount} red flags — ${flagReasons}. Trade blocked. ${daResult.flags.map((f) => f.detail).join("; ")}`,
+        reasoning: `${dialogueLog ? dialogueLog + "\n" : ""}${daLine}\n→ DECISION: WAIT\n\n🚨 DEVIL'S ADVOCATE VETO: ${daResult.flagCount} red flags — ${flagReasons}. Trade blocked. ${daResult.flags.map((f) => f.detail).join("; ")}`,
         agentReports: reports,
         timestamp: Date.now(),
       };
@@ -966,6 +1113,7 @@ function makeDecision(
     // ── OBJECTION: Reduce position and confidence ──
     if (daResult.severity === "OBJECTION") {
       const flagReasons = daResult.flags.map((f) => f.label).join(" + ");
+      daLine = `⚠️ devils_advocate: "OBJECTION — ${flagReasons}"`;
       // Apply confidence reduction
       const originalConfidence = scored.confidence;
       scored.confidence = Math.max(0, originalConfidence - daResult.confidenceReduction);
@@ -1026,7 +1174,7 @@ function makeDecision(
       positionSize: 0,
       stopLoss: 0,
       takeProfit: 0,
-      reasoning: `Risk level CRITICAL: ${riskData?.reason ?? "Position too risky."}`,
+      reasoning: `${dialogueLog ? dialogueLog + "\n" : ""}${daLine ? daLine + "\n" : ""}→ DECISION: WAIT\n\nRisk level CRITICAL: ${riskData?.reason ?? "Position too risky."}`,
       agentReports: reports,
       timestamp: Date.now(),
     };
@@ -1040,7 +1188,7 @@ function makeDecision(
       positionSize: 0,
       stopLoss: 0,
       takeProfit: 0,
-      reasoning: "No strong directional signal. Holding.",
+      reasoning: `${dialogueLog ? dialogueLog + "\n" : ""}${daLine ? daLine + "\n" : ""}→ DECISION: HOLD\n\nNo strong directional signal. Holding.`,
       agentReports: reports,
       timestamp: Date.now(),
     };
@@ -1064,7 +1212,7 @@ function makeDecision(
         positionSize: 0,
         stopLoss: 0,
         takeProfit: 0,
-        reasoning: `🚫 MULTI-TF BLOCK: Higher timeframe(s) strongly bearish — blocking LONG entries despite ${scored.direction} signal (${scored.confidence}%). ${mtfReport?.reasoning?.slice(0, 100) ?? ""}`,
+        reasoning: `${dialogueLog ? dialogueLog + "\n" : ""}${daLine ? daLine + "\n" : ""}→ DECISION: HOLD\n\n🚫 MULTI-TF BLOCK: Higher timeframe(s) strongly bearish — blocking LONG entries despite ${scored.direction} signal (${scored.confidence}%). ${mtfReport?.reasoning?.slice(0, 100) ?? ""}`,
         agentReports: reports,
         timestamp: Date.now(),
       };
@@ -1076,7 +1224,7 @@ function makeDecision(
         positionSize: 0,
         stopLoss: 0,
         takeProfit: 0,
-        reasoning: `🚫 MULTI-TF BLOCK: Higher timeframe(s) strongly bullish — blocking SHORT entries despite ${scored.direction} signal (${scored.confidence}%). ${mtfReport?.reasoning?.slice(0, 100) ?? ""}`,
+        reasoning: `${dialogueLog ? dialogueLog + "\n" : ""}${daLine ? daLine + "\n" : ""}→ DECISION: HOLD\n\n🚫 MULTI-TF BLOCK: Higher timeframe(s) strongly bullish — blocking SHORT entries despite ${scored.direction} signal (${scored.confidence}%). ${mtfReport?.reasoning?.slice(0, 100) ?? ""}`,
         agentReports: reports,
         timestamp: Date.now(),
       };
@@ -1103,6 +1251,19 @@ function makeDecision(
     );
   }
 
+  // ── Build final reasoning with dialogue ───────────────────────
+  const dialogueHeader = dialogueLog || "";
+  const decisionLine = `→ DECISION: ${action}`;
+  const fullReasoning = [
+    dialogueHeader,
+    daLine,
+    decisionLine,
+    "",
+    ...reasonLines,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
   // ── Store decision in memory agent ────────────────────────────
   const indicatorMap: Record<string, number> | undefined = priceContext.indicators
     ? {
@@ -1122,7 +1283,7 @@ function makeDecision(
       positionSize: Math.round(positionSize * 100) / 100,
       stopLoss,
       takeProfit,
-      reasoning: reasonLines.join("\n"),
+      reasoning: fullReasoning,
       agentReports: reports,
       timestamp: Date.now(),
     },
@@ -1145,7 +1306,7 @@ function makeDecision(
     positionSize: Math.round(positionSize * 100) / 100,
     stopLoss,
     takeProfit,
-    reasoning: reasonLines.join("\n"),
+    reasoning: fullReasoning,
     agentReports: reports,
     timestamp: Date.now(),
   };
@@ -1228,13 +1389,19 @@ export const runAgentAnalysis = createServerFn({ method: "POST" }).handler(
     }
 
     const reports = await gatherReports(data);
-    const decision = makeDecision(reports, tradingState, data);
+    
+    // ── Dialogue Phase: question top agents to clarify reasoning ──
+    const { enrichedReports, dialogueLog } = await runDialogue(reports, data);
+    const decision = makeDecision(enrichedReports, tradingState, data, dialogueLog);
+    
+    // Use enriched reports for downstream consumers (DB, portfolio, etc.)
+    const finalReports = enrichedReports;
 
     // Write-through to DB: orchestrator_decisions + agent_reports
     if (isDbAvailable()) {
       // Insert agent reports and collect IDs
       const reportIds: number[] = [];
-      for (const report of reports) {
+      for (const report of finalReports) {
         sql`
           INSERT INTO agent_reports (agent_id, role, chain_id, token, direction, confidence, reasoning, data)
           VALUES (${report.agentId}, ${report.role}, ${data.chainId ?? null}, ${data.token ?? null}, ${report.direction}, ${report.confidence}, ${report.reasoning}, ${JSON.stringify(report.data)}::jsonb)
@@ -1314,7 +1481,7 @@ export const runAgentAnalysis = createServerFn({ method: "POST" }).handler(
       portfolio = portfolioReport.data?.snapshot as PortfolioSnapshot | undefined;
 
       // Attach portfolio report to reports array
-      reports.push(portfolioReport);
+      finalReports.push(portfolioReport);
     } catch {
       // Portfolio review is best-effort
     }
@@ -1331,13 +1498,13 @@ export const runAgentAnalysis = createServerFn({ method: "POST" }).handler(
       // Attach reasoning report to reports array
       const reasoningReport =
         await reasoningAgent.generateReasoningReport(explanationResult);
-      reports.push(reasoningReport);
+      finalReports.push(reasoningReport);
     } catch {
       // Reasoning is best-effort
     }
 
     return {
-      reports,
+      reports: finalReports,
       decision,
       state: { ...tradingState },
       execution,
@@ -1580,6 +1747,7 @@ export const getMemoryDecisions = createServerFn({ method: "GET" }).handler(
 export {
   gatherReports,
   makeDecision,
+  runDialogue,
   scoreDirection,
   tradingState,
   learningAgent,

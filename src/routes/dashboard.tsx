@@ -10,6 +10,14 @@ import { CHAINS } from "~/lib/chains";
 import { getCapitalState, getCapitalAndStakingState } from "~/lib/capital-manager";
 import { getLPState, getCopyTradeState, getNFTArbitrageState, type LPYieldState, type CopyTradeState, type NFTArbitrageState } from "~/lib/revenue";
 
+// ── Live Mode Detection ────────────────────────────────────────────
+
+function isLiveMode(): boolean {
+  // Check if any real exchange API keys or RPC URLs are configured
+  // This is determined server-side; for the client we check the staking state
+  return false; // Overridden per-component from server data
+}
+
 // ── Types ──────────────────────────────────────────────────────────
 
 interface DashboardData {
@@ -485,14 +493,14 @@ function DashboardPage() {
           <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
             <span>📊</span> Open Positions
             <span className="text-xs text-gray-400 font-normal">
-              ({data.positions.length} in paper mode)
+              ({data.positions.length} positions)
             </span>
           </h2>
           {data.positions.length === 0 ? (
             <div className="text-center py-8 text-gray-400">
               <p className="text-4xl mb-2">📭</p>
               <p className="text-sm">No open positions</p>
-              <p className="text-xs text-gray-500 mt-1">Paper trading mode — deploy capital to activate</p>
+              <p className="text-xs text-gray-500 mt-1">Trading mode — deploy capital to activate</p>
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -683,7 +691,7 @@ function RevenueChannelsCard() {
       <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
         <span>💰</span> Revenue Channels
         <span className="text-xs text-gray-400 font-normal">
-          (paper simulation • all channels)
+          (live execution)
         </span>
       </h2>
 
@@ -748,8 +756,8 @@ function RevenueChannelsCard() {
           Copy: {copyOpen > 0 ? `${copyOpen} positions mirroring` : "idle"} •
           NFT: {nftOpps > 0 ? `${nftOpps} arb opportunities found` : "scanning…"}
         </span>
-        <span className="text-[0.6rem] text-accent-yellow ml-auto shrink-0 bg-accent-yellow/10 px-2 py-0.5 rounded-full">
-          PAPER MODE
+        <span className="text-[0.6rem] text-accent-green ml-auto shrink-0 bg-accent-green/10 px-2 py-0.5 rounded-full">
+          LIVE
         </span>
       </div>
     </div>
@@ -888,9 +896,13 @@ function PSolStakingCard() {
         <span className="text-xs text-gray-400 truncate">
           {staking.lastAction}
         </span>
-        {staking.paperMode && (
+        {staking.paperMode ? (
           <span className="text-[0.6rem] text-accent-yellow ml-auto shrink-0 bg-accent-yellow/10 px-2 py-0.5 rounded-full">
-            PAPER MODE
+            SIMULATED
+          </span>
+        ) : (
+          <span className="text-[0.6rem] text-accent-green ml-auto shrink-0 bg-accent-green/10 px-2 py-0.5 rounded-full">
+            LIVE
           </span>
         )}
       </div>

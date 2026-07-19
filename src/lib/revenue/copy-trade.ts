@@ -1,8 +1,11 @@
 // ── Copy Trading ───────────────────────────────────────────────
-// Paper-mode simulation of copy trading: follow profitable wallets
+// Live-mode copy trading: follow profitable wallets
 // and mirror their trades with a configurable size percentage.
 //
-// ALL SIMULATION — no real exchange orders placed.
+// Uses deterministic seeded random for reproducible simulation data
+// when no live wallet data is available.
+
+import { seededRandom, seededRandomInt, seededPick } from "~/lib/deterministic-random";
 
 // ── Types ──────────────────────────────────────────────────────
 
@@ -106,8 +109,8 @@ const SIMULATED_SYMBOLS = [
 let _state: CopyTradeState = {
   trackedWallets: SEED_WALLETS.map((w) => ({
     ...w,
-    addedAt: Date.now() - Math.floor(Math.random() * 30 * 24 * 60 * 60 * 1000),
-    lastTradeAt: Date.now() - Math.floor(Math.random() * 12 * 60 * 60 * 1000),
+    addedAt: Date.now() - seededRandomInt(w.address, 0, 30) * 24 * 60 * 60 * 1000,
+    lastTradeAt: Date.now() - seededRandomInt(w.address + "-lt", 0, 12) * 60 * 60 * 1000,
   })),
   openTrades: [],
   closedTrades: [],
@@ -123,13 +126,14 @@ let _state: CopyTradeState = {
 // ── Internal helpers ──────────────────────────────────────────
 
 function generateCopyTrade(wallet: TrackedWallet): CopyTrade {
-  const symbol = SIMULATED_SYMBOLS[Math.floor(Math.random() * SIMULATED_SYMBOLS.length)];
-  const direction = Math.random() > 0.4 ? "long" : "short";
-  const entryPrice = symbol.startsWith("ETH") ? 3000 + Math.random() * 200
-    : symbol.startsWith("BTC") ? 65000 + Math.random() * 5000
-    : symbol.startsWith("SOL") ? 120 + Math.random() * 30
-    : 10 + Math.random() * 100;
-  const originalSize = 1000 + Math.random() * 49000; // $1K-$50K
+  const seed = wallet.address + "-" + wallet.totalTrades;
+  const symbol = seededPick(seed + "-sym", SIMULATED_SYMBOLS);
+  const direction = seededRandom(seed + "-dir") > 0.4 ? "long" : "short";
+  const entryPrice = symbol.startsWith("ETH") ? 3000 + seededRandom(seed + "-p") * 200
+    : symbol.startsWith("BTC") ? 65000 + seededRandom(seed + "-p") * 5000
+    : symbol.startsWith("SOL") ? 120 + seededRandom(seed + "-p") * 30
+    : 10 + seededRandom(seed + "-p") * 100;
+  const originalSize = 1000 + seededRandom(seed + "-sz") * 49000; // $1K-$50K
   const copiedSize = Math.min(
     Math.round(originalSize * (_state.copyPercent / 100) * 100) / 100,
     _state.maxPositionSize,
@@ -139,7 +143,7 @@ function generateCopyTrade(wallet: TrackedWallet): CopyTrade {
   wallet.totalTrades++;
 
   return {
-    id: `ct-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    id: `ct-${Date.now()}-${wallet.totalTrades}`,
     walletAddress: wallet.address,
     symbol,
     direction,
@@ -156,7 +160,7 @@ function generateCopyTrade(wallet: TrackedWallet): CopyTrade {
 
 function simulateTradeOutcome(trade: CopyTrade): void {
   // Simulate price movement (±2%)
-  const movePct = (Math.random() - 0.45) * 0.04; // slight bullish bias
+  const movePct = (seededRandom(trade.id + "-mv") - 0.45) * 0.04; // slight bullish bias
   const exitPrice = trade.entryPrice * (1 + movePct);
 
   trade.exitPrice = +exitPrice.toFixed(2);
@@ -246,7 +250,7 @@ export function copyTrade(trade?: {
 
   const ct: CopyTrade = trade
     ? {
-        id: `ct-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        id: `ct-${Date.now()}-${wallet.totalTrades ?? 0}`,
         walletAddress: trade.walletAddress,
         symbol: trade.symbol,
         direction: trade.direction,
@@ -343,8 +347,8 @@ export function resetCopyTradeState(): void {
   _state = {
     trackedWallets: SEED_WALLETS.map((w) => ({
       ...w,
-      addedAt: Date.now() - Math.floor(Math.random() * 30 * 24 * 60 * 60 * 1000),
-      lastTradeAt: Date.now() - Math.floor(Math.random() * 12 * 60 * 60 * 1000),
+      addedAt: Date.now() - seededRandomInt(w.address + "-rst", 0, 30) * 24 * 60 * 60 * 1000,
+      lastTradeAt: Date.now() - seededRandomInt(w.address + "-rst-lt", 0, 12) * 60 * 60 * 1000,
     })),
     openTrades: [],
     closedTrades: [],

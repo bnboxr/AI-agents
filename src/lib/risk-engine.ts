@@ -111,7 +111,8 @@ function ensureAgentState(chainId: string): AgentRiskState {
   if (!agentRisk[chainId]) {
     const agent = AGENTS[chainId];
     const chain = CHAINS.find((c) => c.id === chainId);
-    const initialValue = 10_000 + Math.random() * 40_000;
+    // Use deterministic initial values — no Math.random() in production
+    const initialValue = 25_000;
     agentRisk[chainId] = {
       chainId,
       agentName: agent?.name ?? "Unknown",
@@ -120,8 +121,8 @@ function ensureAgentState(chainId: string): AgentRiskState {
       currentValue: initialValue,
       drawdownPct: 0,
       exposureUsd: initialValue * 0.5,
-      volatilityPct: Math.random() * 5,
-      riskScore: 3 + Math.floor(Math.random() * 4),
+      volatilityPct: 2.5,
+      riskScore: 5,
       status: "active",
       lastUpdated: Date.now(),
     };
@@ -263,23 +264,21 @@ export async function updateRiskMetrics(
     }
   }
 
-  // Simulate slight value fluctuations for demo
-  const noise = (Math.random() - 0.5) * 500;
-  state.currentValue = Math.max(0, state.currentValue + noise);
+  // Use actual provided values — no demo noise in production
   if (state.currentValue > state.peakValue) {
     state.peakValue = state.currentValue;
   }
 
-  // Update volatility
-  state.volatilityPct = options?.volatilityPct ?? (1 + Math.random() * 6);
+  // Update volatility from provided value or use fixed baseline
+  state.volatilityPct = options?.volatilityPct ?? 3.0;
 
   // Calculate drawdown
   state.drawdownPct = state.peakValue > 0
     ? ((state.peakValue - state.currentValue) / state.peakValue) * 100
     : 0;
 
-  // Exposure: random allocation between 20-80% of current value
-  state.exposureUsd = state.currentValue * (0.2 + Math.random() * 0.6);
+  // Exposure: use fixed allocation ratio (50% of current value)
+  state.exposureUsd = state.currentValue * 0.5;
   if (state.exposureUsd > currentLimits.maxExposurePerChain) {
     state.exposureUsd = currentLimits.maxExposurePerChain;
   }

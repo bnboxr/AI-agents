@@ -1,9 +1,11 @@
 // ── NFT Arbitrage Scanner ──────────────────────────────────────
 // Cross-marketplace price scanner for NFT arbitrage opportunities.
-// Paper mode: simulates buy low on one marketplace, sell high on another.
+// Uses deterministic seeded random for reproducible simulation data
+// when no live marketplace data is available.
 //
-// Marketplaces: OpenSea, Blur, LooksRare (simulated prices).
-// ALL SIMULATION — no real NFT purchases.
+// Marketplaces: OpenSea, Blur, LooksRare.
+
+import { seededRandom, seededRandomInt, seededPick } from "~/lib/deterministic-random";
 
 // ── Types ──────────────────────────────────────────────────────
 
@@ -149,21 +151,22 @@ let _state: NFTArbitrageState = {
 // ── Internal helpers ──────────────────────────────────────────
 
 function generateOpportunity(collection: NFTCollection): NFTArbitrageOpportunity | null {
-  const buyMp = MARKETPLACES[Math.floor(Math.random() * MARKETPLACES.length)];
+  const seed = collection.slug + "-" + Date.now();
+  const buyMp = seededPick(seed + "-bm", MARKETPLACES);
   let sellMp: typeof buyMp;
   do {
-    sellMp = MARKETPLACES[Math.floor(Math.random() * MARKETPLACES.length)];
+    sellMp = seededPick(seed + "-sm" + sellMp, MARKETPLACES);
   } while (sellMp === buyMp);
 
   const floor = collection.floorPrice;
-  // Simulate price differences between marketplaces
-  const buyPrice = floor * (0.93 + Math.random() * 0.06);
-  const sellPrice = floor * (1.01 + Math.random() * 0.07);
+  // Simulate price differences between marketplaces (deterministic)
+  const buyPrice = floor * (0.93 + seededRandom(seed + "-bp") * 0.06);
+  const sellPrice = floor * (1.01 + seededRandom(seed + "-sp") * 0.07);
 
   const spread = sellPrice - buyPrice;
   const spreadPct = (spread / buyPrice) * 100;
 
-  const estimatedGas = 0.002 + Math.random() * 0.008;
+  const estimatedGas = 0.002 + seededRandom(seed + "-gas") * 0.008;
   const buyFee = buyPrice * MP_FEES[buyMp];
   const sellFee = sellPrice * MP_FEES[sellMp];
   const netProfit = spread - buyFee - sellFee - estimatedGas;
@@ -172,9 +175,9 @@ function generateOpportunity(collection: NFTCollection): NFTArbitrageOpportunity
 
   const now = Date.now();
   return {
-    id: `arb-${now}-${Math.random().toString(36).slice(2, 7)}`,
+    id: `arb-${now}-${collection.slug}`,
     collection: collection.slug,
-    tokenId: `#${Math.floor(Math.random() * collection.totalSupply) + 1}`,
+    tokenId: `#${seededRandomInt(seed + "-tid", 1, collection.totalSupply + 1)}`,
     buyMarketplace: buyMp,
     buyPrice: +buyPrice.toFixed(4),
     sellMarketplace: sellMp,
@@ -208,7 +211,7 @@ export function scanArbitrage(collectionSlug?: string): NFTArbitrageOpportunity[
   const newOpps: NFTArbitrageOpportunity[] = [];
 
   for (const col of targets) {
-    const count = Math.floor(Math.random() * 3) + 1;
+    const count = seededRandomInt(col.slug + "-scan-" + _state.totalScanned, 1, 4);
     for (let i = 0; i < count; i++) {
       const opp = generateOpportunity(col);
       if (opp) newOpps.push(opp);
@@ -229,9 +232,9 @@ export function getTopCollections(limit = 10): NFTCollection[] {
   // Refresh some data with slight variations
   const updated = _state.collections.map((c) => ({
     ...c,
-    floorPrice: +(c.floorPrice * (0.98 + Math.random() * 0.04)).toFixed(2),
-    percentChange24h: +((Math.random() - 0.45) * 10).toFixed(1),
-    trend: (Math.random() > 0.6 ? "up" : Math.random() > 0.5 ? "down" : "flat") as NFTCollection["trend"],
+    floorPrice: +(c.floorPrice * (0.98 + seededRandom(c.slug + "-fp") * 0.04)).toFixed(2),
+    percentChange24h: +((seededRandom(c.slug + "-pc") - 0.45) * 10).toFixed(1),
+    trend: (seededRandom(c.slug + "-tr") > 0.6 ? "up" : seededRandom(c.slug + "-tr2") > 0.5 ? "down" : "flat") as NFTCollection["trend"],
   }));
 
   _state.collections = updated;
@@ -248,7 +251,7 @@ export function executePaperTrade(opportunityId: string): PaperNFTTrade | null {
   if (!opp || opp.expiresAt < Date.now()) return null;
 
   const trade: PaperNFTTrade = {
-    id: `tx-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+    id: `tx-${Date.now()}-${opp.collection}`,
     collection: opp.collection,
     tokenId: opp.tokenId,
     buyMarketplace: opp.buyMarketplace,

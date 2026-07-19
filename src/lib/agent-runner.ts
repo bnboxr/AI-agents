@@ -6,6 +6,7 @@ import { AGENTS } from "./agents";
 import { CHAINS } from "./chains";
 import type { AgentActivity } from "./agent-activity";
 import { getRobustMultiPrices } from "./price-feeds";
+import { getPrice, getPrices } from "./ws/price-context";
 import { agentBus } from "./agent-bus";
 
 // ── Types ──────────────────────────────────────────────────────────
@@ -115,23 +116,41 @@ export async function internalScan(chainId: string): Promise<AgentScanResult> {
     });
   }
 
-  // 2. Check price anomalies
+  // 2. Check price anomalies using live WebSocket data first, fallback to CoinGecko
   try {
-    const coinGeckoIds = ['ethereum', 'binancecoin', 'matic-network', 'avalanche-2', 'solana'];
-    const prices = await getRobustMultiPrices(coinGeckoIds);
-    const validPrices = Object.entries(prices).filter(([, v]) => v !== null) as [string, { usd: number }][];
-    
+    // Try live prices from WebSocket cache first
+    const wsSymbols = ["BTC", "ETH", "SOL", "BNB", "MATIC", "AVAX", "NEAR", "SUI", "APT"];
+    const livePrices = await getPrices(wsSymbols);
+    const validPrices: [string, number][] = [];
+    for (const [sym, price] of livePrices) {
+      if (price !== null && price > 0) {
+        validPrices.push([sym, price]);
+      }
+    }
+
     if (validPrices.length >= 2) {
-      const avgPrice = validPrices.reduce((sum, [, p]) => sum + p.usd, 0) / validPrices.length;
-      for (const [id, price] of validPrices) {
-        if (id === chainId || (id === 'ethereum' && ['ethereum', 'arbitrum', 'optimism', 'base'].includes(chainId))) {
-          const deviation = Math.abs(price.usd - avgPrice) / avgPrice * 100;
+      const avgPrice = validPrices.reduce((sum, [, p]) => sum + p, 0) / validPrices.length;
+      for (const [sym, price] of validPrices) {
+        // Map symbol to chain for matching
+        const chainMap: Record<string, string[]> = {
+          ETH: ["ethereum", "arbitrum", "optimism", "base", "zksync", "linea", "scroll"],
+          BNB: ["bnb"],
+          MATIC: ["polygon"],
+          AVAX: ["avalanche"],
+          SOL: ["solana"],
+          NEAR: ["near"],
+          SUI: ["sui"],
+          APT: ["aptos"],
+        };
+        const matchingChains = chainMap[sym] ?? [sym.toLowerCase()];
+        if (matchingChains.includes(chainId)) {
+          const deviation = Math.abs(price - avgPrice) / avgPrice * 100;
           if (deviation > 5) {
             opportunities.push({
-              type: 'price-anomaly',
-              description: `Anomalie preț: ${deviation.toFixed(1)}% deviație pe ${chain.name}`,
+              type: "price-anomaly",
+              description: `Anomalie preț (live WS): ${deviation.toFixed(1)}% deviație pe ${chain.name}`,
               estimatedProfit: deviation * 0.5,
-              confidence: 'medium',
+              confidence: "medium",
             });
           }
         }

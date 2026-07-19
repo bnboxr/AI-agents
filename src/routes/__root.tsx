@@ -7,6 +7,7 @@ import {
 } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { WalletProvider, ConnectButton } from "~/components/WalletProvider";
+import HelpGuide from "~/components/HelpGuide";
 import ParticleField from "~/components/ParticleField";
 
 import appCss from "~/styles/app.css?url";
@@ -50,6 +51,7 @@ function RootComponent() {
           <Outlet />
         </main>
         <Footer />
+        <HelpGuide />
       </WalletProvider>
     </RootDocument>
   );

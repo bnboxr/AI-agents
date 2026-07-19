@@ -64,35 +64,76 @@ export interface WalletMeta {
   icon: string;
   rdns?: string;
   installUrl?: string;
+  /** The actual wagmi connector ID that handles this wallet */
+  connectorId: string;
   category: "injected" | "walletconnect" | "sdk" | "hardware";
 }
 
+/**
+ * Top recommended wallets shown when NO wallet is detected.
+ * These are the most popular, well-known wallets.
+ */
+export const TOP_WALLETS: WalletMeta[] = [
+  {
+    id: "metamask", name: "MetaMask", icon: "🦊",
+    rdns: "io.metamask", installUrl: "https://metamask.io/download/",
+    connectorId: "metaMaskSDK", category: "injected",
+  },
+  {
+    id: "rabby", name: "Rabby", icon: "🦎",
+    rdns: "io.rabby", installUrl: "https://rabby.io/",
+    connectorId: "injected", category: "injected",
+  },
+  {
+    id: "phantom", name: "Phantom", icon: "👻",
+    rdns: "app.phantom", installUrl: "https://phantom.app/",
+    connectorId: "injected", category: "injected",
+  },
+  {
+    id: "coinbase", name: "Coinbase Wallet", icon: "🔵",
+    rdns: "com.coinbase.wallet", installUrl: "https://www.coinbase.com/wallet",
+    connectorId: "coinbaseWalletSDK", category: "sdk",
+  },
+];
+
+/**
+ * Full wallet list for the modal when wallets ARE detected.
+ * IDs must map to real wagmi connector identifiers:
+ *   injected()            -> id: "injected"       (EIP-6963 multi-provider)
+ *   metaMask()            -> id: "metaMaskSDK"    (MetaMask SDK)
+ *   walletConnect()       -> id: "walletConnect"  (WalletConnect v2)
+ *   coinbaseWallet()      -> id: "coinbaseWalletSDK"
+ *   safe()                -> id: "safe"
+ */
 export const WALLET_LIST: WalletMeta[] = [
-  { id: "metaMaskSDK",     name: "MetaMask",       icon: "🦊", rdns: "io.metamask",         installUrl: "https://metamask.io/download/",       category: "injected" },
-  { id: "rabby",           name: "Rabby",          icon: "🦎", rdns: "io.rabby",            installUrl: "https://rabby.io/",                   category: "injected" },
-  { id: "coinbaseWalletSDK", name: "Coinbase Wallet", icon: "🔵", rdns: "com.coinbase.wallet", installUrl: "https://www.coinbase.com/wallet",    category: "sdk" },
-  { id: "rainbow",         name: "Rainbow",        icon: "🌈", rdns: "me.rainbow",           installUrl: "https://rainbow.me/",                 category: "injected" },
-  { id: "phantom",         name: "Phantom",        icon: "👻", rdns: "app.phantom",          installUrl: "https://phantom.app/",                category: "injected" },
-  { id: "okx",             name: "OKX Wallet",     icon: "🟢", rdns: "com.okex.wallet",      installUrl: "https://www.okx.com/web3",            category: "injected" },
-  { id: "brave",           name: "Brave Wallet",   icon: "🦁", rdns: "com.brave.wallet",     installUrl: "https://brave.com/wallet/",           category: "injected" },
-  { id: "frame",           name: "Frame",          icon: "🖼️", rdns: "sh.frame",             installUrl: "https://frame.sh/",                   category: "injected" },
-  { id: "safe",            name: "Safe",           icon: "🔐", rdns: "io.gnosis.safe",       installUrl: "https://safe.global/",                category: "sdk" },
-  { id: "zerion",          name: "Zerion",         icon: "💎", rdns: "io.zerion.wallet",     installUrl: "https://zerion.io/",                  category: "injected" },
-  { id: "tokenPocket",     name: "TokenPocket",    icon: "🪙", rdns: "com.tokenpocket",      installUrl: "https://www.tokenpocket.pro/",        category: "injected" },
-  { id: "bitget",          name: "Bitget Wallet",  icon: "🔷", rdns: "com.bitget.web3",      installUrl: "https://web3.bitget.com/",            category: "injected" },
-  { id: "exodus",          name: "Exodus",         icon: "📦", rdns: "com.exodus",            installUrl: "https://www.exodus.com/",             category: "injected" },
-  { id: "xdefi",           name: "XDEFI",          icon: "🛡️", rdns: "io.xdefi",             installUrl: "https://www.xdefi.io/",               category: "injected" },
-  { id: "imToken",         name: "imToken",        icon: "🎯", rdns: "im.token",              installUrl: "https://token.im/",                   category: "injected" },
-  { id: "opera",           name: "Opera Wallet",   icon: "🔴", rdns: "com.opera",             installUrl: "https://www.opera.com/crypto",        category: "injected" },
-  { id: "cryptoCom",       name: "Crypto.com",     icon: "🟦", rdns: "com.crypto.wallet",     installUrl: "https://crypto.com/defi-wallet",      category: "injected" },
-  { id: "bybit",           name: "Bybit Wallet",   icon: "🟡", rdns: "com.bybit",             installUrl: "https://www.bybit.com/web3",          category: "injected" },
-  { id: "gate",            name: "Gate Wallet",    icon: "🏛️", rdns: "io.gate.wallet",        installUrl: "https://www.gate.io/web3",            category: "injected" },
-  { id: "kucoin",          name: "KuCoin Wallet",  icon: "🟠", rdns: "com.kucoin",            installUrl: "https://www.kucoin.com/web3",         category: "injected" },
-  { id: "frontier",        name: "Frontier",       icon: "🌐", rdns: "xyz.frontier",          installUrl: "https://frontier.xyz/",               category: "injected" },
-  { id: "walletConnect",   name: "WalletConnect",  icon: "🔗",                                installUrl: "https://walletconnect.com/",          category: "walletconnect" },
-  { id: "trust",           name: "Trust Wallet",   icon: "🛡️", rdns: "com.trustwallet.app",   installUrl: "https://trustwallet.com/",            category: "walletconnect" },
-  { id: "ledger",          name: "Ledger",         icon: "💾",                                installUrl: "https://www.ledger.com/",             category: "hardware" },
-  { id: "trezor",          name: "Trezor",         icon: "🔒",                                installUrl: "https://trezor.io/",                  category: "hardware" },
+  // ── Injected / SDK wallets (detected via EIP-6963 or explicit connector) ──
+  { id: "metamask",         name: "MetaMask",          icon: "🦊",  rdns: "io.metamask",         installUrl: "https://metamask.io/download/",        connectorId: "metaMaskSDK", category: "injected" },
+  { id: "rabby",            name: "Rabby",             icon: "🦎",  rdns: "io.rabby",            installUrl: "https://rabby.io/",                    connectorId: "injected",   category: "injected" },
+  { id: "coinbase",         name: "Coinbase Wallet",   icon: "🔵",  rdns: "com.coinbase.wallet",  installUrl: "https://www.coinbase.com/wallet",      connectorId: "coinbaseWalletSDK", category: "sdk" },
+  { id: "phantom",          name: "Phantom",           icon: "👻",  rdns: "app.phantom",          installUrl: "https://phantom.app/",                 connectorId: "injected",   category: "injected" },
+  { id: "rainbow",          name: "Rainbow",           icon: "🌈",  rdns: "me.rainbow",           installUrl: "https://rainbow.me/",                  connectorId: "injected",   category: "injected" },
+  { id: "okx",              name: "OKX Wallet",        icon: "🟢",  rdns: "com.okex.wallet",      installUrl: "https://www.okx.com/web3",             connectorId: "injected",   category: "injected" },
+  { id: "brave",            name: "Brave Wallet",      icon: "🦁",  rdns: "com.brave.wallet",     installUrl: "https://brave.com/wallet/",            connectorId: "injected",   category: "injected" },
+  { id: "frame",            name: "Frame",             icon: "🖼️",  rdns: "sh.frame",             installUrl: "https://frame.sh/",                    connectorId: "injected",   category: "injected" },
+  { id: "zerion",           name: "Zerion",            icon: "💎",  rdns: "io.zerion.wallet",     installUrl: "https://zerion.io/",                   connectorId: "injected",   category: "injected" },
+  { id: "tokenPocket",      name: "TokenPocket",       icon: "🪙",  rdns: "com.tokenpocket",      installUrl: "https://www.tokenpocket.pro/",         connectorId: "injected",   category: "injected" },
+  { id: "bitget",           name: "Bitget Wallet",     icon: "🔷",  rdns: "com.bitget.web3",      installUrl: "https://web3.bitget.com/",             connectorId: "injected",   category: "injected" },
+  { id: "exodus",           name: "Exodus",            icon: "📦",  rdns: "com.exodus",            installUrl: "https://www.exodus.com/",              connectorId: "injected",   category: "injected" },
+  { id: "xdefi",            name: "XDEFI",             icon: "🛡️",  rdns: "io.xdefi",             installUrl: "https://www.xdefi.io/",                connectorId: "injected",   category: "injected" },
+  { id: "imToken",          name: "imToken",           icon: "🎯",  rdns: "im.token",              installUrl: "https://token.im/",                    connectorId: "injected",   category: "injected" },
+  { id: "opera",            name: "Opera Wallet",      icon: "🔴",  rdns: "com.opera",             installUrl: "https://www.opera.com/crypto",         connectorId: "injected",   category: "injected" },
+  { id: "cryptoCom",        name: "Crypto.com",        icon: "🟦",  rdns: "com.crypto.wallet",     installUrl: "https://crypto.com/defi-wallet",       connectorId: "injected",   category: "injected" },
+  { id: "bybit",            name: "Bybit Wallet",      icon: "🟡",  rdns: "com.bybit",             installUrl: "https://www.bybit.com/web3",           connectorId: "injected",   category: "injected" },
+  { id: "gate",             name: "Gate Wallet",       icon: "🏛️",  rdns: "io.gate.wallet",        installUrl: "https://www.gate.io/web3",             connectorId: "injected",   category: "injected" },
+  { id: "kucoin",           name: "KuCoin Wallet",     icon: "🟠",  rdns: "com.kucoin",            installUrl: "https://www.kucoin.com/web3",          connectorId: "injected",   category: "injected" },
+  { id: "frontier",         name: "Frontier",          icon: "🌐",  rdns: "xyz.frontier",          installUrl: "https://frontier.xyz/",                connectorId: "injected",   category: "injected" },
+  // ── WalletConnect ──────────────────────────────────────────────────────
+  { id: "walletconnect",    name: "WalletConnect",     icon: "🔗",  installUrl: "https://walletconnect.com/",           connectorId: "walletConnect", category: "walletconnect" },
+  { id: "trust",            name: "Trust Wallet",      icon: "🛡️",  rdns: "com.trustwallet.app",   installUrl: "https://trustwallet.com/",             connectorId: "walletConnect", category: "walletconnect" },
+  // ── Hardware ───────────────────────────────────────────────────────────
+  { id: "safe",             name: "Safe",              icon: "🔐",  rdns: "io.gnosis.safe",        installUrl: "https://safe.global/",                 connectorId: "safe",     category: "hardware" },
+  { id: "ledger",           name: "Ledger",            icon: "💾",  installUrl: "https://www.ledger.com/",              connectorId: "walletConnect", category: "hardware" },
+  { id: "trezor",           name: "Trezor",            icon: "🔒",  installUrl: "https://trezor.io/",                   connectorId: "walletConnect", category: "hardware" },
 ];
 
 // ── Token Lists ────────────────────────────────────────────────────

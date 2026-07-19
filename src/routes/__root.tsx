@@ -81,6 +81,7 @@ function NavBar() {
           <NavLink to="/contracts">Contracts</NavLink>
           <NavLink to="/settings">Settings</NavLink>
           <NavLink to="/deposit">Deposit</NavLink>
+          <NavLink to="/trade">Trade</NavLink>
           <NavLink to="/chat">Chat</NavLink>
           <NavLink to="/risk">Risk</NavLink>
           <NavLink to="/backtesting">Backtesting</NavLink>

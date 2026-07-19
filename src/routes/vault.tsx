@@ -208,7 +208,7 @@ function VaultPage() {
               </div>
 
               {/* Selected Tier */}
-              <div className="card p-3 flex items-center justify-between">
+              <div className="glass-card p-3 flex items-center justify-between">
                 <span className="text-sm text-gray-300">Selected Tier:</span>
                 <span className="text-sm font-bold text-white">
                   {selectedTier.name} — {fmtAPY(selectedTier.apy)}
@@ -217,7 +217,7 @@ function VaultPage() {
 
               {/* Estimated Rewards */}
               {depositAmount && (
-                <div className="card p-3 bg-accent-green/5 border-accent-green/20">
+                <div className="glass-card p-3 bg-accent-green/5 border-accent-green/20">
                   <div className="flex justify-between text-xs">
                     <span className="text-gray-400">Estimated yearly reward:</span>
                     <span className="text-accent-green text-mono-sm font-bold">
@@ -255,7 +255,7 @@ function VaultPage() {
             <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3 flex items-center gap-2">
               <span className="text-accent-green">▸</span> My Deposits
             </h2>
-            <div className="card overflow-hidden">
+            <div className="glass-card overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full text-xs">
                   <thead>
@@ -314,7 +314,7 @@ function VaultPage() {
 
         {/* ── Contract Info ──────────────────────────────────── */}
         <section className="animate-fade-in-up">
-          <div className="card p-4">
+          <div className="glass-card p-4">
             <h3 className="text-sm font-semibold text-white mb-2 flex items-center gap-2">
               <span>📜</span> PaunVault Contract
             </h3>
@@ -345,7 +345,7 @@ function VaultPage() {
 
 function StatCard({ label, value, icon, positive }: { label: string; value: string; icon: string; positive?: boolean }) {
   return (
-    <div className="card p-4">
+    <div className="glass-card p-4">
       <div className="flex items-center justify-between mb-2">
         <span className="text-xs font-medium text-gray-400 uppercase tracking-wider">{label}</span>
         <span className="text-lg">{icon}</span>

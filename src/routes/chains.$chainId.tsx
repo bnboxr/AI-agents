@@ -377,7 +377,7 @@ function ChainDetailPage() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Top DEXes */}
           <section className="animate-fade-in-up">
-            <div className="card p-6">
+            <div className="glass-card p-6">
               <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-4 flex items-center gap-2">
                 <span className="text-accent-yellow">▸</span> Top DEXes & Protocols
               </h2>
@@ -413,7 +413,7 @@ function ChainDetailPage() {
 
           {/* PăunAI Contracts */}
           <section className="animate-fade-in-up">
-            <div className="card p-6">
+            <div className="glass-card p-6">
               <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-4 flex items-center gap-2">
                 <span className="text-accent-blue">▸</span> PăunAI Contracts
               </h2>
@@ -498,7 +498,7 @@ function ActionButton({
   return (
     <Link
       to={to}
-      className="card p-4 hover:border-accent-blue/30 hover:bg-dark-hover/80 transition-all group"
+      className="glass-card p-4 hover:border-accent-blue/30 hover:bg-dark-hover/80 transition-all group"
     >
       <div className="flex items-center gap-2 mb-1">
         <span className="text-xl">{icon}</span>

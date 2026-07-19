@@ -165,7 +165,7 @@ function StakePage() {
             </select>
           </div>
 
-          <div className="card overflow-hidden">
+          <div className="glass-card overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
                 <thead>
@@ -245,7 +245,7 @@ function StakePage() {
 
               {staked ? (
                 <div className="space-y-4">
-                  <div className="card p-4 bg-accent-green/5 border-accent-green/20">
+                  <div className="glass-card p-4 bg-accent-green/5 border-accent-green/20">
                     <p className="text-accent-green text-sm font-medium">✓ Staked cu succes!</p>
                     <p className="text-xs text-gray-400 mt-1">
                       {stakeAmount} {selectedProtocol.asset} pe {selectedProtocol.name}
@@ -321,7 +321,7 @@ function StakePage() {
             <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3 flex items-center gap-2">
               <span className="text-accent-cyan">▸</span> APY History — {selectedProtocol?.name}
             </h2>
-            <div className="card p-4">
+            <div className="glass-card p-4">
               <ResponsiveContainer width="100%" height={250}>
                 <LineChart data={selectedHistory.points}>
                   <XAxis
@@ -372,7 +372,7 @@ function StakePage() {
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {byChain.map((group) => (
-              <div key={group.chain} className="card p-4">
+              <div key={group.chain} className="glass-card p-4">
                 <h3 className="text-sm font-semibold text-white capitalize mb-3">
                   {group.chainName}
                 </h3>

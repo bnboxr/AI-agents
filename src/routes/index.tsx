@@ -287,7 +287,7 @@ function HomePage() {
             <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3 flex items-center gap-2">
               <span className="text-accent-cyan">▸</span> Arbitrage Scanner
             </h2>
-            <div className="card p-4">
+            <div className="glass-card p-4">
               {arbitrage.length === 0 ? (
                 <div className="text-center py-8 text-gray-400">
                   <p className="text-mono-sm">No profitable arbitrage opportunities detected</p>
@@ -325,7 +325,7 @@ function HomePage() {
             <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3 flex items-center gap-2">
               <span className="text-accent-yellow">▸</span> Mempool Watcher
             </h2>
-            <div className="card p-4">
+            <div className="glass-card p-4">
               {mempool.length === 0 ? (
                 <div className="text-center py-8 text-gray-400">
                   <p className="text-mono-sm">No large transactions detected</p>
@@ -370,7 +370,7 @@ function HeaderStat({
   icon: string;
 }) {
   return (
-    <div className="card p-4">
+    <div className="glass-panel blue-glow p-4">
       <div className="flex items-center justify-between mb-2">
         <span className="text-xs font-medium text-gray-400 uppercase tracking-wider">{label}</span>
         <span className="text-lg">{icon}</span>
@@ -405,7 +405,7 @@ function ChainStatusCard({
     <Link
       to="/chains/$chainId"
       params={{ chainId: chain.id }}
-      className="card p-3 animate-fade-in-up group block"
+      className="glass-card p-3 animate-fade-in-up group block"
       style={{ animationDelay: `${delay}ms` }}
     >
       <div className="flex items-center justify-between mb-2">

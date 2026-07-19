@@ -95,7 +95,7 @@ function ContractsPage() {
 
         {/* ── Warning Banner ─────────────────────────────── */}
         <section className="animate-fade-in-up">
-          <div className="card border border-accent-yellow/40 bg-accent-yellow/5 p-4 flex items-start gap-3">
+          <div className="glass-card border border-accent-yellow/40 bg-accent-yellow/5 p-4 flex items-start gap-3">
             <span className="text-xl">⚠️</span>
             <div>
               <p className="text-sm font-semibold text-accent-yellow">
@@ -115,25 +115,25 @@ function ContractsPage() {
 
         {/* ── Deployment Stats ─────────────────────────────── */}
         <section className="grid grid-cols-2 sm:grid-cols-4 gap-3 animate-fade-in-up">
-          <div className="card p-4 text-center">
+          <div className="glass-card p-4 text-center">
             <p className="text-2xl font-bold text-white text-mono">
               {DEPLOYED_CONTRACTS.length}
             </p>
             <p className="text-xs text-gray-400 mt-1">Total Contracts</p>
           </div>
-          <div className="card p-4 text-center">
+          <div className="glass-card p-4 text-center">
             <p className="text-2xl font-bold text-accent-green text-mono">
               {verifiedCount}
             </p>
             <p className="text-xs text-gray-400 mt-1">Verified</p>
           </div>
-          <div className="card p-4 text-center">
+          <div className="glass-card p-4 text-center">
             <p className="text-2xl font-bold text-accent-yellow text-mono">
               {DEPLOYED_CONTRACTS.length - verifiedCount}
             </p>
             <p className="text-xs text-gray-400 mt-1">Not Deployed</p>
           </div>
-          <div className="card p-4 text-center">
+          <div className="glass-card p-4 text-center">
             <p className="text-2xl font-bold text-accent-blue text-mono">
               {deployedChains}
             </p>
@@ -143,7 +143,7 @@ function ContractsPage() {
 
         {/* ── Contracts Table ──────────────────────────────── */}
         <section className="animate-fade-in-up">
-          <div className="card overflow-hidden">
+          <div className="glass-card overflow-hidden">
             {/* Table Header */}
             <div className="grid grid-cols-12 gap-2 px-4 py-3 bg-dark-hover border-b border-dark-border text-xs text-gray-400 font-medium uppercase tracking-wider">
               <span className="col-span-2">Contract</span>
@@ -216,7 +216,7 @@ function ContractsPage() {
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {/* FlashLoanArbitrage Card */}
-            <div className="card p-5">
+            <div className="glass-card p-5">
               <div className="flex items-center gap-2 mb-3">
                 <span className="text-xl">⚡</span>
                 <h3 className="text-sm font-semibold text-white">
@@ -247,7 +247,7 @@ function ContractsPage() {
             </div>
 
             {/* CrossChainArbitrage Card */}
-            <div className="card p-5">
+            <div className="glass-card p-5">
               <div className="flex items-center gap-2 mb-3">
                 <span className="text-xl">🌉</span>
                 <h3 className="text-sm font-semibold text-white">
@@ -278,7 +278,7 @@ function ContractsPage() {
             </div>
 
             {/* YieldOptimizer Card */}
-            <div className="card p-5">
+            <div className="glass-card p-5">
               <div className="flex items-center gap-2 mb-3">
                 <span className="text-xl">📈</span>
                 <h3 className="text-sm font-semibold text-white">
@@ -312,7 +312,7 @@ function ContractsPage() {
 
         {/* ── Security Info ─────────────────────────────────── */}
         <section className="animate-fade-in-up">
-          <div className="card p-6">
+          <div className="glass-card p-6">
             <h3 className="text-sm font-semibold text-white mb-3">
               Security & Auditing
             </h3>

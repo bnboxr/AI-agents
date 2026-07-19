@@ -74,25 +74,25 @@ function ArbitragePage() {
 
         {/* ── Market Prices ────────────────────────────────── */}
         <section className="grid grid-cols-2 sm:grid-cols-4 gap-3 animate-fade-in-up">
-          <div className="card p-3 text-center">
+          <div className="glass-card p-3 text-center">
             <p className="text-xs text-gray-400 mb-1">BTC</p>
             <p className="text-lg font-bold text-white text-mono">
               {prices.btc ? fmtPrice(prices.btc.usd) : "—"}
             </p>
           </div>
-          <div className="card p-3 text-center">
+          <div className="glass-card p-3 text-center">
             <p className="text-xs text-gray-400 mb-1">ETH</p>
             <p className="text-lg font-bold text-white text-mono">
               {prices.eth ? fmtPrice(prices.eth.usd) : "—"}
             </p>
           </div>
-          <div className="card p-3 text-center">
+          <div className="glass-card p-3 text-center">
             <p className="text-xs text-gray-400 mb-1">BTC 24h</p>
             <p className={`text-lg font-bold text-mono ${prices.btc ? (prices.btc.change24h >= 0 ? 'text-accent-green' : 'text-accent-red') : 'text-gray-400'}`}>
               {prices.btc ? `${prices.btc.change24h >= 0 ? '+' : ''}${prices.btc.change24h.toFixed(2)}%` : "—"}
             </p>
           </div>
-          <div className="card p-3 text-center">
+          <div className="glass-card p-3 text-center">
             <p className="text-xs text-gray-400 mb-1">ETH 24h</p>
             <p className={`text-lg font-bold text-mono ${prices.eth ? (prices.eth.change24h >= 0 ? 'text-accent-green' : 'text-accent-red') : 'text-gray-400'}`}>
               {prices.eth ? `${prices.eth.change24h >= 0 ? '+' : ''}${prices.eth.change24h.toFixed(2)}%` : "—"}
@@ -131,7 +131,7 @@ function ArbitragePage() {
 
         {/* ── Opportunities Table ──────────────────────────── */}
         <section className="animate-fade-in-up">
-          <div className="card overflow-hidden">
+          <div className="glass-card overflow-hidden">
             {filteredOpps.length === 0 ? (
               <div className="text-center py-16">
                 <p className="text-gray-400 text-mono-sm">No arbitrage opportunities found</p>
@@ -186,7 +186,7 @@ function ArbitragePage() {
 
         {/* ── How It Works ─────────────────────────────────── */}
         <section className="animate-fade-in-up">
-          <div className="card p-6">
+          <div className="glass-card p-6">
             <h3 className="text-sm font-semibold text-white mb-3">How Cross-Chain Arbitrage Works</h3>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs text-gray-400">
               <div>

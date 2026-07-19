@@ -98,7 +98,7 @@ function AnalyticsPage() {
             <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3 flex items-center gap-2">
               <span className="text-accent-green">▸</span> Profit per Agent
             </h2>
-            <div className="card p-4">
+            <div className="glass-card p-4">
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={profitPerAgent} layout="vertical" margin={{ left: 60 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#21262d" />
@@ -118,7 +118,7 @@ function AnalyticsPage() {
             <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3 flex items-center gap-2">
               <span className="text-accent-yellow">▸</span> Gas Price per Chain (Gwei)
             </h2>
-            <div className="card p-4">
+            <div className="glass-card p-4">
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={gasPerChain} layout="vertical" margin={{ left: 60 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#21262d" />
@@ -141,7 +141,7 @@ function AnalyticsPage() {
             <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3 flex items-center gap-2">
               <span className="text-accent-blue">▸</span> Top Performing Strategies
             </h2>
-            <div className="card p-4">
+            <div className="glass-card p-4">
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={topStrategies} margin={{ left: 10 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#21262d" />
@@ -161,7 +161,7 @@ function AnalyticsPage() {
             <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3 flex items-center gap-2">
               <span className="text-accent-teal">▸</span> Estimated TVL per Chain
             </h2>
-            <div className="card p-4">
+            <div className="glass-card p-4">
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={tvlPerChain} layout="vertical" margin={{ left: 60 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#21262d" />
@@ -182,7 +182,7 @@ function AnalyticsPage() {
           <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3 flex items-center gap-2">
             <span className="text-accent-blue">▸</span> Chain Details
           </h2>
-          <div className="card overflow-hidden">
+          <div className="glass-card overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
                 <thead>
@@ -234,7 +234,7 @@ function AnalyticsPage() {
 
 function SummaryCard({ label, value, icon, positive }: { label: string; value: string; icon: string; positive?: boolean }) {
   return (
-    <div className="card p-4">
+    <div className="glass-card p-4">
       <div className="flex items-center justify-between mb-2">
         <span className="text-xs font-medium text-gray-400 uppercase tracking-wider">{label}</span>
         <span className="text-lg">{icon}</span>

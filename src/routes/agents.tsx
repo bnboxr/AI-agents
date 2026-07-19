@@ -660,7 +660,7 @@ function AgentsPage() {
           <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3 flex items-center gap-2">
             <span className="text-accent-green">▸</span> Profit per Agent
           </h2>
-          <div className="card p-4">
+          <div className="glass-card p-4">
             <ResponsiveContainer width="100%" height={350}>
               <BarChart data={profitChartData} layout="vertical" margin={{ left: 60 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#21262d" />

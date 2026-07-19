@@ -356,8 +356,15 @@ function StatCard({ label, value, color }: { label: string; value: string | numb
     purple: "border-purple-500/20 bg-purple-500/5",
     teal: "border-cyan-500/20 bg-cyan-500/5",
   };
+  const glows: Record<string, string> = {
+    blue: "blue-glow",
+    green: "",
+    red: "",
+    purple: "",
+    teal: "teal-glow",
+  };
   return (
-    <div className={`p-4 rounded-xl border ${colors[color] || colors.blue} text-center`}>
+    <div className={`glass-panel p-4 text-center ${glows[color] || ""}`}>
       <div className="text-2xl font-black text-white">{value}</div>
       <div className="text-xs text-gray-400 mt-1">{label}</div>
     </div>

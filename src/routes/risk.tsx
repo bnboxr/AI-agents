@@ -229,7 +229,7 @@ function RiskPage() {
   // ── Render ──────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-dvh bg-darker pt-20 pb-16">
+    <div className="min-h-dvh pt-20 pb-16">
       <div className="mx-auto max-w-7xl px-4 sm:px-6">
         {/* Page header */}
         <div className="mb-8 animate-fade-in-up">
@@ -550,23 +550,23 @@ function RiskPage() {
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-                <div className="bg-dark-hover rounded-lg p-3 text-center">
+                <div className="glass-panel p-3 text-center">
                   <p className="text-xs text-gray-500">Max Drawdown</p>
                   <p className="text-lg font-bold text-white">{state.limits.maxDrawdownPct}%</p>
                 </div>
-                <div className="bg-dark-hover rounded-lg p-3 text-center">
+                <div className="glass-panel p-3 text-center">
                   <p className="text-xs text-gray-500">Max Exposure / Chain</p>
                   <p className="text-lg font-bold text-white">{formatUsd(state.limits.maxExposurePerChain)}</p>
                 </div>
-                <div className="bg-dark-hover rounded-lg p-3 text-center">
+                <div className="glass-panel p-3 text-center">
                   <p className="text-xs text-gray-500">Stop-Loss</p>
                   <p className="text-lg font-bold text-white">{state.limits.stopLossPct}%</p>
                 </div>
-                <div className="bg-dark-hover rounded-lg p-3 text-center">
+                <div className="glass-panel p-3 text-center">
                   <p className="text-xs text-gray-500">Crash Threshold</p>
                   <p className="text-lg font-bold text-white">{state.limits.marketCrashThresholdPct}%</p>
                 </div>
-                <div className="bg-dark-hover rounded-lg p-3 text-center">
+                <div className="glass-panel p-3 text-center">
                   <p className="text-xs text-gray-500">Max Risk Score</p>
                   <p className="text-lg font-bold text-white">{state.limits.maxRiskScore}/10</p>
                 </div>

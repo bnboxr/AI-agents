@@ -57,19 +57,19 @@ function ChainsPage() {
 
         {/* ── Summary Stats ───────────────────────────────── */}
         <section className="grid grid-cols-2 sm:grid-cols-4 gap-3 animate-fade-in-up">
-          <div className="card p-4 text-center">
+          <div className="glass-card p-4 text-center">
             <p className="text-2xl font-bold text-white text-mono">{chains.length}</p>
             <p className="text-xs text-gray-400 mt-1">Total Chains</p>
           </div>
-          <div className="card p-4 text-center">
+          <div className="glass-card p-4 text-center">
             <p className="text-2xl font-bold text-accent-green text-mono">{onlineChains.length}</p>
             <p className="text-xs text-gray-400 mt-1">Online</p>
           </div>
-          <div className="card p-4 text-center">
+          <div className="glass-card p-4 text-center">
             <p className="text-2xl font-bold text-accent-red text-mono">{offlineChains.length}</p>
             <p className="text-xs text-gray-400 mt-1">Offline</p>
           </div>
-          <div className="card p-4 text-center">
+          <div className="glass-card p-4 text-center">
             <p className="text-2xl font-bold text-accent-blue text-mono">
               {onlineChains.length > 0
                 ? Math.round(onlineChains.reduce((s, c) => s + (c.latency ?? 0), 0) / onlineChains.length)

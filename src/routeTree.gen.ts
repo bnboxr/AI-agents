@@ -17,13 +17,13 @@ import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as PortfolioRouteImport } from './routes/portfolio'
 import { Route as EarnRouteImport } from './routes/earn'
 import { Route as ContractsRouteImport } from './routes/contracts'
+import { Route as ChatRouteImport } from './routes/chat'
 import { Route as ChainsRouteImport } from './routes/chains'
 import { Route as ArbitrageRouteImport } from './routes/arbitrage'
 import { Route as AnalyticsRouteImport } from './routes/analytics'
 import { Route as AgentsRouteImport } from './routes/agents'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ChainsChainIdRouteImport } from './routes/chains.$chainId'
-import { Route as ApiChatStreamRouteImport } from './routes/api/chat-stream'
 
 const WithdrawRoute = WithdrawRouteImport.update({
   id: '/withdraw',
@@ -65,6 +65,11 @@ const ContractsRoute = ContractsRouteImport.update({
   path: '/contracts',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ChatRoute = ChatRouteImport.update({
+  id: '/chat',
+  path: '/chat',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ChainsRoute = ChainsRouteImport.update({
   id: '/chains',
   path: '/chains',
@@ -95,11 +100,6 @@ const ChainsChainIdRoute = ChainsChainIdRouteImport.update({
   path: '/$chainId',
   getParentRoute: () => ChainsRoute,
 } as any)
-const ApiChatStreamRoute = ApiChatStreamRouteImport.update({
-  id: '/api/chat-stream',
-  path: '/api/chat-stream',
-  getParentRoute: () => rootRouteImport,
-} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -107,6 +107,7 @@ export interface FileRoutesByFullPath {
   '/analytics': typeof AnalyticsRoute
   '/arbitrage': typeof ArbitrageRoute
   '/chains': typeof ChainsRouteWithChildren
+  '/chat': typeof ChatRoute
   '/contracts': typeof ContractsRoute
   '/earn': typeof EarnRoute
   '/portfolio': typeof PortfolioRoute
@@ -115,7 +116,6 @@ export interface FileRoutesByFullPath {
   '/swap': typeof SwapRoute
   '/vault': typeof VaultRoute
   '/withdraw': typeof WithdrawRoute
-  '/api/chat-stream': typeof ApiChatStreamRoute
   '/chains/$chainId': typeof ChainsChainIdRoute
 }
 export interface FileRoutesByTo {
@@ -124,6 +124,7 @@ export interface FileRoutesByTo {
   '/analytics': typeof AnalyticsRoute
   '/arbitrage': typeof ArbitrageRoute
   '/chains': typeof ChainsRouteWithChildren
+  '/chat': typeof ChatRoute
   '/contracts': typeof ContractsRoute
   '/earn': typeof EarnRoute
   '/portfolio': typeof PortfolioRoute
@@ -132,7 +133,6 @@ export interface FileRoutesByTo {
   '/swap': typeof SwapRoute
   '/vault': typeof VaultRoute
   '/withdraw': typeof WithdrawRoute
-  '/api/chat-stream': typeof ApiChatStreamRoute
   '/chains/$chainId': typeof ChainsChainIdRoute
 }
 export interface FileRoutesById {
@@ -142,6 +142,7 @@ export interface FileRoutesById {
   '/analytics': typeof AnalyticsRoute
   '/arbitrage': typeof ArbitrageRoute
   '/chains': typeof ChainsRouteWithChildren
+  '/chat': typeof ChatRoute
   '/contracts': typeof ContractsRoute
   '/earn': typeof EarnRoute
   '/portfolio': typeof PortfolioRoute
@@ -150,7 +151,6 @@ export interface FileRoutesById {
   '/swap': typeof SwapRoute
   '/vault': typeof VaultRoute
   '/withdraw': typeof WithdrawRoute
-  '/api/chat-stream': typeof ApiChatStreamRoute
   '/chains/$chainId': typeof ChainsChainIdRoute
 }
 export interface FileRouteTypes {
@@ -161,6 +161,7 @@ export interface FileRouteTypes {
     | '/analytics'
     | '/arbitrage'
     | '/chains'
+    | '/chat'
     | '/contracts'
     | '/earn'
     | '/portfolio'
@@ -169,7 +170,6 @@ export interface FileRouteTypes {
     | '/swap'
     | '/vault'
     | '/withdraw'
-    | '/api/chat-stream'
     | '/chains/$chainId'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -178,6 +178,7 @@ export interface FileRouteTypes {
     | '/analytics'
     | '/arbitrage'
     | '/chains'
+    | '/chat'
     | '/contracts'
     | '/earn'
     | '/portfolio'
@@ -186,7 +187,6 @@ export interface FileRouteTypes {
     | '/swap'
     | '/vault'
     | '/withdraw'
-    | '/api/chat-stream'
     | '/chains/$chainId'
   id:
     | '__root__'
@@ -195,6 +195,7 @@ export interface FileRouteTypes {
     | '/analytics'
     | '/arbitrage'
     | '/chains'
+    | '/chat'
     | '/contracts'
     | '/earn'
     | '/portfolio'
@@ -203,7 +204,6 @@ export interface FileRouteTypes {
     | '/swap'
     | '/vault'
     | '/withdraw'
-    | '/api/chat-stream'
     | '/chains/$chainId'
   fileRoutesById: FileRoutesById
 }
@@ -213,6 +213,7 @@ export interface RootRouteChildren {
   AnalyticsRoute: typeof AnalyticsRoute
   ArbitrageRoute: typeof ArbitrageRoute
   ChainsRoute: typeof ChainsRouteWithChildren
+  ChatRoute: typeof ChatRoute
   ContractsRoute: typeof ContractsRoute
   EarnRoute: typeof EarnRoute
   PortfolioRoute: typeof PortfolioRoute
@@ -221,7 +222,6 @@ export interface RootRouteChildren {
   SwapRoute: typeof SwapRoute
   VaultRoute: typeof VaultRoute
   WithdrawRoute: typeof WithdrawRoute
-  ApiChatStreamRoute: typeof ApiChatStreamRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -282,6 +282,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ContractsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/chat': {
+      id: '/chat'
+      path: '/chat'
+      fullPath: '/chat'
+      preLoaderRoute: typeof ChatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/chains': {
       id: '/chains'
       path: '/chains'
@@ -324,13 +331,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ChainsChainIdRouteImport
       parentRoute: typeof ChainsRoute
     }
-    '/api/chat-stream': {
-      id: '/api/chat-stream'
-      path: '/api/chat-stream'
-      fullPath: '/api/chat-stream'
-      preLoaderRoute: typeof ApiChatStreamRouteImport
-      parentRoute: typeof rootRouteImport
-    }
   }
 }
 
@@ -351,6 +351,7 @@ const rootRouteChildren: RootRouteChildren = {
   AnalyticsRoute: AnalyticsRoute,
   ArbitrageRoute: ArbitrageRoute,
   ChainsRoute: ChainsRouteWithChildren,
+  ChatRoute: ChatRoute,
   ContractsRoute: ContractsRoute,
   EarnRoute: EarnRoute,
   PortfolioRoute: PortfolioRoute,
@@ -359,7 +360,6 @@ const rootRouteChildren: RootRouteChildren = {
   SwapRoute: SwapRoute,
   VaultRoute: VaultRoute,
   WithdrawRoute: WithdrawRoute,
-  ApiChatStreamRoute: ApiChatStreamRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

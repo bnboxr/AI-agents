@@ -232,9 +232,9 @@ function DashboardPage() {
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl sm:text-3xl font-bold text-white flex items-center gap-2">
-              <span>🦚</span>
-              <span className="text-gradient-blue">PĂUN AI</span>
-              <span className="text-gray-400 text-lg font-normal">— AI Hedge Fund OS</span>
+              <span className="text-[#00e676] font-mono">{">"}</span>
+              <span className="text-gradient-blue">PĂUN_AI</span>
+              <span className="text-gray-400 text-lg font-normal font-mono">— AI Hedge Fund OS</span>
             </h1>
             <p className="text-gray-400 text-sm mt-1">
               Autonomous trading command center • {systemAgents.length + chainAgents.length} agents online

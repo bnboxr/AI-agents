@@ -194,13 +194,13 @@ function HomePage() {
             </div>
           ) : (
             <div className="glass-card p-8 text-center">
-              <h1 className="text-2xl sm:text-3xl font-bold text-white mb-2">
-                🦚 Păun AI — DeFi Command Center
+              <h1 className="text-2xl sm:text-3xl font-bold text-[#e0e6ed] mb-2 font-mono tracking-tight">
+                <span className="text-[#00e676]">{">"}</span> PĂUN_AI — FinTech Terminal
               </h1>
-              <p className="text-gray-400 max-w-md mx-auto mb-6 text-sm">
+              <p className="text-[#546e7a] max-w-md mx-auto mb-6 text-sm font-mono">
                 Connect your wallet to start earning yield, swapping tokens, and managing your portfolio across 20+ blockchains.
               </p>
-              <p className="text-xs text-gray-500">Use the <span className="text-accent-blue">Connect Wallet</span> button in the top-right corner</p>
+              <p className="text-xs text-[#455a64] font-mono">Use the <span className="text-[#00e676]">Connect Wallet</span> button in the top-right corner</p>
             </div>
           )}
         </section>

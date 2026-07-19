@@ -79,6 +79,8 @@ function NavBar() {
           <NavLink to="/settings">Settings</NavLink>
           <NavLink to="/chat">Chat</NavLink>
           <NavLink to="/risk">Risk</NavLink>
+          <NavLink to="/backtesting">Backtesting</NavLink>
+          <NavLink to="/gas">Gas</NavLink>
         </div>
         <div className="shrink-0 ml-2">
           <ConnectButton />

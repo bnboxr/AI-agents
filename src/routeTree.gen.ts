@@ -14,11 +14,14 @@ import { Route as VaultRouteImport } from './routes/vault'
 import { Route as SwapRouteImport } from './routes/swap'
 import { Route as StakeRouteImport } from './routes/stake'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as RiskRouteImport } from './routes/risk'
 import { Route as PortfolioRouteImport } from './routes/portfolio'
+import { Route as GasRouteImport } from './routes/gas'
 import { Route as EarnRouteImport } from './routes/earn'
 import { Route as ContractsRouteImport } from './routes/contracts'
 import { Route as ChatRouteImport } from './routes/chat'
 import { Route as ChainsRouteImport } from './routes/chains'
+import { Route as BacktestingRouteImport } from './routes/backtesting'
 import { Route as ArbitrageRouteImport } from './routes/arbitrage'
 import { Route as AnalyticsRouteImport } from './routes/analytics'
 import { Route as AgentsRouteImport } from './routes/agents'
@@ -50,9 +53,19 @@ const SettingsRoute = SettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => rootRouteImport,
 } as any)
+const RiskRoute = RiskRouteImport.update({
+  id: '/risk',
+  path: '/risk',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PortfolioRoute = PortfolioRouteImport.update({
   id: '/portfolio',
   path: '/portfolio',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GasRoute = GasRouteImport.update({
+  id: '/gas',
+  path: '/gas',
   getParentRoute: () => rootRouteImport,
 } as any)
 const EarnRoute = EarnRouteImport.update({
@@ -73,6 +86,11 @@ const ChatRoute = ChatRouteImport.update({
 const ChainsRoute = ChainsRouteImport.update({
   id: '/chains',
   path: '/chains',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BacktestingRoute = BacktestingRouteImport.update({
+  id: '/backtesting',
+  path: '/backtesting',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ArbitrageRoute = ArbitrageRouteImport.update({
@@ -106,11 +124,14 @@ export interface FileRoutesByFullPath {
   '/agents': typeof AgentsRoute
   '/analytics': typeof AnalyticsRoute
   '/arbitrage': typeof ArbitrageRoute
+  '/backtesting': typeof BacktestingRoute
   '/chains': typeof ChainsRouteWithChildren
   '/chat': typeof ChatRoute
   '/contracts': typeof ContractsRoute
   '/earn': typeof EarnRoute
+  '/gas': typeof GasRoute
   '/portfolio': typeof PortfolioRoute
+  '/risk': typeof RiskRoute
   '/settings': typeof SettingsRoute
   '/stake': typeof StakeRoute
   '/swap': typeof SwapRoute
@@ -123,11 +144,14 @@ export interface FileRoutesByTo {
   '/agents': typeof AgentsRoute
   '/analytics': typeof AnalyticsRoute
   '/arbitrage': typeof ArbitrageRoute
+  '/backtesting': typeof BacktestingRoute
   '/chains': typeof ChainsRouteWithChildren
   '/chat': typeof ChatRoute
   '/contracts': typeof ContractsRoute
   '/earn': typeof EarnRoute
+  '/gas': typeof GasRoute
   '/portfolio': typeof PortfolioRoute
+  '/risk': typeof RiskRoute
   '/settings': typeof SettingsRoute
   '/stake': typeof StakeRoute
   '/swap': typeof SwapRoute
@@ -141,11 +165,14 @@ export interface FileRoutesById {
   '/agents': typeof AgentsRoute
   '/analytics': typeof AnalyticsRoute
   '/arbitrage': typeof ArbitrageRoute
+  '/backtesting': typeof BacktestingRoute
   '/chains': typeof ChainsRouteWithChildren
   '/chat': typeof ChatRoute
   '/contracts': typeof ContractsRoute
   '/earn': typeof EarnRoute
+  '/gas': typeof GasRoute
   '/portfolio': typeof PortfolioRoute
+  '/risk': typeof RiskRoute
   '/settings': typeof SettingsRoute
   '/stake': typeof StakeRoute
   '/swap': typeof SwapRoute
@@ -160,11 +187,14 @@ export interface FileRouteTypes {
     | '/agents'
     | '/analytics'
     | '/arbitrage'
+    | '/backtesting'
     | '/chains'
     | '/chat'
     | '/contracts'
     | '/earn'
+    | '/gas'
     | '/portfolio'
+    | '/risk'
     | '/settings'
     | '/stake'
     | '/swap'
@@ -177,11 +207,14 @@ export interface FileRouteTypes {
     | '/agents'
     | '/analytics'
     | '/arbitrage'
+    | '/backtesting'
     | '/chains'
     | '/chat'
     | '/contracts'
     | '/earn'
+    | '/gas'
     | '/portfolio'
+    | '/risk'
     | '/settings'
     | '/stake'
     | '/swap'
@@ -194,11 +227,14 @@ export interface FileRouteTypes {
     | '/agents'
     | '/analytics'
     | '/arbitrage'
+    | '/backtesting'
     | '/chains'
     | '/chat'
     | '/contracts'
     | '/earn'
+    | '/gas'
     | '/portfolio'
+    | '/risk'
     | '/settings'
     | '/stake'
     | '/swap'
@@ -212,11 +248,14 @@ export interface RootRouteChildren {
   AgentsRoute: typeof AgentsRoute
   AnalyticsRoute: typeof AnalyticsRoute
   ArbitrageRoute: typeof ArbitrageRoute
+  BacktestingRoute: typeof BacktestingRoute
   ChainsRoute: typeof ChainsRouteWithChildren
   ChatRoute: typeof ChatRoute
   ContractsRoute: typeof ContractsRoute
   EarnRoute: typeof EarnRoute
+  GasRoute: typeof GasRoute
   PortfolioRoute: typeof PortfolioRoute
+  RiskRoute: typeof RiskRoute
   SettingsRoute: typeof SettingsRoute
   StakeRoute: typeof StakeRoute
   SwapRoute: typeof SwapRoute
@@ -261,11 +300,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/risk': {
+      id: '/risk'
+      path: '/risk'
+      fullPath: '/risk'
+      preLoaderRoute: typeof RiskRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/portfolio': {
       id: '/portfolio'
       path: '/portfolio'
       fullPath: '/portfolio'
       preLoaderRoute: typeof PortfolioRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/gas': {
+      id: '/gas'
+      path: '/gas'
+      fullPath: '/gas'
+      preLoaderRoute: typeof GasRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/earn': {
@@ -294,6 +347,13 @@ declare module '@tanstack/react-router' {
       path: '/chains'
       fullPath: '/chains'
       preLoaderRoute: typeof ChainsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/backtesting': {
+      id: '/backtesting'
+      path: '/backtesting'
+      fullPath: '/backtesting'
+      preLoaderRoute: typeof BacktestingRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/arbitrage': {
@@ -350,11 +410,14 @@ const rootRouteChildren: RootRouteChildren = {
   AgentsRoute: AgentsRoute,
   AnalyticsRoute: AnalyticsRoute,
   ArbitrageRoute: ArbitrageRoute,
+  BacktestingRoute: BacktestingRoute,
   ChainsRoute: ChainsRouteWithChildren,
   ChatRoute: ChatRoute,
   ContractsRoute: ContractsRoute,
   EarnRoute: EarnRoute,
+  GasRoute: GasRoute,
   PortfolioRoute: PortfolioRoute,
+  RiskRoute: RiskRoute,
   SettingsRoute: SettingsRoute,
   StakeRoute: StakeRoute,
   SwapRoute: SwapRoute,

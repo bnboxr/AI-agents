@@ -1,6 +1,7 @@
 import { internalScan, addActivity, getAgentState } from '../agent-runner';
 import { dequeue, enqueue } from './queue';
 import type { ScanTask, TaskResult } from './types';
+import { agentBus } from '../agent-bus';
 
 const POLL_INTERVAL_MS = 2_000;   // 2s between dispatch polls
 const MAX_CONCURRENT = 3;
@@ -18,6 +19,13 @@ async function executeTask(task: ScanTask): Promise<TaskResult> {
   const startTime = Date.now();
   const agent = getAgentState(task.chainId);
 
+  // Emit scan_started event for live monitor
+  agentBus.emit('scan_started', {
+    chainId: task.chainId,
+    agentName: agent.agentName,
+    timestamp: startTime,
+  });
+
   addActivity({
     id: `dispatch-${task.id}`,
     chainId: task.chainId,
@@ -31,6 +39,25 @@ async function executeTask(task: ScanTask): Promise<TaskResult> {
     const result = await internalScan(task.chainId);
 
     const durationMs = Date.now() - startTime;
+
+    // Emit opportunity_found for each opportunity
+    for (const opp of result.opportunities) {
+      agentBus.emit('opportunity_found', {
+        chainId: task.chainId,
+        agentName: agent.agentName,
+        opportunity: opp,
+      });
+    }
+
+    // Emit scan_completed
+    agentBus.emit('scan_completed', {
+      chainId: task.chainId,
+      agentName: agent.agentName,
+      opportunitiesFound: result.opportunities.length,
+      durationMs,
+      success: true,
+    });
+
     return {
       taskId: task.id,
       chainId: task.chainId,
@@ -49,6 +76,15 @@ async function executeTask(task: ScanTask): Promise<TaskResult> {
       action: `Eroare scan ${task.chainId}: ${errorMsg}`,
       timestamp: Date.now(),
       type: 'info',
+    });
+
+    // Emit scan_completed with failure
+    agentBus.emit('scan_completed', {
+      chainId: task.chainId,
+      agentName: agent.agentName,
+      opportunitiesFound: 0,
+      durationMs,
+      success: false,
     });
 
     return {

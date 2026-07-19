@@ -3,6 +3,7 @@ import { AGENTS } from "./agents";
 import { CHAINS } from "./chains";
 import type { AgentActivity } from "./agent-activity";
 import { getRobustMultiPrices } from "./price-feeds";
+import { agentBus } from "./agent-bus";
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -67,6 +68,8 @@ const activityLog: AgentActivity[] = [];
 export function addActivity(entry: AgentActivity) {
   activityLog.unshift(entry);
   if (activityLog.length > 200) activityLog.length = 200;
+  // Emit for WebSocket broadcast
+  agentBus.emit('activity', { activity: entry });
 }
 
 export function getActivities(): AgentActivity[] {
@@ -149,6 +152,7 @@ export async function internalScan(chainId: string): Promise<AgentScanResult> {
 
   // Update agent state
   const state = getAgentState(chainId);
+  const prevStatus = state.status;
   state.status = opportunities.length > 0 ? 'active' : 'idle';
   state.lastAction = actionText;
   state.lastActionTime = now;
@@ -156,6 +160,11 @@ export async function internalScan(chainId: string): Promise<AgentScanResult> {
   if (opportunities.length > 0) {
     state.transactions += 1;
     state.profitGenerated += opportunities.reduce((s, o) => s + Math.max(0, o.estimatedProfit * 0.1), 0);
+  }
+
+  // Emit status change if it actually changed
+  if (state.status !== prevStatus) {
+    agentBus.emit('agent_status_change', { chainId, status: { ...state } });
   }
 
   return {

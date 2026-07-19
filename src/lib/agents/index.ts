@@ -45,6 +45,17 @@ export type { PortfolioSnapshot, PortfolioPosition, PortfolioMetrics } from "./p
 export { ReasoningAgent } from "./reasoning";
 export type { ExplanationResult } from "./reasoning";
 
+export { SmartMoneyAgent } from "./smart-money";
+export type {
+  OrderBlock,
+  FairValueGap,
+  StructureBreak,
+  EqualLevels,
+  LiquidityGrab,
+  PremiumDiscountZone,
+  SmartMoneyPatterns,
+} from "./smart-money";
+
 export {
   runAgentAnalysis,
   getAgentReports,

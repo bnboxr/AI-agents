@@ -15,6 +15,7 @@ import { ExitAgent, type ExitContext } from "./exit";
 import { ExecutionAgent, type ExecutionResult } from "./execution";
 import { PortfolioAgent, type PortfolioSnapshot } from "./portfolio";
 import { ReasoningAgent, type ExplanationResult } from "./reasoning";
+import { SmartMoneyAgent, type SmartMoneyPatterns } from "./smart-money";
 import type {
   AgentReport,
   AgentRole,
@@ -37,6 +38,7 @@ const exitAgent = new ExitAgent();
 const executionAgent = new ExecutionAgent();
 const portfolioAgent = new PortfolioAgent();
 const reasoningAgent = new ReasoningAgent();
+const smartMoneyAgent = new SmartMoneyAgent();
 
 // ── Scoring Weights ───────────────────────────────────────────────
 
@@ -54,6 +56,7 @@ const ROLE_WEIGHTS: Record<AgentRole, number> = {
   memory: 0,
   reasoning: 0,
   exit: 0,
+  smart_money: 0.12,
 };
 
 // ── In-memory report store ────────────────────────────────────────
@@ -266,6 +269,57 @@ async function gatherReports(ctx: PriceContext): Promise<AgentReport[]> {
       direction: "NEUTRAL",
       confidence: 50,
       reasoning: "Insufficient OHLCV data for pattern detection.",
+      data: {},
+    });
+  }
+
+  // ── Smart Money Agent: ICT/SMC analysis ──────────────────────────
+  if (ctx.ohlcv && ctx.ohlcv.length >= 20) {
+    try {
+      const smartMoneyPatterns = smartMoneyAgent.analyzeSmartMoney(
+        ctx.ohlcv,
+        ctx.currentPrice,
+      );
+      const smartMoneyReport = await smartMoneyAgent.analyzeMarket({
+        token: ctx.token,
+        chainId: ctx.chainId,
+        currentPrice: ctx.currentPrice,
+        patterns: smartMoneyPatterns,
+        bars: ctx.ohlcv,
+      });
+      // Attach raw pattern data to the report
+      smartMoneyReport.data = {
+        ...smartMoneyReport.data,
+        orderBlocks: smartMoneyPatterns.orderBlocks.length,
+        fvgs: smartMoneyPatterns.fvgs.length,
+        unfilledFvgs: smartMoneyPatterns.fvgs.filter((f) => !f.filled).length,
+        bos: smartMoneyPatterns.bos.length,
+        choch: smartMoneyPatterns.choch.length,
+        equalHighsLows: smartMoneyPatterns.equalHighsLows.length,
+        liquidityGrabs: smartMoneyPatterns.liquidityGrabs.length,
+        premiumDiscount: smartMoneyPatterns.premiumDiscount.zone,
+        rawPatterns: smartMoneyPatterns,
+      };
+      reports.push(smartMoneyReport);
+    } catch {
+      reports.push({
+        agentId: "smart-money-agent",
+        role: "smart_money",
+        timestamp: Date.now(),
+        direction: "NEUTRAL",
+        confidence: 0,
+        reasoning: "Smart Money analysis unavailable.",
+        data: {},
+      });
+    }
+  } else {
+    reports.push({
+      agentId: "smart-money-agent",
+      role: "smart_money",
+      timestamp: Date.now(),
+      direction: "NEUTRAL",
+      confidence: 50,
+      reasoning: "Insufficient OHLCV data for Smart Money analysis (need 20+ candles).",
       data: {},
     });
   }

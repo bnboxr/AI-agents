@@ -13,7 +13,8 @@ export type AgentRole =
   | "learning"
   | "memory"
   | "reasoning"
-  | "exit";
+  | "exit"
+  | "smart_money";
 
 export interface AgentReport {
   agentId: string;

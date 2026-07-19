@@ -7,6 +7,8 @@ import {
 } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { WalletProvider, ConnectButton } from "~/components/WalletProvider";
+import AlertBell from "~/components/AlertBell";
+import AlertToast from "~/components/AlertToast";
 import HelpGuide from "~/components/HelpGuide";
 import ParticleField from "~/components/ParticleField";
 
@@ -50,6 +52,7 @@ function RootComponent() {
         <main className="min-h-dvh">
           <Outlet />
         </main>
+        <AlertToast />
         <Footer />
         <HelpGuide />
       </WalletProvider>
@@ -81,8 +84,10 @@ function NavBar() {
           <NavLink to="/risk">Risk</NavLink>
           <NavLink to="/backtesting">Backtesting</NavLink>
           <NavLink to="/gas">Gas</NavLink>
+          <NavLink to="/alerts">Alerts</NavLink>
         </div>
-        <div className="shrink-0 ml-2">
+        <div className="shrink-0 ml-2 flex items-center gap-1">
+          <AlertBell />
           <ConnectButton />
         </div>
       </div>

@@ -3,6 +3,7 @@
 import { BaseAgent } from "./base";
 import type { AgentReport, OrchestratorDecision } from "./types";
 import type { MarketCondition } from "./learning";
+import type { TradeAudit } from "./reasoning";
 
 export interface StoredDecision {
   id: string;
@@ -15,6 +16,7 @@ export interface StoredDecision {
     exitedAt: number;
     exitReason: string;
   };
+  audit?: TradeAudit;
   storedAt: number;
 }
 
@@ -85,6 +87,14 @@ export class MemoryAgent extends BaseAgent {
     const stored = this.decisions.find((d) => d.id === decisionId);
     if (!stored) return false;
     stored.outcome = outcome;
+    return true;
+  }
+
+  /** Store a post-execution audit for a decision. */
+  storeAudit(decisionId: string, audit: TradeAudit): boolean {
+    const stored = this.decisions.find((d) => d.id === decisionId);
+    if (!stored) return false;
+    stored.audit = audit;
     return true;
   }
 

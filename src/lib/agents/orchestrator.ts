@@ -14,7 +14,7 @@ import { MemoryAgent } from "./memory";
 import { ExitAgent, type ExitContext } from "./exit";
 import { ExecutionAgent, type ExecutionResult } from "./execution";
 import { PortfolioAgent, type PortfolioSnapshot } from "./portfolio";
-import { ReasoningAgent, type ExplanationResult } from "./reasoning";
+import { ReasoningAgent, type ExplanationResult, type TradeAudit } from "./reasoning";
 import { SmartMoneyAgent, type SmartMoneyPatterns } from "./smart-money";
 import { LiquidityAgent, subscribeOrderBook, type LiquidityAnalysis } from "./liquidity";
 import { RegimeDetectionAgent, classifyRegime } from "./regime";
@@ -1362,6 +1362,7 @@ export const runAgentAnalysis = createServerFn({ method: "POST" }).handler(
     execution?: ExecutionResult;
     portfolio?: PortfolioSnapshot;
     explanation?: string;
+    audit?: TradeAudit;
   }> => {
     // ── Kill Switch Check ─────────────────────────────────────────
     // Runs synchronously at the start of every analysis cycle.
@@ -1544,6 +1545,43 @@ export const runAgentAnalysis = createServerFn({ method: "POST" }).handler(
       // Reasoning is best-effort
     }
 
+    // ── Self Audit: post-execution trade review ──────────────────
+    // Runs after execution and explanation to audit the trade quality.
+    let audit: TradeAudit | undefined;
+    if (
+      decision.action === "BUY" ||
+      decision.action === "SELL" ||
+      decision.action === "EXIT"
+    ) {
+      try {
+        audit = await reasoningAgent.auditTrade(decision, finalReports);
+
+        // Store audit alongside trade in memory if we have a stored decision ID
+        if (lastStoredDecisionId && audit) {
+          memoryAgent.storeAudit(lastStoredDecisionId, audit);
+        }
+
+        // Persist audit to DB via agent_memory table
+        if (isDbAvailable()) {
+          sql`
+            INSERT INTO agent_memory (agent_id, memory_type, chain_id, token, summary, payload, importance)
+            VALUES (
+              ${"reasoning-agent"},
+              ${"trade_audit"},
+              ${data.chainId ?? null},
+              ${data.token ?? null},
+              ${`Audit: ${audit.passed ? "PASS" : "FAIL"} (score: ${audit.score}/100)`},
+              ${JSON.stringify(audit)}::jsonb,
+              ${audit.passed ? 5 : 9}
+            )
+          `.catch((err) => console.error("[DB] audit insert failed:", err));
+        }
+      } catch (err) {
+        console.error("[Audit] Self-audit failed:", err);
+        // Audit is best-effort — don't block the pipeline
+      }
+    }
+
     return {
       reports: finalReports,
       decision,
@@ -1551,6 +1589,7 @@ export const runAgentAnalysis = createServerFn({ method: "POST" }).handler(
       execution,
       portfolio,
       explanation,
+      audit,
     };
   },
 );

@@ -43,7 +43,7 @@ export { PortfolioAgent } from "./portfolio";
 export type { PortfolioSnapshot, PortfolioPosition, PortfolioMetrics } from "./portfolio";
 
 export { ReasoningAgent } from "./reasoning";
-export type { ExplanationResult } from "./reasoning";
+export type { ExplanationResult, TradeAudit } from "./reasoning";
 
 export { SmartMoneyAgent } from "./smart-money";
 export type {

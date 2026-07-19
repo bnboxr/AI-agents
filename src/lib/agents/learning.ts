@@ -1,7 +1,8 @@
 // ── Learning Agent ────────────────────────────────────────────────
 // Tracks performance across market conditions and recommends parameter adjustments.
+// Implements continuous auto-weight adjustment and pattern discovery.
 import { BaseAgent } from "./base";
-import type { AgentReport, OrchestratorDecision } from "./types";
+import type { AgentReport, AgentRole } from "./types";
 
 export type MarketCondition = "trending_up" | "trending_down" | "sideways" | "volatile";
 
@@ -36,6 +37,30 @@ export interface LearningAdjustments {
   summary: string;
 }
 
+export interface AgentAccuracy {
+  role: AgentRole;
+  wins: number;
+  trades: number;
+  accuracy: number;
+}
+
+export interface DiscoveredPattern {
+  id: string;
+  description: string;
+  condition: string;       // e.g. "rsi > 70 AND volume declining"
+  modifier: "confidence_boost" | "confidence_penalty" | "position_reduce" | "position_increase" | "avoid" | "favor";
+  value: number;            // e.g. -15 for 15% penalty
+  role: AgentRole;         // which agent this pattern affects
+  discoveredAt: number;
+}
+
+export interface WeightAdjustment {
+  role: AgentRole;
+  oldWeight: number;
+  newWeight: number;
+  reason: string;
+}
+
 const SYSTEM_PROMPT = `You are a quantitative performance analyst with expertise in trading system optimization. Your job is to analyze trading performance data and recommend parameter adjustments to improve profitability.
 
 Analyze the provided performance statistics across market conditions and determine:
@@ -58,9 +83,21 @@ export class LearningAgent extends BaseAgent {
   private trades: TradeRecord[] = [];
   private readonly MAX_TRADES = 500;
   private tradeIdCounter = 0;
+  private weightAdjustmentCounter = 0;
+  private patternDiscoveryCounter = 0;
 
   // Per-condition stats cache
   private conditionStats: Map<MarketCondition, ConditionStats> = new Map();
+
+  // Per-agent accuracy tracking for auto-weight adjustment
+  private agentAccuracyMap: Map<AgentRole, { wins: number; trades: number }> = new Map();
+
+  // Discovered patterns from GPT-4o analysis
+  private discoveredPatterns: DiscoveredPattern[] = [];
+  private patternIdCounter = 0;
+
+  // Last weight adjustment for audit trail
+  private lastWeightAdjustments: WeightAdjustment[] = [];
 
   constructor() {
     super({
@@ -88,6 +125,320 @@ export class LearningAgent extends BaseAgent {
     this.updateConditionStats(record);
 
     return record;
+  }
+
+  /**
+   * Record a closed trade with per-agent signal data.
+   * Tracks which agents contributed to the decision and whether their
+   * direction aligned with the outcome (for weight adjustment).
+   */
+  recordTradeWithSignals(
+    trade: Omit<TradeRecord, "id">,
+    agentSignals: Array<{ role: AgentRole; direction: "LONG" | "SHORT" | "NEUTRAL" }>,
+  ): TradeRecord {
+    const record = this.recordTrade(trade);
+
+    // Update per-agent accuracy: agent wins if direction matches profitable outcome
+    const isWin = trade.pnlPct > 0;
+    for (const signal of agentSignals) {
+      if (signal.direction === "NEUTRAL") continue;
+
+      const existing = this.agentAccuracyMap.get(signal.role) ?? {
+        wins: 0,
+        trades: 0,
+      };
+      existing.trades++;
+
+      // Agent "wins" if its signal direction aligned with a profitable outcome
+      // LONG + win = correct, SHORT + win (price went down) = correct
+      const signalCorrect =
+        (signal.direction === "LONG" && isWin) ||
+        (signal.direction === "SHORT" && !isWin);
+      if (signalCorrect) {
+        existing.wins++;
+      }
+
+      this.agentAccuracyMap.set(signal.role, existing);
+    }
+
+    return record;
+  }
+
+  /**
+   * Get per-agent accuracy statistics.
+   */
+  getAgentAccuracies(): AgentAccuracy[] {
+    const accuracies: AgentAccuracy[] = [];
+    for (const [role, stats] of this.agentAccuracyMap) {
+      if (stats.trades === 0) continue;
+      accuracies.push({
+        role,
+        wins: stats.wins,
+        trades: stats.trades,
+        accuracy: Math.round((stats.wins / stats.trades) * 10000) / 100,
+      });
+    }
+    return accuracies.sort((a, b) => b.accuracy - a.accuracy);
+  }
+
+  /**
+   * Auto-Weight Adjustment: recalculate agent weights based on actual accuracy.
+   * Called after every 20 closed trades.
+   *
+   * Formula:
+   *   agentAccuracy = agentWins / agentTrades
+   *   avgAccuracy   = sum(allAgentAccuracies) / agentCount
+   *   newWeight     = baseWeight * (agentAccuracy / avgAccuracy)
+   * Capped at ±50% of base weight.
+   */
+  adjustWeights(baseWeights: Record<AgentRole, number>): WeightAdjustment[] | null {
+    const accuracies = this.getAgentAccuracies();
+    if (accuracies.length === 0) return null;
+
+    // Calculate average accuracy across all agents with data
+    const sumAccuracy = accuracies.reduce((s, a) => s + a.accuracy, 0);
+    const avgAccuracy = sumAccuracy / accuracies.length;
+
+    if (avgAccuracy === 0) return null;
+
+    const adjustments: WeightAdjustment[] = [];
+
+    for (const { role, accuracy } of accuracies) {
+      const baseWeight = baseWeights[role];
+      if (baseWeight === undefined || baseWeight === 0) continue;
+
+      const ratio = accuracy / avgAccuracy;
+      let newWeight = baseWeight * ratio;
+
+      // Cap at ±50% of base weight
+      const minWeight = baseWeight * 0.5;
+      const maxWeight = baseWeight * 1.5;
+      newWeight = Math.max(minWeight, Math.min(maxWeight, newWeight));
+
+      // Round to 4 decimal places
+      newWeight = Math.round(newWeight * 10000) / 10000;
+
+      adjustments.push({
+        role,
+        oldWeight: baseWeights[role],
+        newWeight,
+        reason: `accuracy=${accuracy}% vs avg=${Math.round(avgAccuracy * 100) / 100}% (ratio=${Math.round(ratio * 100) / 100})`,
+      });
+    }
+
+    this.weightAdjustmentCounter++;
+    this.lastWeightAdjustments = adjustments;
+
+    console.log(
+      `[Learning] Weight adjustment #${this.weightAdjustmentCounter}: ` +
+        `${accuracies.length} agents evaluated (avg accuracy: ${Math.round(avgAccuracy * 100) / 100}%)`,
+    );
+
+    return adjustments;
+  }
+
+  /**
+   * Pattern Discovery: every 50 trades, call GPT-4o to discover patterns
+   * that correlate with wins/losses. Stores results as scoring modifiers.
+   */
+  async discoverPatterns(): Promise<DiscoveredPattern[]> {
+    if (this.trades.length < 50) {
+      console.log(
+        `[Learning] Pattern discovery skipped: only ${this.trades.length} trades (need 50)`,
+      );
+      return [];
+    }
+
+    const last50 = this.trades.slice(-50);
+
+    // Build prompt with trade data
+    const tradeLines = last50.map((t, i) => {
+      const outcome = t.pnlPct > 0 ? "WIN" : "LOSS";
+      return `#${i + 1}: ${t.direction} ${t.symbol} | Condition: ${t.marketCondition} | PnL: ${t.pnlPct > 0 ? "+" : ""}${t.pnlPct.toFixed(2)}% | Confidence: ${t.confidence}% | Outcome: ${outcome}`;
+    });
+
+    const winCount = last50.filter((t) => t.pnlPct > 0).length;
+    const lossCount = last50.length - winCount;
+
+    const prompt = [
+      `Here are the last ${last50.length} trades with their market conditions and outcomes.`,
+      `Wins: ${winCount} | Losses: ${lossCount} | Win rate: ${Math.round((winCount / last50.length) * 100)}%`,
+      ``,
+      `=== TRADE LOG ===`,
+      ...tradeLines,
+      ``,
+      `=== ANALYSIS REQUEST ===`,
+      `What patterns correlate with wins? What correlates with losses? Any new rules to add?`,
+      ``,
+      `Respond in JSON format only:`,
+      `{"patterns":[{"description":"pattern name","condition":"detectable condition","modifier":"confidence_boost|confidence_penalty|position_reduce|position_increase|avoid|favor","value":-15,"role":"market|technical|pattern|risk|news|macro|smart_money|liquidity|regime|multi_timeframe|correlation|sentiment|volume|probability|confidence","confidence":75}],"summary":"overall analysis"}`,
+    ].join("\n");
+
+    try {
+      const apiKey = process.env.OPENAI_API_KEY;
+      if (!apiKey) {
+        console.log("[Learning] Pattern discovery skipped: no OpenAI API key");
+        return [];
+      }
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 20_000);
+      const res = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "gpt-4o",
+          messages: [
+            {
+              role: "system",
+              content:
+                "You are a quantitative trading pattern analyst. Analyze trade logs to find patterns that correlate with winning and losing trades. Be specific and data-driven. Identify actionable rules the system can use as scoring modifiers.",
+            },
+            { role: "user", content: prompt },
+          ],
+          temperature: 0.3,
+          max_tokens: 800,
+        }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+
+      if (!res.ok) {
+        console.error(`[Learning] Pattern discovery API error: ${res.status}`);
+        return [];
+      }
+
+      const data = (await res.json()) as {
+        choices: Array<{ message: { content: string } }>;
+      };
+      const text = data.choices?.[0]?.message?.content || "";
+
+      // Parse the response
+      const cleaned = text.replace(/```json|```/g, "").trim();
+      const parsed = JSON.parse(cleaned);
+
+      const patterns: DiscoveredPattern[] = [];
+      const rawPatterns: Array<{
+        description: string;
+        condition: string;
+        modifier: string;
+        value: number;
+        role: string;
+        confidence: number;
+      }> = parsed.patterns || [];
+
+      for (const p of rawPatterns) {
+        if (p.confidence < 60) continue; // Only keep high-confidence patterns
+        const pattern: DiscoveredPattern = {
+          id: `pattern-${++this.patternIdCounter}-${Date.now()}`,
+          description: p.description,
+          condition: p.condition,
+          modifier: p.modifier as DiscoveredPattern["modifier"],
+          value: p.value,
+          role: p.role as AgentRole,
+          discoveredAt: Date.now(),
+        };
+        patterns.push(pattern);
+        this.discoveredPatterns.push(pattern);
+      }
+
+      // Keep only the 50 most recent patterns
+      if (this.discoveredPatterns.length > 50) {
+        this.discoveredPatterns = this.discoveredPatterns.slice(-50);
+      }
+
+      this.patternDiscoveryCounter++;
+      console.log(
+        `[Learning] Pattern discovery #${this.patternDiscoveryCounter}: ` +
+          `${patterns.length} patterns found (${parsed.summary || "no summary"})`,
+      );
+
+      return patterns;
+    } catch (err) {
+      console.error("[Learning] Pattern discovery error:", err);
+      return [];
+    }
+  }
+
+  /**
+   * Get all discovered patterns (for orchestrator to apply as scoring modifiers).
+   */
+  getDiscoveredPatterns(): DiscoveredPattern[] {
+    return [...this.discoveredPatterns];
+  }
+
+  /**
+   * Get the last weight adjustments (for DB logging and audit).
+   */
+  getLastWeightAdjustments(): WeightAdjustment[] {
+    return [...this.lastWeightAdjustments];
+  }
+
+  /**
+   * Check if auto-weight adjustment is due (every 20 closed trades).
+   */
+  isWeightAdjustmentDue(): boolean {
+    return this.trades.length > 0 && this.trades.length % 20 === 0;
+  }
+
+  /**
+   * Check if pattern discovery is due (every 50 closed trades or first 50+).
+   */
+  isPatternDiscoveryDue(): boolean {
+    return this.trades.length >= 50 && this.trades.length % 50 === 0;
+  }
+
+  /**
+   * Apply a discovered pattern as a scoring modifier.
+   * Returns a confidence adjustment value for a given agent role.
+   */
+  applyPatternModifiers(role: AgentRole, context: Record<string, any>): number {
+    let totalModifier = 0;
+    for (const pattern of this.discoveredPatterns) {
+      if (pattern.role !== role) continue;
+
+      // Simple condition check: if the pattern's condition string appears
+      // in the context values, apply the modifier
+      // In production, this would be a proper expression evaluator
+      const contextStr = JSON.stringify(context).toLowerCase();
+      const conditionLower = pattern.condition.toLowerCase();
+
+      // Check if the condition keywords are present in context
+      const keywords = conditionLower
+        .split(/and|or|,|&+/)
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
+
+      const allKeywordsMatch = keywords.every((kw) => contextStr.includes(kw));
+      if (!allKeywordsMatch) continue;
+
+      switch (pattern.modifier) {
+        case "confidence_boost":
+          totalModifier += pattern.value;
+          break;
+        case "confidence_penalty":
+          totalModifier += pattern.value; // value is negative
+          break;
+        case "position_reduce":
+          // Handled separately in position sizing
+          break;
+        case "position_increase":
+          break;
+        case "avoid":
+          // Handled by returning a strong negative signal
+          totalModifier -= Math.abs(pattern.value);
+          break;
+        case "favor":
+          totalModifier += Math.abs(pattern.value);
+          break;
+      }
+    }
+
+    // Clamp total modifier to ±30
+    return Math.max(-30, Math.min(30, totalModifier));
   }
 
   /** Update in-memory stats for a given market condition. */

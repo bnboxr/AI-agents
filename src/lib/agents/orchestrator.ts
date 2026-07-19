@@ -94,6 +94,9 @@ const ROLE_WEIGHTS: Record<AgentRole, number> = {
   system_audit: 0, // Monitoring only — not a trading signal agent
 };
 
+// Snapshot of original weights for auto-weight adjustment baseline
+const BASE_WEIGHTS: Record<AgentRole, number> = { ...ROLE_WEIGHTS };
+
 // ── In-memory report store ────────────────────────────────────────
 
 const recentReports: Map<string, AgentReport[]> = new Map();
@@ -101,6 +104,10 @@ const recentReports: Map<string, AgentReport[]> = new Map();
 // ── Track last stored decision ID for outcome recording ────────────
 
 let lastStoredDecisionId: string | null = null;
+
+// ── Track last decision's agent reports for per-agent accuracy ─────
+
+let lastDecisionReports: AgentReport[] = [];
 
 // ── Default Trading State ─────────────────────────────────────────
 
@@ -130,8 +137,22 @@ function scoreDirection(reports: AgentReport[]): {
   let totalWeight = 0;
 
   for (const report of reports) {
-    const weight = ROLE_WEIGHTS[report.role] || 0;
+    let weight = ROLE_WEIGHTS[report.role] || 0;
     if (weight === 0) continue;
+
+    // ── Apply discovered pattern modifiers ──────────────────────
+    // Learning agent adjusts weights based on discovered patterns
+    const patternModifier = learningAgent.applyPatternModifiers(report.role, {
+      direction: report.direction,
+      confidence: report.confidence,
+      reasoning: report.reasoning,
+    });
+    if (patternModifier !== 0) {
+      // Modify effective confidence: patterns boost/penalize confidence
+      const adjustedConf = Math.max(0, Math.min(100, report.confidence + patternModifier));
+      weight = weight * (adjustedConf / report.confidence);
+    }
+
     totalWeight += weight;
 
     const weightedConf = report.confidence * weight;
@@ -1269,6 +1290,9 @@ function makeDecision(
     .filter(Boolean)
     .join("\n");
 
+  // ── Capture agent reports for per-agent accuracy tracking ──────
+  lastDecisionReports = reports;
+
   // ── Store decision in memory agent ────────────────────────────
   const indicatorMap: Record<string, number> | undefined = priceContext.indicators
     ? {
@@ -1685,7 +1709,12 @@ export const recordTradeOutcome = createServerFn({ method: "POST" }).handler(
       confidence: number;
       exitReason: string;
     };
-  }): Promise<{ success: boolean; pnlPct: number }> => {
+  }): Promise<{
+    success: boolean;
+    pnlPct: number;
+    weightAdjusted?: boolean;
+    patternsDiscovered?: number;
+  }> => {
     const pnlMult = data.direction === "LONG" ? 1 : -1;
     const pnlPct =
       Math.round(
@@ -1694,16 +1723,26 @@ export const recordTradeOutcome = createServerFn({ method: "POST" }).handler(
           100,
       ) / 100;
 
-    // Record in learning agent
-    learningAgent.recordTrade({
-      symbol: data.symbol,
-      direction: data.direction,
-      entryPrice: data.entryPrice,
-      exitPrice: data.exitPrice,
-      pnlPct,
-      marketCondition: data.marketCondition,
-      confidence: data.confidence,
-    });
+    // ── Extract agent signals from last decision reports ──────────
+    const agentSignals = lastDecisionReports.map((r) => ({
+      role: r.role,
+      direction: r.direction,
+    }));
+
+    // Record in learning agent with per-agent signal tracking
+    learningAgent.recordTradeWithSignals(
+      {
+        symbol: data.symbol,
+        direction: data.direction,
+        entryPrice: data.entryPrice,
+        exitPrice: data.exitPrice,
+        pnlPct,
+        marketCondition: data.marketCondition,
+        confidence: data.confidence,
+        timestamp: Date.now(),
+      },
+      agentSignals,
+    );
 
     // Update outcome in memory agent if we have a pending decision
     if (lastStoredDecisionId) {
@@ -1713,6 +1752,88 @@ export const recordTradeOutcome = createServerFn({ method: "POST" }).handler(
         exitReason: data.exitReason,
       });
       lastStoredDecisionId = null;
+    }
+
+    // ── Auto-Weight Adjustment: every 20 closed trades ──────────────
+    let weightAdjusted = false;
+    if (learningAgent.isWeightAdjustmentDue()) {
+      const adjustments = learningAgent.adjustWeights(BASE_WEIGHTS);
+      if (adjustments && adjustments.length > 0) {
+        // Apply new weights to ROLE_WEIGHTS
+        for (const adj of adjustments) {
+          ROLE_WEIGHTS[adj.role] = adj.newWeight;
+        }
+
+        // Log to DB: orchestrator_weight_history
+        if (isDbAvailable()) {
+          for (const adj of adjustments) {
+            sql`
+              INSERT INTO orchestrator_weight_history (role, weight, reason)
+              VALUES (${adj.role}, ${adj.newWeight}, ${adj.reason})
+            `.catch((err) =>
+              console.error(
+                "[DB] orchestrator_weight_history insert failed:",
+                err,
+              ),
+            );
+          }
+        }
+
+        // Log to agent_memory for audit trail
+        if (isDbAvailable()) {
+          sql`
+            INSERT INTO agent_memory (agent_id, memory_type, chain_id, token, summary, payload, importance)
+            VALUES (
+              ${"learning-agent"},
+              ${"weight_adjustment"},
+              ${null},
+              ${null},
+              ${`Auto-weight adjustment: ${adjustments.length} agents updated (trade #${tradingState.totalTrades + 1})`},
+              ${JSON.stringify(adjustments)}::jsonb,
+              ${7}
+            )
+          `.catch((err) =>
+            console.error("[DB] weight_adjustment agent_memory insert failed:", err),
+          );
+        }
+
+        weightAdjusted = true;
+        console.log(
+          `[Orchestrator] Weights adjusted — ${adjustments.length} agents updated`,
+        );
+      }
+    }
+
+    // ── Pattern Discovery: every 50 closed trades ───────────────────
+    let patternsDiscovered = 0;
+    if (learningAgent.isPatternDiscoveryDue()) {
+      try {
+        const patterns = await learningAgent.discoverPatterns();
+        patternsDiscovered = patterns.length;
+
+        // Store discovered patterns in agent_memory
+        if (isDbAvailable() && patterns.length > 0) {
+          sql`
+            INSERT INTO agent_memory (agent_id, memory_type, chain_id, token, summary, payload, importance)
+            VALUES (
+              ${"learning-agent"},
+              ${"discovered_patterns"},
+              ${null},
+              ${null},
+              ${`Pattern discovery: ${patterns.length} patterns found (trade #${tradingState.totalTrades + 1})`},
+              ${JSON.stringify(patterns)}::jsonb,
+              ${8}
+            )
+          `.catch((err) =>
+            console.error(
+              "[DB] discovered_patterns agent_memory insert failed:",
+              err,
+            ),
+          );
+        }
+      } catch (err) {
+        console.error("[Orchestrator] Pattern discovery failed:", err);
+      }
     }
 
     // Record trade result in portfolio agent
@@ -1780,7 +1901,7 @@ export const recordTradeOutcome = createServerFn({ method: "POST" }).handler(
           )
         : 50;
 
-    return { success: true, pnlPct };
+    return { success: true, pnlPct, weightAdjusted, patternsDiscovered };
   },
 );
 

@@ -28,6 +28,9 @@ export type {
   MarketCondition,
   ConditionStats,
   LearningAdjustments,
+  AgentAccuracy,
+  DiscoveredPattern,
+  WeightAdjustment,
 } from "./learning";
 
 export { MemoryAgent } from "./memory";

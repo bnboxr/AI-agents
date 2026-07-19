@@ -9,6 +9,7 @@
 // with an already-running server. Every sandbox user has passwordless sudo, so
 // the takeover works across user boundaries.
 import handler from "./dist/server/server.js";
+import { startOrchestrator } from "./src/lib/orchestrator/orchestrator";
 
 // Pinned, NOT read from the environment. The published preview URL
 // (<label>.<PUBLIC_SITE_DOMAIN>) is reverse-proxied to 0.0.0.0:3000 inside the
@@ -28,6 +29,9 @@ const freePort =
   `if [ -z "$pids" ]; then exit 0; fi; ` +
   `kill $pids 2>/dev/null || true; sleep 0.2; ` +
   `done`;
+
+// Start the agent orchestration engine before the server binds
+startOrchestrator();
 
 // Take over the port, re-freeing and retrying if another publish grabbed it in the
 // gap between freeing and binding (last publish wins). Bun.serve throws EADDRINUSE

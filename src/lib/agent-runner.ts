@@ -81,7 +81,7 @@ const STAKING_APY_FALLBACKS: Record<string, number> = {
   sui: 4.0, bnb: 3.5, polygon: 5.0, avalanche: 7.5,
 };
 
-async function internalScan(chainId: string): Promise<AgentScanResult> {
+export async function internalScan(chainId: string): Promise<AgentScanResult> {
   const chain = CHAINS.find(c => c.id === chainId);
   const agent = AGENTS[chainId];
   const opportunities: AgentScanResult['opportunities'] = [];

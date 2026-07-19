@@ -53,7 +53,7 @@ async function detectToolViaLLM(messages: ChatMessage[]): Promise<string | null>
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: "gpt-4o-mini",
+          model: "gpt-4o",
           messages: llmMessages,
           temperature: 0.3,
           max_tokens: 50,

@@ -13,6 +13,7 @@ import { Route as WithdrawRouteImport } from './routes/withdraw'
 import { Route as VaultRouteImport } from './routes/vault'
 import { Route as SwapRouteImport } from './routes/swap'
 import { Route as StakeRouteImport } from './routes/stake'
+import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as PortfolioRouteImport } from './routes/portfolio'
 import { Route as EarnRouteImport } from './routes/earn'
 import { Route as ContractsRouteImport } from './routes/contracts'
@@ -41,6 +42,11 @@ const SwapRoute = SwapRouteImport.update({
 const StakeRoute = StakeRouteImport.update({
   id: '/stake',
   path: '/stake',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PortfolioRoute = PortfolioRouteImport.update({
@@ -98,6 +104,7 @@ export interface FileRoutesByFullPath {
   '/contracts': typeof ContractsRoute
   '/earn': typeof EarnRoute
   '/portfolio': typeof PortfolioRoute
+  '/settings': typeof SettingsRoute
   '/stake': typeof StakeRoute
   '/swap': typeof SwapRoute
   '/vault': typeof VaultRoute
@@ -113,6 +120,7 @@ export interface FileRoutesByTo {
   '/contracts': typeof ContractsRoute
   '/earn': typeof EarnRoute
   '/portfolio': typeof PortfolioRoute
+  '/settings': typeof SettingsRoute
   '/stake': typeof StakeRoute
   '/swap': typeof SwapRoute
   '/vault': typeof VaultRoute
@@ -129,6 +137,7 @@ export interface FileRoutesById {
   '/contracts': typeof ContractsRoute
   '/earn': typeof EarnRoute
   '/portfolio': typeof PortfolioRoute
+  '/settings': typeof SettingsRoute
   '/stake': typeof StakeRoute
   '/swap': typeof SwapRoute
   '/vault': typeof VaultRoute
@@ -146,6 +155,7 @@ export interface FileRouteTypes {
     | '/contracts'
     | '/earn'
     | '/portfolio'
+    | '/settings'
     | '/stake'
     | '/swap'
     | '/vault'
@@ -161,6 +171,7 @@ export interface FileRouteTypes {
     | '/contracts'
     | '/earn'
     | '/portfolio'
+    | '/settings'
     | '/stake'
     | '/swap'
     | '/vault'
@@ -176,6 +187,7 @@ export interface FileRouteTypes {
     | '/contracts'
     | '/earn'
     | '/portfolio'
+    | '/settings'
     | '/stake'
     | '/swap'
     | '/vault'
@@ -192,6 +204,7 @@ export interface RootRouteChildren {
   ContractsRoute: typeof ContractsRoute
   EarnRoute: typeof EarnRoute
   PortfolioRoute: typeof PortfolioRoute
+  SettingsRoute: typeof SettingsRoute
   StakeRoute: typeof StakeRoute
   SwapRoute: typeof SwapRoute
   VaultRoute: typeof VaultRoute
@@ -226,6 +239,13 @@ declare module '@tanstack/react-router' {
       path: '/stake'
       fullPath: '/stake'
       preLoaderRoute: typeof StakeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/portfolio': {
@@ -314,6 +334,7 @@ const rootRouteChildren: RootRouteChildren = {
   ContractsRoute: ContractsRoute,
   EarnRoute: EarnRoute,
   PortfolioRoute: PortfolioRoute,
+  SettingsRoute: SettingsRoute,
   StakeRoute: StakeRoute,
   SwapRoute: SwapRoute,
   VaultRoute: VaultRoute,

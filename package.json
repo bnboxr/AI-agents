@@ -18,6 +18,8 @@
     "@tanstack/react-start": "^1.158.3",
     "@wagmi/connectors": "^8.0.24",
     "@wagmi/core": "^3.6.3",
+    "@walletconnect/ethereum-provider": "^2.23.10",
+    "@walletconnect/modal": "^2.7.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "recharts": "^3.9.2",

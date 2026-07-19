@@ -2,20 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { WagmiProvider, useAccount, useConnect, useDisconnect, useBalance } from "wagmi";
 import { formatUnits } from "viem";
 import { useState, useEffect, useMemo, useCallback, type ReactNode } from "react";
-import { config, WALLET_LIST, TOP_WALLETS, type WalletMeta } from "~/lib/web3";
-
-// ── Auto-popup localStorage ──────────────────────────────────────
-const POPUP_KEY = "paun_wallet_popup_dismissed";
-const DISMISS_DURATION = 24 * 60 * 60 * 1000;
-
-function popupDismissed(): boolean {
-  if (typeof window === "undefined") return true;
-  const ts = localStorage.getItem(POPUP_KEY);
-  return ts ? (Date.now() - parseInt(ts, 10)) < DISMISS_DURATION : false;
-}
-function dismissPopup() {
-  if (typeof window !== "undefined") localStorage.setItem(POPUP_KEY, Date.now().toString());
-}
+import { config, type WalletMeta, WALLET_LIST } from "~/lib/web3";
 
 // ── Provider ─────────────────────────────────────────────────────
 export function WalletProvider({ children }: { children: ReactNode }) {
@@ -31,17 +18,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   );
 }
 
-// ── Browser wallet detection helpers ──────────────────────────────
-function hasAnyInjectedProvider(): boolean {
-  if (typeof window === "undefined") return false;
-  // Check for legacy window.ethereum
-  if ((window as any).ethereum) return true;
-  // Check for EIP-6963 announced providers
-  if ((window as any).eip6963Providers && (window as any).eip6963Providers.length > 0) return true;
-  return false;
-}
-
-// ── Connect Button ───────────────────────────────────────────────
+// ── Connect Button (navbar) ──────────────────────────────────────
 export function ConnectButton() {
   const { address, isConnected } = useAccount();
   const { disconnect } = useDisconnect();
@@ -49,12 +26,7 @@ export function ConnectButton() {
   const [showModal, setShowModal] = useState(false);
   const [mounted, setMounted] = useState(false);
 
-  useEffect(() => {
-    setMounted(true);
-    if (typeof window === "undefined" || isConnected || popupDismissed()) return;
-    const t = setTimeout(() => setShowModal(true), 2000);
-    return () => clearTimeout(t);
-  }, [isConnected]);
+  useEffect(() => { setMounted(true); }, []);
 
   if (!mounted) {
     return (
@@ -86,8 +58,6 @@ export function ConnectButton() {
     );
   }
 
-  const close = () => { setShowModal(false); dismissPopup(); };
-
   return (
     <>
       <button
@@ -96,105 +66,147 @@ export function ConnectButton() {
       >
         Connect Wallet
       </button>
-      {showModal && <WalletModal onClose={close} onConnectLater={close} />}
+      {showModal && <WalletModal onClose={() => setShowModal(false)} />}
     </>
   );
 }
 
+// ── EIP-6963 helper ─────────────────────────────────────────────
+function useDetectedWallets() {
+  const [eip6963Providers, setEip6963Providers] = useState<{ rdns: string; name: string; icon?: string }[]>([]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    // Collect already-announced EIP-6963 providers
+    const providers = (window as any).eip6963Providers || [];
+    const mapped = providers.map((p: any) => ({
+      rdns: (p.info?.rdns || "").toLowerCase(),
+      name: p.info?.name || "",
+      icon: p.info?.icon || "",
+    }));
+    if (mapped.length > 0) setEip6963Providers(mapped);
+
+    // Listen for new announcements
+    const handler = (e: CustomEvent) => {
+      const info = e.detail?.info;
+      if (info?.rdns) {
+        setEip6963Providers(prev => {
+          const rdns = info.rdns.toLowerCase();
+          if (prev.some(p => p.rdns === rdns)) return prev;
+          return [...prev, { rdns, name: info.name || "", icon: info.icon || "" }];
+        });
+      }
+    };
+    if (typeof window !== "undefined") {
+      window.addEventListener("eip6963:announceProvider", handler as EventListener);
+      window.dispatchEvent(new Event("eip6963:requestProvider"));
+    }
+    return () => {
+      if (typeof window !== "undefined") {
+        window.removeEventListener("eip6963:announceProvider", handler as EventListener);
+      }
+    };
+  }, []);
+
+  return eip6963Providers;
+}
+
+function hasLegacyEthereum(): boolean {
+  if (typeof window === "undefined") return false;
+  return !!(window as any).ethereum;
+}
+
 // ── Wallet Modal ─────────────────────────────────────────────────
-function WalletModal({ onClose, onConnectLater }: { onClose: () => void; onConnectLater: () => void }) {
+function WalletModal({ onClose }: { onClose: () => void }) {
   const { connect, connectors: availableConnectors } = useConnect();
   const [connecting, setConnecting] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
-  const [showInstallGuide, setShowInstallGuide] = useState(false);
-  const [forceRescan, setForceRescan] = useState(0);
+  const eip6963Providers = useDetectedWallets();
 
   useEffect(() => { setMounted(true); }, []);
 
-  // Determine if any injected wallet is available
-  const walletState = useMemo(() => {
-    const injectedConnectors = availableConnectors.filter(
-      c => c.type === "injected" || c.id === "metaMaskSDK" || c.id === "coinbaseWalletSDK"
-    );
-    const hasWalletConnect = availableConnectors.some(c => c.id === "walletConnect");
-    const hasInjected = injectedConnectors.length > 0 || hasAnyInjectedProvider();
-    return { injectedConnectors, hasWalletConnect, hasInjected };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [availableConnectors, forceRescan]);
+  const connectorIds = useMemo(() => new Set(availableConnectors.map(c => c.id)), [availableConnectors]);
+  const connectorRdns = useMemo(
+    () => availableConnectors.flatMap(c => (c as any).rdns || []).map((r: string) => r.toLowerCase()),
+    [availableConnectors]
+  );
+  const connectorNames = useMemo(() => availableConnectors.map(c => c.name.toLowerCase()), [availableConnectors]);
 
-  // Map available connectors to wallet metadata
-  const { detectedWallets, qrWallets } = useMemo(() => {
+  // Sort wallets into categories
+  const { detectedWallets, qrWallets, otherWallets } = useMemo(() => {
     const detected: WalletMeta[] = [];
     const qr: WalletMeta[] = [];
-
-    // Build sets of available connector IDs and rdns values
-    const connIds = new Set(availableConnectors.map(c => c.id));
-    const connRdns = availableConnectors.flatMap(
-      c => (c as any).rdns || []
-    ).map((r: string) => r.toLowerCase());
+    const other: WalletMeta[] = [];
 
     for (const w of WALLET_LIST) {
-      // Exact connector ID match
-      if (connIds.has(w.connectorId)) {
-        // For injected connector, check rdns match too
-        if (w.connectorId === "injected") {
-          if (w.rdns && connRdns.includes(w.rdns.toLowerCase())) {
-            detected.push(w);
-            continue;
-          }
-          // Don't add generic injected wallets that don't have rdns match
-          // unless there's no rdns requirement
-          if (!w.rdns) continue;
-        } else if (w.connectorId === "walletConnect" || w.category === "walletconnect") {
-          qr.push(w);
-          continue;
-        } else {
-          detected.push(w);
-          continue;
-        }
-      }
-
-      // rdns fallback match for injected connector
-      if (w.rdns && connRdns.includes(w.rdns.toLowerCase())) {
-        detected.push(w);
-        continue;
-      }
-
-      // WalletConnect and hardware always go to QR section
-      if (w.category === "walletconnect" || w.category === "hardware") {
+      // WalletConnect always goes to QR
+      if (w.id === "walletconnect") {
         qr.push(w);
         continue;
       }
 
-      // Name-based match as last resort
-      const connNames = availableConnectors.map(c => c.name.toLowerCase());
-      if (connNames.some(n => n.includes(w.name.toLowerCase()) || w.name.toLowerCase().includes(n))) {
-        detected.push(w);
+      // Hardware wallets in QR/other section
+      if (w.category === "hardware") {
+        other.push(w);
         continue;
+      }
+
+      // Check if this wallet is actually available
+      let isAvailable = false;
+
+      // Direct connector ID match
+      if (connectorIds.has(w.connectorId)) {
+        isAvailable = true;
+      }
+
+      // EIP-6963 rdns match
+      if (!isAvailable && w.rdns) {
+        const rdnsLower = w.rdns.toLowerCase();
+        if (
+          connectorRdns.includes(rdnsLower) ||
+          eip6963Providers.some(p => p.rdns === rdnsLower)
+        ) {
+          isAvailable = true;
+        }
+      }
+
+      if (isAvailable) {
+        detected.push(w);
+      } else {
+        // If it's an injected wallet not detected, show in other
+        if (w.category === "injected" || w.category === "sdk") {
+          other.push(w);
+        } else if (w.category === "walletconnect") {
+          qr.push(w);
+        } else {
+          other.push(w);
+        }
       }
     }
 
-    return { detectedWallets: detected, qrWallets: qr };
-  }, [availableConnectors]);
+    return { detectedWallets: detected, qrWallets: qr, otherWallets: other };
+  }, [connectorIds, connectorRdns, connectorNames, eip6963Providers]);
+
+  // Also check for legacy window.ethereum
+  const hasAnyWallet = mounted && (detectedWallets.length > 0 || hasLegacyEthereum());
 
   // ── Connect function ─────────────────────────────────────────
   const doConnect = useCallback(async (wallet: WalletMeta) => {
     setConnecting(wallet.id);
     setError(null);
     try {
-      // Strategy 1: Exact connectorId match
       let c = availableConnectors.find(x => x.id === wallet.connectorId);
 
-      // Strategy 2: rdns match (for EIP-6963 discovered providers)
+      // rdns fallback
       if (!c && wallet.rdns) {
-        c = availableConnectors.find(x => {
-          const xRdns: string[] = (x as any).rdns || [];
-          return xRdns.some((r: string) => r.toLowerCase() === wallet.rdns!.toLowerCase());
-        });
+        c = availableConnectors.find(x =>
+          (x as any).rdns?.some((r: string) => r.toLowerCase() === wallet.rdns!.toLowerCase())
+        );
       }
 
-      // Strategy 3: Name match
+      // Name fallback
       if (!c) {
         c = availableConnectors.find(x =>
           x.name.toLowerCase().includes(wallet.name.toLowerCase()) ||
@@ -202,12 +214,12 @@ function WalletModal({ onClose, onConnectLater }: { onClose: () => void; onConne
         );
       }
 
-      // Strategy 4: For injected/sdk wallets, fall back to generic injected connector
+      // Generic injected fallback
       if (!c && (wallet.category === "injected" || wallet.category === "sdk")) {
         c = availableConnectors.find(x => x.id === "injected" || x.type === "injected");
       }
 
-      // Strategy 5: WalletConnect
+      // WalletConnect fallback
       if (!c && wallet.category === "walletconnect") {
         c = availableConnectors.find(x => x.id === "walletConnect");
       }
@@ -216,16 +228,18 @@ function WalletModal({ onClose, onConnectLater }: { onClose: () => void; onConne
         await connect({ connector: c });
         onClose();
       } else {
-        setError(`No connector found for ${wallet.name}. Please make sure the wallet is installed and unlocked.`);
+        setError(`No connector found for ${wallet.name}. Please install the wallet extension and try again.`);
       }
     } catch (e: any) {
       const msg = e?.message || e?.toString() || "";
-      if (e?.name === "UserRejectedRequestError" || e?.code === "ACTION_REJECTED" || msg.includes("rejected") || msg.includes("denied")) {
+      if (msg.includes("rejected") || msg.includes("denied") || e?.code === "ACTION_REJECTED" || e?.name === "UserRejectedRequestError") {
         setError("Connection rejected. Please approve the connection request in your wallet.");
       } else if (msg.includes("network") || msg.includes("timeout")) {
         setError("Network error. Please check your connection and try again.");
       } else if (msg.includes("chain") || msg.includes("unsupported")) {
         setError("Unsupported network. Please switch to a supported chain.");
+      } else if (msg.includes("@walletconnect/ethereum-provider")) {
+        setError("WalletConnect is initializing. Please try again in a moment.");
       } else {
         setError(msg || `Failed to connect to ${wallet.name}. Please try again.`);
       }
@@ -234,188 +248,7 @@ function WalletModal({ onClose, onConnectLater }: { onClose: () => void; onConne
     }
   }, [availableConnectors, connect, onClose]);
 
-  const rescan = useCallback(() => {
-    setForceRescan(prev => prev + 1);
-    setShowInstallGuide(false);
-    setError(null);
-  }, []);
-
-  // ── Render: No wallet detected at all ─────────────────────────
-  if (mounted && !walletState.hasInjected && !showInstallGuide) {
-    return (
-      <div
-        className="fixed inset-0 z-[100] flex items-center justify-center p-4 wallet-overlay"
-        onClick={e => { if ((e.target as HTMLElement).classList.contains("wallet-overlay")) onClose(); }}
-      >
-        <div className="absolute inset-0 bg-black/70 backdrop-blur-sm animate-fade-in" />
-        <div
-          className="relative w-full max-w-md animate-fade-in-up wallet-glass rounded-2xl overflow-hidden"
-          style={{
-            background: "linear-gradient(135deg, rgba(13,17,35,0.97) 0%, rgba(10,22,40,0.97) 100%)",
-            border: "1px solid rgba(59,130,246,0.15)",
-            boxShadow: "0 20px 60px rgba(0,0,0,0.5), 0 0 40px rgba(59,130,246,0.08)",
-          }}
-        >
-          {/* Header */}
-          <div
-            className="sticky top-0 z-10 flex items-center justify-between px-6 py-4"
-            style={{ background: "linear-gradient(135deg,rgba(13,17,35,0.98) 0%,rgba(10,22,40,0.98) 100%)", borderBottom: "1px solid rgba(59,130,246,0.08)", backdropFilter: "blur(12px)" }}
-          >
-            <h2 className="text-lg font-bold text-white flex items-center gap-2">
-              <span className="text-xl">🦚</span>
-              <span className="text-gradient-blue">Connect Wallet</span>
-            </h2>
-            <button onClick={onClose} className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 hover:text-white hover:bg-white/10 transition-colors">✕</button>
-          </div>
-
-          {/* No Wallet Body */}
-          <div className="p-6 text-center space-y-5">
-            <div className="text-5xl mb-2">🛡️</div>
-            <h3 className="text-xl font-bold text-white">No Wallet Detected</h3>
-            <p className="text-sm text-gray-400 max-w-xs mx-auto">
-              You need a browser wallet extension to connect. Choose one of the options below to get started in seconds.
-            </p>
-
-            <button
-              onClick={() => setShowInstallGuide(true)}
-              className="glass-button w-full py-3 text-base"
-            >
-              Install a Wallet
-            </button>
-
-            {/* WalletConnect fallback — always available */}
-            {walletState.hasWalletConnect && (
-              <>
-                <div className="flex items-center gap-3 my-2">
-                  <div className="flex-1 h-px bg-dark-border" />
-                  <span className="text-xs text-gray-500 uppercase">or use mobile</span>
-                  <div className="flex-1 h-px bg-dark-border" />
-                </div>
-                <button
-                  onClick={() => {
-                    const wc = WALLET_LIST.find(w => w.id === "walletconnect");
-                    if (wc) doConnect(wc);
-                  }}
-                  disabled={connecting !== null}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl border border-accent-blue/20 bg-accent-blue/5 hover:bg-accent-blue/10 transition-all duration-200 group disabled:opacity-40"
-                >
-                  <span className="text-xl">🔗</span>
-                  <span className="text-sm font-medium text-gray-200 group-hover:text-white">WalletConnect (QR Code)</span>
-                  {connecting === "walletconnect" && <span className="text-accent-blue animate-pulse">⏳</span>}
-                </button>
-              </>
-            )}
-          </div>
-
-          {/* Footer */}
-          <div className="px-6 py-3 text-center border-t" style={{ borderColor: "rgba(59,130,246,0.08)" }}>
-            <button onClick={onConnectLater} className="text-xs text-gray-500 hover:text-gray-300 transition-colors">
-              Connect Later
-            </button>
-            <p className="text-[0.625rem] text-gray-600 mt-1.5">
-              By connecting, you agree to interact with blockchain networks at your own risk.
-            </p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // ── Render: Install Guide (shown when user clicks "Install a Wallet") ──
-  if (mounted && !walletState.hasInjected && showInstallGuide) {
-    return (
-      <div
-        className="fixed inset-0 z-[100] flex items-center justify-center p-4 wallet-overlay"
-        onClick={e => { if ((e.target as HTMLElement).classList.contains("wallet-overlay")) onClose(); }}
-      >
-        <div className="absolute inset-0 bg-black/70 backdrop-blur-sm animate-fade-in" />
-        <div
-          className="relative w-full max-w-md animate-fade-in-up wallet-glass rounded-2xl overflow-hidden"
-          style={{
-            background: "linear-gradient(135deg, rgba(13,17,35,0.97) 0%, rgba(10,22,40,0.97) 100%)",
-            border: "1px solid rgba(59,130,246,0.15)",
-            boxShadow: "0 20px 60px rgba(0,0,0,0.5), 0 0 40px rgba(59,130,246,0.08)",
-          }}
-        >
-          {/* Header */}
-          <div
-            className="sticky top-0 z-10 flex items-center justify-between px-6 py-4"
-            style={{ background: "linear-gradient(135deg,rgba(13,17,35,0.98) 0%,rgba(10,22,40,0.98) 100%)", borderBottom: "1px solid rgba(59,130,246,0.08)", backdropFilter: "blur(12px)" }}
-          >
-            <h2 className="text-lg font-bold text-white flex items-center gap-2">
-              <span className="text-xl">⬇️</span>
-              <span className="text-gradient-blue">Install a Wallet</span>
-            </h2>
-            <button onClick={onClose} className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 hover:text-white hover:bg-white/10 transition-colors">✕</button>
-          </div>
-
-          <div className="p-6 space-y-5">
-            {/* Step-by-step instructions */}
-            <div className="space-y-3">
-              <div className="flex items-start gap-3">
-                <span className="flex-shrink-0 w-6 h-6 rounded-full bg-accent-blue/20 text-accent-blue text-xs font-bold flex items-center justify-center">1</span>
-                <div>
-                  <p className="text-sm font-medium text-white">Click Install below</p>
-                  <p className="text-xs text-gray-400">Opens the official download page in a new tab</p>
-                </div>
-              </div>
-              <div className="flex items-start gap-3">
-                <span className="flex-shrink-0 w-6 h-6 rounded-full bg-accent-blue/20 text-accent-blue text-xs font-bold flex items-center justify-center">2</span>
-                <div>
-                  <p className="text-sm font-medium text-white">Create wallet or import seed</p>
-                  <p className="text-xs text-gray-400">Follow the wallet's onboarding to set up your account</p>
-                </div>
-              </div>
-              <div className="flex items-start gap-3">
-                <span className="flex-shrink-0 w-6 h-6 rounded-full bg-accent-blue/20 text-accent-blue text-xs font-bold flex items-center justify-center">3</span>
-                <div>
-                  <p className="text-sm font-medium text-white">Come back and connect</p>
-                  <p className="text-xs text-gray-400">Click "I've installed it" below once ready</p>
-                </div>
-              </div>
-            </div>
-
-            {/* Wallet options */}
-            <div className="space-y-2">
-              {TOP_WALLETS.map(w => (
-                <a
-                  key={w.id}
-                  href={w.installUrl || "#"}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-3 px-4 py-3 rounded-xl border border-dark-border hover:border-accent-blue/40 bg-dark-hover/30 hover:bg-dark-hover/60 transition-all duration-200 group"
-                >
-                  <span className="text-2xl">{w.icon}</span>
-                  <div className="flex-1 text-left">
-                    <p className="text-sm font-medium text-gray-200 group-hover:text-white transition-colors">{w.name}</p>
-                    <p className="text-[0.625rem] text-gray-500">Official download →</p>
-                  </div>
-                  <span className="text-sm text-gray-600 group-hover:text-accent-blue transition-colors">↗</span>
-                </a>
-              ))}
-            </div>
-
-            {/* "I've installed it" button */}
-            <button
-              onClick={rescan}
-              className="w-full py-2.5 rounded-xl border border-accent-green/30 bg-accent-green/10 text-accent-green text-sm font-medium hover:bg-accent-green/20 transition-all duration-200"
-            >
-              ✅ I've installed it — scan again
-            </button>
-
-            <button
-              onClick={() => setShowInstallGuide(false)}
-              className="w-full text-xs text-gray-500 hover:text-gray-300 transition-colors"
-            >
-              ← Back
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // ── Render: Normal wallet selection modal (wallets detected) ──
+  // ── Render ──────────────────────────────────────────────────
   return (
     <div
       className="fixed inset-0 z-[100] flex items-center justify-center p-4 wallet-overlay"
@@ -423,7 +256,7 @@ function WalletModal({ onClose, onConnectLater }: { onClose: () => void; onConne
     >
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm animate-fade-in" />
       <div
-        className="relative w-full max-w-lg max-h-[85vh] overflow-y-auto rounded-2xl animate-fade-in-up wallet-glass scrollbar-hide"
+        className="relative w-full max-w-md max-h-[85vh] overflow-y-auto rounded-2xl animate-fade-in-up wallet-glass"
         style={{
           background: "linear-gradient(135deg, rgba(13,17,35,0.97) 0%, rgba(10,22,40,0.97) 100%)",
           border: "1px solid rgba(59,130,246,0.15)",
@@ -433,13 +266,19 @@ function WalletModal({ onClose, onConnectLater }: { onClose: () => void; onConne
         {/* Header */}
         <div
           className="sticky top-0 z-10 flex items-center justify-between px-6 py-4"
-          style={{ background: "linear-gradient(135deg,rgba(13,17,35,0.98) 0%,rgba(10,22,40,0.98) 100%)", borderBottom: "1px solid rgba(59,130,246,0.08)", backdropFilter: "blur(12px)" }}
+          style={{
+            background: "linear-gradient(135deg,rgba(13,17,35,0.98) 0%,rgba(10,22,40,0.98) 100%)",
+            borderBottom: "1px solid rgba(59,130,246,0.08)",
+            backdropFilter: "blur(12px)"
+          }}
         >
           <h2 className="text-lg font-bold text-white flex items-center gap-2">
             <span className="text-xl">🦚</span>
             <span className="text-gradient-blue">Connect Wallet</span>
           </h2>
-          <button onClick={onClose} className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 hover:text-white hover:bg-white/10 transition-colors">✕</button>
+          <button onClick={onClose} className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 hover:text-white hover:bg-white/10 transition-colors">
+            ✕
+          </button>
         </div>
 
         <div className="p-6 space-y-5">
@@ -447,20 +286,20 @@ function WalletModal({ onClose, onConnectLater }: { onClose: () => void; onConne
           {error && (
             <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg border border-accent-red/30 bg-accent-red/5">
               <span className="text-sm shrink-0 mt-0.5">⚠️</span>
-              <p className="text-xs text-accent-red leading-relaxed">{error}</p>
-              <button onClick={() => setError(null)} className="ml-auto text-gray-500 hover:text-gray-300 text-xs shrink-0">✕</button>
+              <p className="text-xs text-accent-red leading-relaxed flex-1">{error}</p>
+              <button onClick={() => setError(null)} className="text-gray-500 hover:text-gray-300 text-xs shrink-0">✕</button>
             </div>
           )}
 
-          {/* Detected wallets */}
-          {detectedWallets.length > 0 && mounted && (
+          {/* Detected browser wallets */}
+          {detectedWallets.length > 0 && (
             <div>
               <h3 className="text-xs font-semibold text-accent-green uppercase tracking-wider mb-3 flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-accent-green animate-pulse" />
                 Detected
               </h3>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                {detectedWallets.map(w => (
+              <div className="grid grid-cols-2 gap-2">
+                {detectedWallets.slice(0, 6).map(w => (
                   <WalletCard
                     key={w.id}
                     wallet={w}
@@ -473,14 +312,14 @@ function WalletModal({ onClose, onConnectLater }: { onClose: () => void; onConne
             </div>
           )}
 
-          {/* Mobile / QR */}
-          <div>
-            <h3 className="text-xs font-semibold text-accent-blue uppercase tracking-wider mb-3 flex items-center gap-1.5">
-              <span>📱</span> Mobile / QR Code
-            </h3>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+          {/* WalletConnect QR code — always prominent */}
+          {qrWallets.length > 0 && (
+            <div>
+              <h3 className="text-xs font-semibold text-accent-blue uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                <span>📱</span> Scan with Mobile
+              </h3>
               {qrWallets.map(w => (
-                <WalletCard
+                <WalletConnectCard
                   key={w.id}
                   wallet={w}
                   connecting={connecting}
@@ -488,23 +327,42 @@ function WalletModal({ onClose, onConnectLater }: { onClose: () => void; onConne
                 />
               ))}
             </div>
-          </div>
+          )}
 
-          {/* Re-scan for newly installed wallets */}
-          {!walletState.hasInjected && (
-            <button
-              onClick={rescan}
-              className="w-full py-2 rounded-lg border border-dark-border bg-dark-hover/30 hover:bg-dark-hover/60 text-xs text-gray-400 hover:text-gray-200 transition-all duration-200"
-            >
-              🔄 Scan for newly installed wallets
-            </button>
+          {/* Other wallet options (not detected) */}
+          {otherWallets.length > 0 && (
+            <div>
+              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                <span>🔌</span> Other Wallets
+              </h3>
+              <div className="grid grid-cols-2 gap-2">
+                {otherWallets.slice(0, 8).map(w => (
+                  <WalletCard
+                    key={w.id}
+                    wallet={w}
+                    connecting={connecting}
+                    onClick={() => doConnect(w)}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* No wallets detected at all — show install prompts */}
+          {mounted && !hasAnyWallet && (
+            <div className="text-center space-y-3 py-2">
+              <div className="text-4xl">🛡️</div>
+              <p className="text-sm text-gray-400">
+                No browser wallet detected. Use WalletConnect above with your mobile wallet, or install a browser extension.
+              </p>
+            </div>
           )}
         </div>
 
         {/* Footer */}
         <div className="px-6 py-3 text-center border-t" style={{ borderColor: "rgba(59,130,246,0.08)" }}>
-          <button onClick={onConnectLater} className="text-xs text-gray-500 hover:text-gray-300 transition-colors">
-            Connect Later
+          <button onClick={onClose} className="text-xs text-gray-500 hover:text-gray-300 transition-colors">
+            Cancel
           </button>
           <p className="text-[0.625rem] text-gray-600 mt-1.5">
             By connecting, you agree to interact with blockchain networks at your own risk.
@@ -515,7 +373,50 @@ function WalletModal({ onClose, onConnectLater }: { onClose: () => void; onConne
   );
 }
 
-// ── Wallet Card ───────────────────────────────────────────────────
+// ── WalletConnect QR Card (prominent, full-width) ───────────────
+function WalletConnectCard({
+  wallet,
+  connecting,
+  onClick,
+}: {
+  wallet: WalletMeta;
+  connecting: string | null;
+  onClick: () => void;
+}) {
+  const isLoading = connecting === wallet.id;
+
+  return (
+    <button
+      onClick={onClick}
+      disabled={connecting !== null}
+      className="w-full flex items-center gap-4 px-4 py-4 rounded-xl border border-accent-blue/30 bg-accent-blue/5 hover:border-accent-blue/50 hover:bg-accent-blue/10 transition-all duration-200 group disabled:opacity-40"
+    >
+      <div className="w-10 h-10 rounded-xl bg-accent-blue/10 flex items-center justify-center text-2xl shrink-0">
+        📱
+      </div>
+      <div className="flex-1 text-left">
+        <span className="text-sm font-semibold text-white group-hover:text-accent-blue transition-colors">
+          {wallet.name}
+        </span>
+        <p className="text-xs text-gray-400 mt-0.5">
+          Scan QR code with your mobile wallet
+        </p>
+      </div>
+      <div className="w-8 h-8 rounded-lg bg-accent-blue/20 flex items-center justify-center shrink-0">
+        {isLoading ? (
+          <svg className="animate-spin h-4 w-4 text-accent-blue" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+          </svg>
+        ) : (
+          <span className="text-accent-blue text-lg">▸</span>
+        )}
+      </div>
+    </button>
+  );
+}
+
+// ── Wallet Card (grid item) ──────────────────────────────────────
 function WalletCard({
   wallet,
   connecting,

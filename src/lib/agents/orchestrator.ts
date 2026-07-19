@@ -22,6 +22,7 @@ import type { RegimeClassification } from "./regime";
 import { MultiTimeframeAgent, type MultiTimeframeAnalysis } from "./multi-timeframe";
 import { CorrelationAgent, getCorrelationAgent, type CorrelationMatrix } from "./correlation";
 import { SentimentAgent, getSentimentAgent } from "./sentiment";
+import { getVolumeAgent } from "./volume";
 import { isKillSwitchActive, getKillSwitchReason, markApiHealthy, recordLastPrice } from "../risk-engine";
 import type {
   AgentReport,
@@ -51,6 +52,7 @@ const regimeAgent = new RegimeDetectionAgent();
 const multiTimeframeAgent = new MultiTimeframeAgent();
 const correlationAgent = getCorrelationAgent();
 const sentimentAgent = getSentimentAgent();
+const volumeAgent = getVolumeAgent();
 
 // ── Scoring Weights ───────────────────────────────────────────────
 
@@ -74,6 +76,7 @@ const ROLE_WEIGHTS: Record<AgentRole, number> = {
   multi_timeframe: 0.09,
   correlation: 0.10,
   sentiment: 0.08,
+  volume: 0.09,
 };
 
 // ── In-memory report store ────────────────────────────────────────
@@ -567,6 +570,56 @@ async function gatherReports(ctx: PriceContext): Promise<AgentReport[]> {
       direction: "NEUTRAL",
       confidence: 0,
       reasoning: "Sentiment analysis unavailable.",
+      data: {},
+    });
+  }
+
+  // ── Volume Agent: OBV, Delta, Climax, A/D, VWAP ────────────────
+  if (ctx.ohlcv && ctx.ohlcv.length >= 10) {
+    try {
+      const { analyzeVolume } = await import("./volume");
+      const volumeAnalysis = analyzeVolume(ctx.ohlcv, ctx.currentPrice);
+      const volumeReport = await volumeAgent.analyzeMarket({
+        token: ctx.token,
+        chainId: ctx.chainId,
+        currentPrice: ctx.currentPrice,
+        ohlcv: ctx.ohlcv,
+        analysis: volumeAnalysis,
+      });
+      // Attach full analysis data
+      volumeReport.data = {
+        ...volumeReport.data,
+        obv: volumeAnalysis.obv,
+        obvTrend: volumeAnalysis.obvTrend,
+        volumeDelta: volumeAnalysis.volumeDelta,
+        deltaClass: volumeAnalysis.deltaClass,
+        climax: volumeAnalysis.climax,
+        adPattern: volumeAnalysis.adPattern,
+        vwap: volumeAnalysis.vwap,
+        vwapPosition: volumeAnalysis.vwapPosition,
+        compositeScore: volumeAnalysis.compositeScore,
+        scores: volumeAnalysis.scores,
+      };
+      reports.push(volumeReport);
+    } catch (err) {
+      reports.push({
+        agentId: "volume-agent",
+        role: "volume",
+        timestamp: Date.now(),
+        direction: "NEUTRAL",
+        confidence: 0,
+        reasoning: `Volume analysis failed: ${err instanceof Error ? err.message : "Unknown error"}`,
+        data: {},
+      });
+    }
+  } else {
+    reports.push({
+      agentId: "volume-agent",
+      role: "volume",
+      timestamp: Date.now(),
+      direction: "NEUTRAL",
+      confidence: 50,
+      reasoning: "Insufficient OHLCV data for volume analysis (need 10+ candles).",
       data: {},
     });
   }
@@ -1368,5 +1421,6 @@ export {
   multiTimeframeAgent,
   correlationAgent,
   sentimentAgent,
+  volumeAgent,
 };
 export type { PriceContext };

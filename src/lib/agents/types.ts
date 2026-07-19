@@ -19,7 +19,8 @@ export type AgentRole =
   | "regime"
   | "multi_timeframe"
   | "correlation"
-  | "sentiment";
+  | "sentiment"
+  | "volume";
 
 export interface AgentReport {
   agentId: string;

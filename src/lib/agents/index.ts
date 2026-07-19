@@ -103,6 +103,9 @@ export {
   liquidityAgent,
   regimeAgent,
   multiTimeframeAgent,
+  correlationAgent,
+  sentimentAgent,
+  volumeAgent,
 } from "./orchestrator";
 export type { PriceContext } from "./orchestrator";
 
@@ -115,6 +118,9 @@ export type {
 
 export { SentimentAgent, getSentimentAgent } from "./sentiment";
 export type { FearGreedData, SentimentContext } from "./sentiment";
+
+export { VolumeAgent, getVolumeAgent, analyzeVolume, computeOBV, computeVolumeDelta, detectVolumeClimax, detectAccumDist, computeAnchoredVWAP, computeVolumeScore } from "./volume";
+export type { VolumeAnalysis, VolumeContext } from "./volume";
 
 export type {
   AgentRole,

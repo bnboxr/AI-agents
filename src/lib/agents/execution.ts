@@ -1,5 +1,8 @@
 // ── Execution Agent ─────────────────────────────────────────────────
 // Receives OrchestratorDecision and executes trades via the trading engine.
+// The decision's positionSize, stopLoss, and takeProfit are refined by
+// the PositionManagerAgent (src/lib/agents/position-manager.ts) before
+// reaching this agent. See orchestrator.ts runAgentAnalysis() flow.
 // Paper trading mode (default): simulates fills with realistic slippage.
 // Live mode: placeholder for future exchange API integration.
 

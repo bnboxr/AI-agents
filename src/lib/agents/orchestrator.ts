@@ -26,6 +26,8 @@ import { getVolumeAgent } from "./volume";
 import { ProbabilityAgent } from "./probability";
 import { ConfidenceAgent } from "./confidence";
 import { DevilsAdvocateAgent } from "./devils-advocate";
+import { PositionManagerAgent, getPositionManager } from "./position-manager";
+import type { PositionManagerOutput } from "./position-manager";
 import { isKillSwitchActive, getKillSwitchReason, markApiHealthy, recordLastPrice } from "../risk-engine";
 import type {
   AgentReport,
@@ -60,6 +62,7 @@ const volumeAgent = getVolumeAgent();
 const probabilityAgent = new ProbabilityAgent();
 const confidenceAgent = new ConfidenceAgent();
 const devilsAdvocateAgent = new DevilsAdvocateAgent();
+const positionManager = getPositionManager();
 
 // ── Scoring Weights ───────────────────────────────────────────────
 
@@ -87,6 +90,7 @@ const ROLE_WEIGHTS: Record<AgentRole, number> = {
   probability: 0.12,
   confidence: 0.13,
   devils_advocate: 0.15,
+  position_manager: 0.08,
 };
 
 // ── In-memory report store ────────────────────────────────────────
@@ -1393,7 +1397,44 @@ export const runAgentAnalysis = createServerFn({ method: "POST" }).handler(
     // ── Dialogue Phase: question top agents to clarify reasoning ──
     const { enrichedReports, dialogueLog } = await runDialogue(reports, data);
     const decision = makeDecision(enrichedReports, tradingState, data, dialogueLog);
-    
+
+    // ── Position Manager: refine execution parameters ────────────────
+    let positionManagerOutput: PositionManagerOutput | undefined;
+    if (decision.action === "BUY" || decision.action === "SELL") {
+      try {
+        positionManagerOutput = positionManager.computePosition({
+          decision,
+          reports: enrichedReports,
+          state: tradingState,
+          currentPrice: data.currentPrice,
+          atr: data.atr,
+        });
+
+        // Override decision with refined position sizing from Position Manager
+        decision.positionSize = positionManagerOutput.positionSize;
+        decision.stopLoss = positionManagerOutput.stopLoss;
+        decision.takeProfit = positionManagerOutput.takeProfit;
+
+        // Generate position manager report (non-blocking)
+        positionManager
+          .generatePositionReport(positionManagerOutput, {
+            decision,
+            reports: enrichedReports,
+            state: tradingState,
+            currentPrice: data.currentPrice,
+            atr: data.atr,
+          })
+          .then((pmReport) => {
+            finalReports.push(pmReport);
+          })
+          .catch(() => {
+            /* best-effort */
+          });
+      } catch (err) {
+        console.error("[PositionManager] computePosition failed:", err);
+      }
+    }
+
     // Use enriched reports for downstream consumers (DB, portfolio, etc.)
     const finalReports = enrichedReports;
 
@@ -1765,5 +1806,6 @@ export {
   probabilityAgent,
   confidenceAgent,
   devilsAdvocateAgent,
+  positionManager,
 };
 export type { PriceContext };

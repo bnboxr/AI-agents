@@ -8,6 +8,7 @@ import { getSystemAuditReport, type AuditReport } from "~/lib/audit-runner";
 import { AGENTS } from "~/lib/agents";
 import { CHAINS } from "~/lib/chains";
 import { getCapitalState, getCapitalAndStakingState } from "~/lib/capital-manager";
+import { getLPState, getCopyTradeState, getNFTArbitrageState, type LPYieldState, type CopyTradeState, type NFTArbitrageState } from "~/lib/revenue";
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -646,6 +647,111 @@ function DashboardPage() {
 
       {/* ── pSOL Auto-Staking ──────────────────────────────────────── */}
       <PSolStakingCard />
+
+      {/* ── Revenue Channels ───────────────────────────────────────── */}
+      <RevenueChannelsCard />
+    </div>
+  );
+}
+
+// ── Revenue Channels Card ───────────────────────────────────────────
+
+function RevenueChannelsCard() {
+  const [lp, setLP] = useState<LPYieldState>(() => getLPState());
+  const [copy, setCopy] = useState<CopyTradeState>(() => getCopyTradeState());
+  const [nft, setNFT] = useState<NFTArbitrageState>(() => getNFTArbitrageState());
+
+  // Poll revenue data every 10 seconds
+  useEffect(() => {
+    const id = setInterval(() => {
+      setLP(getLPState());
+      setCopy(getCopyTradeState());
+      setNFT(getNFTArbitrageState());
+    }, 10_000);
+    return () => clearInterval(id);
+  }, []);
+
+  const lpActive = lp.positions.filter((p) => p.status === "active").length;
+  const copyOpen = copy.openTrades.length;
+  const nftOpps = nft.opportunities.length;
+  const paperProfit = nft.paperTrades
+    .filter((t) => t.status === "completed")
+    .reduce((sum, t) => sum + t.profit, 0);
+
+  return (
+    <div className="glass-panel p-5 sm:p-6">
+      <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+        <span>💰</span> Revenue Channels
+        <span className="text-xs text-gray-400 font-normal">
+          (paper simulation • all channels)
+        </span>
+      </h2>
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
+        {/* LP Yield */}
+        <div className="text-center p-4 rounded-lg bg-dark-surface/40 border border-dark-border/30">
+          <p className="text-gray-400 mb-1">💧 LP Auto-Compound</p>
+          <div className="flex items-center justify-center gap-2">
+            <p className="text-2xl font-bold font-mono text-accent-teal">
+              {lp.blendedAPY}%
+            </p>
+            <span className="text-xs text-gray-500">APY</span>
+          </div>
+          <p className="text-xs text-gray-500 mt-1">
+            {lpActive} active positions • ${lp.totalDeposited.toFixed(2)} deposited
+          </p>
+          <p className="text-xs text-accent-yellow mt-0.5">
+            +${lp.totalFeesEarned.toFixed(4)} fees earned
+          </p>
+        </div>
+
+        {/* Copy Trading */}
+        <div className="text-center p-4 rounded-lg bg-dark-surface/40 border border-dark-border/30">
+          <p className="text-gray-400 mb-1">🐋 Copy Trading</p>
+          <div className="flex items-center justify-center gap-2">
+            <p className="text-2xl font-bold font-mono text-accent-cyan">
+              {copy.totalTrades}
+            </p>
+            <span className="text-xs text-gray-500">trades</span>
+          </div>
+          <p className="text-xs text-gray-500 mt-1">
+            {copyOpen} open • {copy.trackedWallets.filter((w) => w.status === "tracking").length} wallets tracked
+          </p>
+          <p className={`text-xs mt-0.5 ${copy.totalPnL >= 0 ? "text-accent-green" : "text-accent-red"}`}>
+            {copy.totalPnL >= 0 ? "+" : ""}${copy.totalPnL.toFixed(2)} PnL
+          </p>
+        </div>
+
+        {/* NFT Arbitrage */}
+        <div className="text-center p-4 rounded-lg bg-dark-surface/40 border border-dark-border/30">
+          <p className="text-gray-400 mb-1">🎨 NFT Arbitrage</p>
+          <div className="flex items-center justify-center gap-2">
+            <p className="text-2xl font-bold font-mono text-accent-purple">
+              {nftOpps}
+            </p>
+            <span className="text-xs text-gray-500">opportunities</span>
+          </div>
+          <p className="text-xs text-gray-500 mt-1">
+            {nft.paperTrades.length} paper trades • {nft.totalScanned} scans
+          </p>
+          <p className={`text-xs mt-0.5 ${paperProfit >= 0 ? "text-accent-green" : "text-accent-red"}`}>
+            {paperProfit >= 0 ? "+" : ""}{paperProfit.toFixed(4)} ETH profit
+          </p>
+        </div>
+      </div>
+
+      {/* Status line */}
+      <div className="mt-4 flex items-center gap-3 px-3 py-2 rounded-lg bg-dark-surface/30 border border-dark-border/20">
+        <span className="status-dot-online"></span>
+        <span className="text-xs text-gray-400 truncate">
+          LP: {lpActive > 0 ? `${lpActive} pools earning` : "no deposits"} •
+          Copy: {copyOpen > 0 ? `${copyOpen} positions mirroring` : "idle"} •
+          NFT: {nftOpps > 0 ? `${nftOpps} arb opportunities found` : "scanning…"}
+        </span>
+        <span className="text-[0.6rem] text-accent-yellow ml-auto shrink-0 bg-accent-yellow/10 px-2 py-0.5 rounded-full">
+          PAPER MODE
+        </span>
+      </div>
     </div>
   );
 }

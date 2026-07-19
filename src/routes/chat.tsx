@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useRef, useEffect, useCallback } from "react";
-import { processChat, type ChatStreamResponse } from "./api/chat-stream";
+import { processChat, type ChatStreamResponse } from "~/lib/chat-server";
 
 // ── Types ─────────────────────────────────────────────────────────
 

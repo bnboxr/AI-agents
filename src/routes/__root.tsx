@@ -75,6 +75,7 @@ function NavBar() {
           <NavLink to="/chains">Chains</NavLink>
           <NavLink to="/contracts">Contracts</NavLink>
           <NavLink to="/settings">Settings</NavLink>
+          <NavLink to="/chat">Chat</NavLink>
         </div>
         <div className="shrink-0 ml-2">
           <ConnectButton />

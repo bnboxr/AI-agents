@@ -139,9 +139,9 @@ function TradePage() {
       <div className="mx-auto max-w-4xl">
         {/* Header */}
         <div className="text-center mb-8">
-          <span className="text-5xl mb-4 block">📈</span>
-          <h1 className="text-3xl font-black text-white mb-2">AI Trading</h1>
-          <p className="text-gray-400">
+          <span className="text-5xl mb-4 block text-[#00e676] font-mono font-black">{">"}</span>
+          <h1 className="text-3xl font-black text-[#e0e6ed] mb-2 font-mono tracking-tight">AI_TRADE</h1>
+          <p className="text-[#546e7a] font-mono text-sm">
             GPT-4o analyzes 5-min charts. You set the rules. Agents execute.
           </p>
         </div>

@@ -235,12 +235,12 @@ function RiskPage() {
         <div className="mb-8 animate-fade-in-up">
           <div className="flex items-center justify-between flex-wrap gap-4">
             <div className="flex items-center gap-3">
-              <span className="text-3xl">🛡️</span>
+              <span className="text-3xl text-[#00e676] font-mono font-black">{">"}</span>
               <div>
-                <h1 className="text-3xl sm:text-4xl font-black text-white">
-                  Risk Management
+                <h1 className="text-3xl sm:text-4xl font-black text-[#e0e6ed] font-mono tracking-tight">
+                  RISK_MGMT
                 </h1>
-                <p className="text-gray-400 text-sm mt-1">
+                <p className="text-[#546e7a] text-sm mt-1 font-mono">
                   Real-time risk monitoring and circuit breaker controls
                 </p>
               </div>

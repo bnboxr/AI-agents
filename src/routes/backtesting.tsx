@@ -93,9 +93,9 @@ function BacktestingPage() {
     };
 
     try {
-      // Simulate progress
+      // Simulate progress with deterministic increments
       const progressTimer = setInterval(() => {
-        setProgress((p) => Math.min(p + Math.random() * 20, 85));
+        setProgress((p) => Math.min(p + 10, 95));
       }, 400);
 
       const res = await runBacktest({ data: config });

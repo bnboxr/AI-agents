@@ -7,7 +7,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 /**
- * @title PaunVault
+ * @title HSMCVault
  * @notice Vault cu time-lock, auto-compound și rebalansare automată
  * @dev Depui orice token, crește automat prin strategii DeFi
  *
@@ -17,7 +17,7 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
  *  - 90 zile: APY mare, penalty 10% la early withdrawal
  *  - 365 zile: APY maxim, penalty 20% la early withdrawal
  */
-contract PaunVault is ReentrancyGuard, Ownable {
+contract HSMCVault is ReentrancyGuard, Ownable {
     using SafeERC20 for IERC20;
 
     // ── Enums & Structs ──────────────────────────────────────────

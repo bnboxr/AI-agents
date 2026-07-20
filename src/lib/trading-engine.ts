@@ -7,6 +7,7 @@ import { getRiskStateRaw } from "~/lib/risk-engine";
 import { agentBus } from "~/lib/agent-bus";
 import { sql, isDbAvailable } from "~/lib/db";
 import { getPrice } from "~/lib/ws/price-context";
+import { seededRandom } from "~/lib/deterministic-random";
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -127,7 +128,7 @@ Respond in JSON format only: {"direction":"LONG"|"SHORT"|"HOLD","confidence":0-1
     clearTimeout(timeout);
 
     if (!res.ok) return { direction: null, confidence: 0, reasoning: "AI API error" };
-    const data = await res.json() as any;
+    const data = await res.json() as unknown as { choices?: Array<{ message?: { content?: string } }> };
     const text = data.choices?.[0]?.message?.content || "";
     const json = JSON.parse(text.replace(/```json|```/g, "").trim());
     return {
@@ -135,7 +136,8 @@ Respond in JSON format only: {"direction":"LONG"|"SHORT"|"HOLD","confidence":0-1
       confidence: json.confidence || 50,
       reasoning: json.reasoning || "AI analysis complete",
     };
-  } catch {
+  } catch (err) {
+    console.warn("[TradingEngine] analyzeMarketWithAI failed:", err);
     return { direction: null, confidence: 0, reasoning: "Analysis failed — using fallback rules" };
   }
 }
@@ -249,7 +251,8 @@ export const openTrade = createServerFn({ method: "POST" }).handler(async ({ dat
   if (risk.circuitBreakerTripped) return { error: "Circuit breaker tripped" };
 
   dailyTradeCount++;
-  const id = `trade_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+  const seed = `${data.chainId}-${data.token}-${Date.now()}-${dailyTradeCount}`;
+  const id = `trade_${Date.now()}_${seededRandom(seed).toString(36).slice(2, 6)}`;
   const leverage = Math.min(data.leverage, tradeConfig.maxLeverage);
   const stopLoss = data.direction === "LONG"
     ? data.price * (1 - tradeConfig.stopLossPct / 100)

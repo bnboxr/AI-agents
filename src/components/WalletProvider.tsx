@@ -5,6 +5,32 @@ import { useState, useEffect, useMemo, useCallback, type ReactNode } from "react
 import { config, type WalletMeta, WALLET_LIST } from "~/lib/web3";
 import { TokenBalances } from "~/components/TokenBalances";
 
+// ── Browser global augmentations ────────────────────────────────────
+
+/** EIP-6963 provider info announced by browser wallets. */
+interface EIP6963ProviderInfo {
+  rdns: string;
+  name: string;
+  icon: string;
+}
+
+interface EIP6963ProviderDetail {
+  info: EIP6963ProviderInfo;
+  provider: unknown;
+}
+
+declare global {
+  interface Window {
+    eip6963Providers?: EIP6963ProviderDetail[];
+    ethereum?: unknown;
+  }
+}
+
+/** Wagmi connector may include EIP-6963 rdns array at runtime. */
+interface ConnectorWithRdns {
+  rdns?: string[];
+}
+
 // ── Provider ─────────────────────────────────────────────────────
 export function WalletProvider({ children }: { children: ReactNode }) {
   const [queryClient] = useState(() => new QueryClient({
@@ -81,7 +107,7 @@ export function ConnectButton() {
 
 // ── EIP-6963 helper ─────────────────────────────────────────────
 
-const CHAIN_STORAGE_KEY = "paun-ai:preferred-chain";
+const CHAIN_STORAGE_KEY = "hsmc:preferred-chain";
 
 const CHAIN_LABELS: Record<number, string> = {
   1: "Ethereum",
@@ -234,8 +260,8 @@ function useDetectedWallets() {
     if (typeof window === "undefined") return;
 
     // Collect already-announced EIP-6963 providers
-    const providers = (window as any).eip6963Providers || [];
-    const mapped = providers.map((p: any) => ({
+    const providers = window.eip6963Providers || [];
+    const mapped = providers.map((p: EIP6963ProviderDetail) => ({
       rdns: (p.info?.rdns || "").toLowerCase(),
       name: p.info?.name || "",
       icon: p.info?.icon || "",
@@ -269,7 +295,7 @@ function useDetectedWallets() {
 
 function hasLegacyEthereum(): boolean {
   if (typeof window === "undefined") return false;
-  return !!(window as any).ethereum;
+  return !!window.ethereum;
 }
 
 // ── Wallet Modal ─────────────────────────────────────────────────
@@ -288,7 +314,7 @@ function WalletModal({ onClose }: { onClose: () => void }) {
 
   const connectorIds = useMemo(() => new Set(availableConnectors.map(c => c.id)), [availableConnectors]);
   const connectorRdns = useMemo(
-    () => availableConnectors.flatMap(c => (c as any).rdns || []).map((r: string) => r.toLowerCase()),
+    () => availableConnectors.flatMap(c => (c as ConnectorWithRdns).rdns || []).map((r: string) => r.toLowerCase()),
     [availableConnectors]
   );
   const connectorNames = useMemo(() => availableConnectors.map(c => c.name.toLowerCase()), [availableConnectors]);
@@ -361,7 +387,7 @@ function WalletModal({ onClose }: { onClose: () => void }) {
       // rdns fallback
       if (!c && wallet.rdns) {
         c = availableConnectors.find(x =>
-          (x as any).rdns?.some((r: string) => r.toLowerCase() === wallet.rdns!.toLowerCase())
+          (x as ConnectorWithRdns).rdns?.some((r: string) => r.toLowerCase() === wallet.rdns!.toLowerCase())
         );
       }
 

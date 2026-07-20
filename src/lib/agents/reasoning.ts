@@ -562,7 +562,8 @@ Respond ONLY in JSON format:
             : [],
           timestamp: Date.now(),
         };
-      } catch {
+      } catch (err) {
+        console.warn("[ReasoningAgent] buildAudit parse failed:", err);
         return this.buildFallbackAudit(decision, reports, `Could not parse GPT-4o response: ${text.slice(0, 150)}`);
       }
     } catch (err) {

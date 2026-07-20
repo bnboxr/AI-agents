@@ -108,7 +108,7 @@ export default function HelpGuide() {
         <div className="flex items-center justify-between px-5 py-4 border-b border-blue-500/10 shrink-0">
           <h2 className="text-lg font-bold text-white flex items-center gap-2">
             <span className="text-xl">🦚</span>
-            <span className="text-gradient-blue">Păun AI Guide</span>
+            <span className="text-gradient-blue">HSMC Guide</span>
           </h2>
           <button
             onClick={() => setOpen(false)}
@@ -261,7 +261,7 @@ function PagesTab() {
     },
     {
       name: "Contracts",
-      desc: "Smart contracts: FlashLoan, CrossChain, YieldOptimizer, PaunVault",
+      desc: "Smart contracts: FlashLoan, CrossChain, YieldOptimizer, HSMCVault",
     },
     {
       name: "Agents",

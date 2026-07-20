@@ -99,7 +99,8 @@ export class NewsSentimentAgent extends BaseAgent {
         source: item.source?.title || "CryptoPanic",
         publishedAt: new Date(item.published_at).getTime(),
       }));
-    } catch {
+    } catch (err) {
+      console.warn("[NewsAgent] fetchCryptoPanic failed:", err);
       return [];
     }
   }
@@ -134,7 +135,8 @@ export class NewsSentimentAgent extends BaseAgent {
         source: item.author || "CoinGecko",
         publishedAt: item.updated_at * 1000,
       }));
-    } catch {
+    } catch (err) {
+      console.warn("[NewsAgent] fetchCoinGeckoNews failed:", err);
       return [];
     }
   }

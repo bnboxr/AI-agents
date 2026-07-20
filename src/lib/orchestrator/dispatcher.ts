@@ -1,7 +1,15 @@
-import { internalScan, addActivity, getAgentState } from '../agent-runner';
+import { internalScan, addActivity, getAgentState, syncAgentStateToDb } from '../agent-runner';
 import { dequeue, enqueue } from './queue';
 import type { ScanTask, TaskResult } from './types';
 import { agentBus } from '../agent-bus';
+import { buildPriceContext } from './price-context';
+import { runAgentAnalysis } from '../agents/orchestrator';
+import { validateTrade, recordTradeResult, initAntiDrain, checkDailyDrawdown } from '../anti-drain';
+import { updateChainBalance, getChainBalance, setInitialBalance } from '../chain-balance';
+import { refreshCooldowns, canClaim, countAvailableFaucets } from '../faucet-cooldown';
+import { isWalletTestnet, getWalletChainConfig } from '../chains-config';
+import { getBalance, getSyncBalance } from '../unified-balance';
+import { getCapitalSummary } from '../strategy-prioritizer';
 
 const POLL_INTERVAL_MS = 2_000;   // 2s between dispatch polls
 const MAX_CONCURRENT = 3;
@@ -10,6 +18,10 @@ const RETRY_BACKOFF_MS = 5_000;    // 5s backoff between retries
 
 let intervalId: ReturnType<typeof setInterval> | null = null;
 let activeCount = 0;
+let lastFaucetCheck = 0;
+let lastStrategyLog = 0;
+const FAUCET_CHECK_INTERVAL_MS = 60_000; // 60s
+const STRATEGY_LOG_INTERVAL_MS = 60_000; // 60s — log capital/strategy summary
 
 export function getActiveCount(): number {
   return activeCount;
@@ -39,6 +51,92 @@ async function executeTask(task: ScanTask): Promise<TaskResult> {
     const result = await internalScan(task.chainId);
 
     const durationMs = Date.now() - startTime;
+
+    // ── Agent Analysis Pipeline ──────────────────────────────────
+    // After each scan, build price context and run the full agent pipeline.
+    // This runs in the dispatcher (server context) — catches errors so
+    // a single chain's analysis failure doesn't crash the dispatch loop.
+    try {
+      console.log(`[Dispatcher] ScanTask for chain ${task.chainId} — building price context...`);
+      const priceCtx = await buildPriceContext(task.chainId);
+
+      if (priceCtx) {
+        console.log(
+          `[Orchestrator] runAgentAnalysis starting for chain ${task.chainId} ` +
+          `(${priceCtx.token} @ ${priceCtx.currentPrice})`,
+        );
+        const analysisResult = await runAgentAnalysis({ data: priceCtx });
+        const { decision, reports } = analysisResult;
+
+        console.log(
+          `[Orchestrator] gatherReports: ${reports.length} agents responded for chain ${task.chainId}`,
+        );
+        console.log(
+          `[Orchestrator] decision: ${decision.action} — confidence ${decision.confidence}% ` +
+          `for ${task.chainId}`,
+        );
+
+        if (decision.action === 'BUY' || decision.action === 'SELL') {
+          // ── Anti-Drain: Validate trade before execution ──────────────
+          const isTestnet = isWalletTestnet();
+          if (isTestnet) {
+            const cfg = getWalletChainConfig();
+            const chainId = task.chainId;
+
+            // Initialize anti-drain with current balance if needed
+            const bal = await getBalance();
+            initAntiDrain(chainId, bal.usdt);
+
+            const validation = validateTrade(
+              bal.usdt,
+              decision.positionSize,
+              decision.confidence,
+              chainId,
+            );
+
+            if (!validation.allowed) {
+              console.warn(
+                `[AntiDrain] Trade blocked on ${chainId}: ${validation.reason}`,
+              );
+              // Skip execution — let the agent know
+              agentBus.emit('trade_blocked', {
+                chainId,
+                reason: validation.reason,
+                maxSize: validation.maxSize,
+                tier: validation.tier,
+              });
+              return; // Don't execute blocked trade
+            }
+
+            console.log(
+              `[AntiDrain] Trade approved on ${chainId}: ` +
+              `size ${decision.positionSize} (max ${validation.maxSize?.toFixed(2)}), ` +
+              `tier ${validation.tier}`,
+            );
+          }
+
+          console.log(
+            `[Execution] paper trade placed — ${decision.action} ${decision.positionSize} ${priceCtx.token} @ ${priceCtx.currentPrice}`,
+          );
+
+          // ── Post-trade: Update chain balance & anti-drain state ─────
+          if (isTestnet) {
+            const cfg = getWalletChainConfig();
+            const chainId = task.chainId;
+            // Estimate PnL (simplified — actual PnL tracked on position close)
+            const estimatedPnL = 0; // updated on close
+            await updateChainBalance(chainId, estimatedPnL);
+            recordTradeResult(chainId, estimatedPnL, (await getBalance()).usdt);
+          }
+        }
+      }
+    } catch (analysisErr) {
+      const analysisMsg = analysisErr instanceof Error ? analysisErr.message : String(analysisErr);
+      console.error(
+        `[Dispatcher] Agent analysis failed for chain ${task.chainId}: ${analysisMsg}`,
+      );
+      // Analysis failure is non-fatal — scan results still valid
+    }
 
     // Emit opportunity_found for each opportunity
     for (const opp of result.opportunities) {
@@ -99,6 +197,24 @@ async function executeTask(task: ScanTask): Promise<TaskResult> {
 }
 
 function poll(): void {
+  // ── Periodic Faucet Cooldown Check ──────────────────────────────
+  const now = Date.now();
+  if (now - lastFaucetCheck >= FAUCET_CHECK_INTERVAL_MS) {
+    lastFaucetCheck = now;
+    refreshCooldowns();
+
+    // Log available faucets per testnet chain
+    if (isWalletTestnet()) {
+      const cfg = getWalletChainConfig();
+      const available = countAvailableFaucets(cfg.name.toLowerCase().replace(/\s+/g, "-"));
+      if (available > 0 && canClaim(cfg.faucets?.[0] ?? "", cfg.name.toLowerCase().replace(/\s+/g, "-"))) {
+        console.log(
+          `[Faucet] ${cfg.name}: ${available} faucet(s) available — ready to claim`,
+        );
+      }
+    }
+  }
+
   while (activeCount < MAX_CONCURRENT) {
     const task = dequeue();
     if (!task) break; // queue empty
@@ -125,6 +241,9 @@ function poll(): void {
           state.lastAction = `Reîncercare scan ${task.chainId} (${retries}/${MAX_RETRIES})`;
           state.lastActionTime = Date.now();
 
+          // Sync state to DB
+          syncAgentStateToDb(state);
+
           result = await executeTask({
             ...task,
             attempts: task.attempts + retries,
@@ -144,6 +263,24 @@ function poll(): void {
         activeCount--;
       }
     })();
+  }
+
+  // ── Periodic Strategy Capital Summary ───────────────────────────
+  if (now - lastStrategyLog >= STRATEGY_LOG_INTERVAL_MS) {
+    lastStrategyLog = now;
+    try {
+      const balance = getSyncBalance();
+      const summary = getCapitalSummary(balance.usdt);
+      console.log(
+        `[Strategy] Capital: ${balance.usdt.toFixed(2)}, ` +
+        `Eligible: [${summary.eligible.join(", ")}], ` +
+        `Next: ${summary.nextMilestone ?? "all unlocked"}, ` +
+        `Risk: ${summary.highestRisk}`,
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`[Strategy] Failed to compute capital summary: ${msg}`);
+    }
   }
 }
 

@@ -1,6 +1,7 @@
 // ── Technical Analysis Agent ─────────────────────────────────────
 import { BaseAgent } from "./base";
 import { getPriceHistory, type PriceTick } from "../ws/price-context";
+import { computeEMA, computeRSI, computeMACD } from "../indicators";
 
 export interface TechnicalIndicators {
   rsi: number;
@@ -61,66 +62,6 @@ export class TechnicalAnalysisAgent extends BaseAgent {
 // ── Real-Time Indicator Computation ───────────────────────────────
 // Uses live price history from the WebSocket market data to compute
 // technical indicators on the fly.
-
-/**
- * Compute an exponential moving average from a price series.
- */
-function computeEMA(prices: number[], period: number): number {
-  if (prices.length === 0) return 0;
-  if (prices.length < period) return prices.reduce((a, b) => a + b, 0) / prices.length;
-
-  const k = 2 / (period + 1);
-  let ema = prices.slice(0, period).reduce((a, b) => a + b, 0) / period;
-  for (let i = period; i < prices.length; i++) {
-    ema = prices[i] * k + ema * (1 - k);
-  }
-  return ema;
-}
-
-/**
- * Compute RSI (Relative Strength Index) from a price series.
- */
-function computeRSI(prices: number[], period = 14): number {
-  if (prices.length < period + 1) return 50;
-
-  let gains = 0;
-  let losses = 0;
-
-  for (let i = prices.length - period; i < prices.length; i++) {
-    const delta = prices[i] - prices[i - 1];
-    if (delta >= 0) gains += delta;
-    else losses -= delta;
-  }
-
-  const avgGain = gains / period;
-  const avgLoss = losses / period;
-
-  if (avgLoss === 0) return 100;
-  const rs = avgGain / avgLoss;
-  return 100 - 100 / (1 + rs);
-}
-
-/**
- * Compute MACD from a price series.
- */
-function computeMACD(prices: number[]): { value: number; signal: number; histogram: number } {
-  if (prices.length < 26) {
-    return { value: 0, signal: 0, histogram: 0 };
-  }
-
-  // Compute EMA-12 and EMA-26 from the full series
-  const ema12 = computeEMA(prices, 12);
-  const ema26 = computeEMA(prices, 26);
-  const value = ema12 - ema26;
-
-  // For signal line we need the MACD line history — simplified: use single MACD value
-  // In practice, signal would be a 9-period EMA of the MACD line
-  // Here we approximate: signal is a 9-period EMA approximation
-  const signal = value * 0.9; // simplified approximation
-  const histogram = value - signal;
-
-  return { value, signal, histogram };
-}
 
 /**
  * Compute Bollinger Bands from a price series.

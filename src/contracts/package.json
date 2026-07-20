@@ -1,32 +1,14 @@
 {
-  "name": "paunai-contracts",
+  "name": "hsmcai-contracts",
   "version": "1.0.0",
-  "description": "Păun AI — Production-grade smart contracts for Flash Loan Arbitrage, Cross-Chain Arbitrage, and Yield Optimization",
+  "description": "HSMC — Smart contracts",
   "private": true,
   "scripts": {
     "compile": "npx hardhat compile",
-    "test": "npx hardhat test",
-    "deploy": "npx hardhat run deploy/deploy-all.ts",
-    "verify": "npx hardhat verify",
-    "coverage": "npx hardhat coverage",
-    "size": "npx hardhat size-contracts",
-    "clean": "npx hardhat clean",
-    "node": "npx hardhat node"
+    "clean": "npx hardhat clean"
   },
   "devDependencies": {
-    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
-    "@nomicfoundation/hardhat-verify": "^2.0.13",
-    "@nomicfoundation/hardhat-ethers": "^3.0.8",
     "@openzeppelin/contracts": "^5.1.0",
-    "@openzeppelin/contracts-upgradeable": "^5.1.0",
-    "@openzeppelin/hardhat-upgrades": "^3.7.0",
-    "dotenv": "^16.4.7",
-    "ethers": "^6.13.4",
-    "hardhat": "^2.22.19",
-    "hardhat-contract-sizer": "^2.10.0",
-    "hardhat-gas-reporter": "^2.2.2",
-    "solidity-coverage": "^0.8.14",
-    "ts-node": "^10.9.2",
-    "typescript": "^5.7.3"
+    "hardhat": "^2.22.19"
   }
 }

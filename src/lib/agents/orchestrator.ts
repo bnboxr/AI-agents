@@ -25,11 +25,12 @@ import { SentimentAgent, getSentimentAgent } from "./sentiment";
 import { getVolumeAgent } from "./volume";
 import { ProbabilityAgent } from "./probability";
 import { ConfidenceAgent } from "./confidence";
-import { DevilsAdvocateAgent } from "./devils-advocate";
+import { DevilsAdvocateAgent, type DevilsAdvocateContext } from "./devils-advocate";
 import { PositionManagerAgent, getPositionManager } from "./position-manager";
 import type { PositionManagerOutput } from "./position-manager";
 import { StrategyAgent } from "./strategy";
 import { isKillSwitchActive, getKillSwitchReason, markApiHealthy, recordLastPrice } from "../risk-engine";
+import { getCapitalState } from "~/lib/capital-manager";
 import type {
   AgentReport,
   AgentRole,
@@ -113,9 +114,11 @@ let lastDecisionReports: AgentReport[] = [];
 
 // ── Default Trading State ─────────────────────────────────────────
 
+const capitalState = getCapitalState();
+
 let tradingState: TradingState = {
-  capital: 10000,
-  initialCapital: 10000,
+  capital: capitalState.trading,
+  initialCapital: capitalState.initial,
   openPosition: false,
   pnl: 0,
   pnlPct: 0,
@@ -268,7 +271,8 @@ async function gatherReports(ctx: PriceContext): Promise<AgentReport[]> {
         headlines: newsResult.headlines.slice(0, 5).map((h) => h.title),
       },
     });
-  } catch {
+  } catch (err) {
+    console.warn("[Orchestrator] news analysis failed:", err);
     reports.push({
       agentId: "news-agent",
       role: "news",
@@ -291,7 +295,8 @@ async function gatherReports(ctx: PriceContext): Promise<AgentReport[]> {
     };
     const macroReport = await macroAgent.analyzeMarket({ correlations: corrContext });
     reports.push(macroReport);
-  } catch {
+  } catch (err) {
+    console.warn("[Orchestrator] macro analysis failed:", err);
     reports.push({
       agentId: "macro-agent",
       role: "macro",
@@ -315,7 +320,8 @@ async function gatherReports(ctx: PriceContext): Promise<AgentReport[]> {
         bars: ctx.ohlcv,
       });
       reports.push(patternReport);
-    } catch {
+    } catch (err) {
+      console.warn("[Orchestrator] pattern analysis failed:", err);
       reports.push({
         agentId: "pattern-agent",
         role: "pattern",
@@ -366,7 +372,8 @@ async function gatherReports(ctx: PriceContext): Promise<AgentReport[]> {
         rawPatterns: smartMoneyPatterns,
       };
       reports.push(smartMoneyReport);
-    } catch {
+    } catch (err) {
+      console.warn("[Orchestrator] smart money analysis failed:", err);
       reports.push({
         agentId: "smart-money-agent",
         role: "smart_money",
@@ -430,7 +437,8 @@ async function gatherReports(ctx: PriceContext): Promise<AgentReport[]> {
       rawAnalysis: liquidityAnalysis,
     };
     reports.push(liquidityReport);
-  } catch {
+  } catch (err) {
+    console.warn("[Orchestrator] liquidity analysis failed:", err);
     reports.push({
       agentId: "liquidity-agent",
       role: "liquidity",
@@ -477,7 +485,8 @@ async function gatherReports(ctx: PriceContext): Promise<AgentReport[]> {
         },
       };
       reports.push(regimeReport);
-    } catch {
+    } catch (err) {
+      console.warn("[Orchestrator] regime analysis failed:", err);
       reports.push({
         agentId: "regime-agent",
         role: "regime",
@@ -533,7 +542,8 @@ async function gatherReports(ctx: PriceContext): Promise<AgentReport[]> {
         rawAnalysis: mtfAnalysis,
       };
       reports.push(mtfReport);
-    } catch {
+    } catch (err) {
+      console.warn("[Orchestrator] multi-TF analysis failed:", err);
       reports.push({
         agentId: "multi-tf-agent",
         role: "multi_timeframe",
@@ -584,7 +594,8 @@ async function gatherReports(ctx: PriceContext): Promise<AgentReport[]> {
       })),
     };
     reports.push(corrReport);
-  } catch {
+  } catch (err) {
+    console.warn("[Orchestrator] correlation analysis failed:", err);
     reports.push({
       agentId: "correlation-agent",
       role: "correlation",
@@ -600,7 +611,8 @@ async function gatherReports(ctx: PriceContext): Promise<AgentReport[]> {
   try {
     const sentimentReport = await sentimentAgent.analyzeMarket({});
     reports.push(sentimentReport);
-  } catch {
+  } catch (err) {
+    console.warn("[Orchestrator] sentiment analysis failed:", err);
     reports.push({
       agentId: "sentiment-agent",
       role: "sentiment",
@@ -719,8 +731,8 @@ async function gatherReports(ctx: PriceContext): Promise<AgentReport[]> {
     const riskData = riskReport.data as unknown as RiskAssessment | undefined;
 
     // Feed trade history from learning agent
-    const allTrades = (learningAgent as any).trades ?? [];
-    const conditionStats = (learningAgent as any).conditionStats ?? new Map();
+    const allTrades = learningAgent.getTrades();
+    const conditionStats = learningAgent.getConditionStats();
     probabilityAgent.feedTradeData(allTrades, conditionStats);
 
     // Derive trend score from existing reports
@@ -732,6 +744,7 @@ async function gatherReports(ctx: PriceContext): Promise<AgentReport[]> {
 
     // Run probability pipeline
     const probResult = probabilityAgent.computeProbability({
+      symbol: ctx.token,
       currentPrice: ctx.currentPrice,
       atr,
       trendScore,
@@ -752,7 +765,8 @@ async function gatherReports(ctx: PriceContext): Promise<AgentReport[]> {
     }
 
     reports.push(probReport);
-  } catch {
+  } catch (err) {
+    console.warn("[Orchestrator] probability analysis failed:", err);
     reports.push({
       agentId: "probability-agent",
       role: "probability",
@@ -784,7 +798,8 @@ async function gatherReports(ctx: PriceContext): Promise<AgentReport[]> {
       indicatorMap,
     );
     reports.push(memoryReport);
-  } catch {
+  } catch (err) {
+    console.warn("[Orchestrator] memory analysis failed:", err);
     reports.push({
       agentId: "memory-agent",
       role: "memory",
@@ -810,7 +825,8 @@ async function gatherReports(ctx: PriceContext): Promise<AgentReport[]> {
     }
 
     reports.push(confidenceReport);
-  } catch {
+  } catch (err) {
+    console.warn("[Orchestrator] confidence analysis failed:", err);
     reports.push({
       agentId: "confidence-agent",
       role: "confidence" as AgentRole,
@@ -928,7 +944,8 @@ async function runDialogue(
         const json = JSON.parse(cleaned);
         parsedConfidence = Number(json.confidence);
         parsedReasoning = json.reasoning || text;
-      } catch {
+      } catch (err) {
+        console.warn("[Orchestrator] dialogue JSON parse failed:", err);
         parsedReasoning = text.slice(0, 120);
       }
 
@@ -956,7 +973,8 @@ async function runDialogue(
       dialogueLines.push(
         `→ ${agent.role}: "${parsedReasoning.slice(0, 120)}"`,
       );
-    } catch {
+    } catch (err) {
+      console.warn("[Orchestrator] dialogue GPT-4o call failed:", err);
       // GPT-4o call failed — keep original reasoning and confidence
       dialogueLines.push(
         `→ ${agent.role}: "${agent.reasoning.slice(0, 80)}"`,
@@ -1128,39 +1146,45 @@ function makeDecision(
   // If VETO → override to WAIT/NEUTRAL immediately.
   let daLine = "";
   try {
-    const daContext = {
+    const daContext: DevilsAdvocateContext = {
       token: priceContext.token,
       currentPrice: priceContext.currentPrice,
       ohlcv: priceContext.ohlcv,
       reports,
-      // Optional: extract from liquidity agent report if available
+      fundingRate: undefined,
+      openInterestChange24h: undefined,
+      spread: undefined,
+      avgSpread: undefined,
     };
 
-    // Attempt to enrich with liquidity data from agent reports
+    // Enrich with liquidity data from agent reports
     const liqReport = reports.find((r) => r.role === "liquidity");
     if (liqReport?.data) {
-      const liqData = liqReport.data as Record<string, any>;
-      if (liqData.fundingRate !== undefined) {
-        (daContext as any).fundingRate = liqData.fundingRate;
+      const liqData = liqReport.data;
+      if (typeof liqData.fundingRate === 'number') {
+        daContext.fundingRate = liqData.fundingRate;
       }
-      if (liqData.openInterestChange24h !== undefined) {
-        (daContext as any).openInterestChange24h = liqData.openInterestChange24h;
+      if (typeof liqData.openInterestChange24h === 'number') {
+        daContext.openInterestChange24h = liqData.openInterestChange24h;
       }
-      if (liqData.spread !== undefined) {
-        (daContext as any).spread = liqData.spread;
+      if (typeof liqData.spread === 'number') {
+        daContext.spread = liqData.spread;
       }
-      if (liqData.avgSpread !== undefined) {
-        (daContext as any).avgSpread = liqData.avgSpread;
+      if (typeof liqData.avgSpread === 'number') {
+        daContext.avgSpread = liqData.avgSpread;
       }
     }
 
     // Also check for funding/oi directly in report data
-    const marketReport = reports.find((r) => r.role === "market");
-    if ((daContext as any).fundingRate === undefined && (marketReport?.data as any)?.fundingRate !== undefined) {
-      (daContext as any).fundingRate = (marketReport?.data as any).fundingRate;
+    if (daContext.fundingRate === undefined) {
+      const marketReport = reports.find((r) => r.role === "market");
+      const mrFundingRate = marketReport?.data as Record<string, unknown> | undefined;
+      if (typeof mrFundingRate?.fundingRate === 'number') {
+        daContext.fundingRate = mrFundingRate.fundingRate;
+      }
     }
 
-    const daResult = devilsAdvocateAgent.detectRedFlags(daContext as any);
+    const daResult = devilsAdvocateAgent.detectRedFlags(daContext);
 
     // ── VETO: Block trade immediately ──
     if (daResult.veto || daResult.severity === "VETO") {
@@ -1561,7 +1585,8 @@ export const runAgentAnalysis = createServerFn({ method: "POST" }).handler(
               : 0,
           );
         }
-      } catch {
+      } catch (err) {
+        console.warn("[Orchestrator] execution failed:", err);
         // Execution is best-effort; don't block the pipeline
       }
     }
@@ -1591,7 +1616,8 @@ export const runAgentAnalysis = createServerFn({ method: "POST" }).handler(
 
       // Attach portfolio report to reports array
       finalReports.push(portfolioReport);
-    } catch {
+    } catch (err) {
+      console.warn("[Orchestrator] portfolio review failed:", err);
       // Portfolio review is best-effort
     }
 
@@ -1608,7 +1634,8 @@ export const runAgentAnalysis = createServerFn({ method: "POST" }).handler(
       const reasoningReport =
         await reasoningAgent.generateReasoningReport(explanationResult);
       finalReports.push(reasoningReport);
-    } catch {
+    } catch (err) {
+      console.warn("[Orchestrator] reasoning generation failed:", err);
       // Reasoning is best-effort
     }
 
@@ -1718,9 +1745,10 @@ export const updateTradingStateFn = createServerFn({ method: "POST" }).handler(
 
 export const resetTradingState = createServerFn({ method: "POST" }).handler(
   async (): Promise<TradingState> => {
+    const capState = getCapitalState();
     tradingState = {
-      capital: 10000,
-      initialCapital: 10000,
+      capital: capState.trading,
+      initialCapital: capState.initial,
       openPosition: false,
       pnl: 0,
       pnlPct: 0,

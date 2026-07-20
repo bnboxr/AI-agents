@@ -100,7 +100,7 @@ export const Route = createRootRoute({
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Păun AI — FinTech Terminal" },
+      { title: "HSMC — FinTech Terminal" },
       { name: "description", content: "Multi-chain DeFi platform. Swap, earn yield, and manage your portfolio across 20+ blockchains." },
       { name: "theme-color", content: "#080a0f" },
     ],
@@ -173,6 +173,8 @@ function NavBar() {
             <NavLink to="/backtesting">BACK</NavLink>
             <NavLink to="/gas">GAS</NavLink>
             <NavLink to="/alerts">ALRT</NavLink>
+            <NavLink to="/training">TRAIN</NavLink>
+            <NavLink to="/network">NET</NavLink>
           </div>
           <div className="shrink-0 ml-2 flex items-center gap-1">
             <ChainSelector />

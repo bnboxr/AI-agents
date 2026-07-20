@@ -7,7 +7,6 @@
 import { BaseAgent } from "./base";
 import { readdirSync, readFileSync, existsSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { getApiKey } from "~/lib/api-keys";
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -65,7 +64,7 @@ const EXCLUDE_DIRS = new Set(["node_modules", ".git", "dist", ".run", ".turbo", 
 
 // ── System Audit Agent ───────────────────────────────────────────────
 
-const SYSTEM_PROMPT = `You are the System Audit Agent — the "truth guardian" of the Păun AI Hedge Fund OS. Your role is to analyze audit findings and produce actionable security and integrity recommendations.
+const SYSTEM_PROMPT = `You are the System Audit Agent — the "truth guardian" of the HSMC Hedge Fund OS. Your role is to analyze audit findings and produce actionable security and integrity recommendations.
 
 You review scan results for:
 - Mock/fake data in production code
@@ -210,7 +209,8 @@ export class SystemAuditAgent extends BaseAgent {
             }
           }
         }
-      } catch {
+      } catch (err) {
+        console.warn("[SystemAudit] mockDataDetection file read failed:", err);
         // Skip unreadable files
       }
     }
@@ -270,7 +270,8 @@ export class SystemAuditAgent extends BaseAgent {
             });
           }
         }
-      } catch {
+      } catch (err) {
+        console.warn("[SystemAudit] placeholderDetection file read failed:", err);
         // Skip unreadable files
       }
     }
@@ -322,7 +323,8 @@ export class SystemAuditAgent extends BaseAgent {
             location: `${file}:${lineNum}`,
           });
         }
-      } catch {
+      } catch (err) {
+        console.warn("[SystemAudit] stubDetection file read failed:", err);
         // Skip unreadable files
       }
     }
@@ -362,7 +364,8 @@ export class SystemAuditAgent extends BaseAgent {
         const fileAge = Date.now() - stats.mtimeMs;
         // This just confirms the module exists; actual price freshness is checked above
       }
-    } catch {
+    } catch (err) {
+      console.warn("[SystemAudit] staleDataCheck price-context stat failed:", err);
       issues.push({
         severity: "MEDIUM",
         category: "stale-data",
@@ -407,7 +410,8 @@ export class SystemAuditAgent extends BaseAgent {
             });
           }
         }
-      } catch {
+      } catch (err) {
+        console.warn("[SystemAudit] falseAlertDetection file read failed:", err);
         // Skip unreadable files
       }
     }
@@ -431,7 +435,7 @@ export class SystemAuditAgent extends BaseAgent {
     ];
 
     for (const { key, label, severity } of requiredVars) {
-      const val = getApiKey(key as any) || process.env[key];
+      const val = process.env[key];
       if (!val || val.trim().length === 0) {
         issues.push({
           severity,
@@ -502,7 +506,8 @@ export class SystemAuditAgent extends BaseAgent {
             location: "dist/",
           });
         }
-      } catch {
+      } catch (err) {
+        console.warn("[SystemAudit] buildHealth stat failed:", err);
         // Can't stat dist
       }
     }
@@ -524,7 +529,8 @@ export class SystemAuditAgent extends BaseAgent {
             });
           }
         }
-      } catch {
+      } catch (err) {
+        console.warn("[SystemAudit] buildHealth log read failed:", err);
         // Can't read log
       }
     }
@@ -590,7 +596,8 @@ export class SystemAuditAgent extends BaseAgent {
             });
           }
         }
-      } catch {
+      } catch (err) {
+        console.warn("[SystemAudit] securityScan file read failed:", err);
         // Skip unreadable files
       }
     }
@@ -613,7 +620,8 @@ export class SystemAuditAgent extends BaseAgent {
 
     try {
       this.walkDir(srcDir, files);
-    } catch {
+    } catch (err) {
+      console.warn("[SystemAudit] collectSourceFiles walk failed:", err);
       // Unable to scan — no files collected
     }
 
@@ -625,7 +633,8 @@ export class SystemAuditAgent extends BaseAgent {
     let entries;
     try {
       entries = readdirSync(dir, { withFileTypes: true });
-    } catch {
+    } catch (err) {
+      console.warn("[SystemAudit] walkDir readdir failed:", err);
       return;
     }
 

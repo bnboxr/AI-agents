@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { createServerFn } from "@tanstack/react-start";
 import { useState, useCallback, useEffect } from "react";
 import {
   getSettings,
@@ -26,6 +27,25 @@ import type { PaymentDestination, DestType } from "~/lib/payment-destinations";
 import { CHAINS } from "~/lib/chains";
 import { getExchangeConfigs, toggleExchange } from "~/lib/exchange";
 import type { ExchangeConfig } from "~/lib/exchange";
+import { getVenuePreference, setVenuePreference, type TradingVenue } from "~/lib/venue-selector";
+import {
+  getWalletChainId,
+  getWalletChainName,
+  setWalletChain,
+  listWalletChainIds,
+  isWalletTestnet,
+  WALLET_CHAINS,
+  type WalletChainConfig,
+} from "~/lib/venue-selector";
+import { getDexSlippageSetting, getPreferredDex, getGasPreference } from "~/lib/exchange/dex";
+import { getFaucetsForCurrentChain, requestSepoliaFaucet, fundWallet, getFaucetSummary } from "~/lib/faucet";
+import type { FaucetResult } from "~/lib/faucet";
+import {
+  getAutonomousWalletPublic,
+  revealSeedPhrase,
+  revealPrivateKey,
+} from "~/lib/autonomous-wallet";
+import type { AutonomousWalletPublic } from "~/lib/autonomous-wallet";
 
 // ── Service definitions ────────────────────────────────────────────
 
@@ -84,13 +104,40 @@ const SERVICES: ServiceDef[] = [
 
 // ── Route ──────────────────────────────────────────────────────────
 
+// Server functions for autonomous wallet
+const getWalletInfo = createServerFn({ method: "GET" }).handler(
+  async (): Promise<AutonomousWalletPublic> => {
+    return getAutonomousWalletPublic();
+  },
+);
+
+const getSeedPhrase = createServerFn({ method: "POST" }).handler(
+  async (): Promise<{ mnemonic: string }> => {
+    const mnemonic = await revealSeedPhrase();
+    return { mnemonic };
+  },
+);
+
+const getPrivateKeyFn = createServerFn({ method: "POST" }).handler(
+  async (): Promise<{ privateKey: string }> => {
+    const privateKey = await revealPrivateKey();
+    return { privateKey };
+  },
+);
+
 export const Route = createFileRoute("/settings")({
   loader: async () => {
-    const [settings, destinations, exchangeConfigs, llmProvider] = await Promise.all([
+    const [settings, destinations, exchangeConfigs, llmProvider, walletInfo] = await Promise.all([
       getSettings(),
       listDestinations(),
       getExchangeConfigs(),
       getLLMProvider(),
+      getAutonomousWalletPublic().catch(() => ({
+        address: "",
+        publicKey: "",
+        chain: "Ethereum",
+        balance: "0",
+      })),
     ]);
     // Try to detect Ollama on the server side
     let ollamaStatus = { running: false, models: [] as OllamaModel[] };
@@ -99,7 +146,7 @@ export const Route = createFileRoute("/settings")({
     } catch {
       // Ollama not available
     }
-    return { ...settings, destinations, exchangeConfigs, llmProvider, ollamaStatus };
+    return { ...settings, destinations, exchangeConfigs, llmProvider, ollamaStatus, walletInfo };
   },
   component: SettingsPage,
 });
@@ -126,6 +173,30 @@ function SettingsPage() {
   const [testResults, setTestResults] = useState<Record<string, { ok: boolean; message: string } | null>>({});
   const [saving, setSaving] = useState<Record<string, boolean>>({});
   const [exchangeToggling, setExchangeToggling] = useState<Record<string, boolean>>({});
+  const [tradingVenue, setTradingVenue] = useState<TradingVenue>(getVenuePreference());
+
+  // ── Wallet chain state ──────────────────────────────────────────
+  const [walletChain, setWalletChainState] = useState<string>(() => getWalletChainId());
+  const [walletTestnet, setWalletTestnet] = useState<boolean>(() => isWalletTestnet());
+  const [faucetAddress, setFaucetAddress] = useState("");
+  const [faucetRequesting, setFaucetRequesting] = useState(false);
+  const [faucetResult, setFaucetResult] = useState<string | null>(null);
+  const [fundWalletResults, setFundWalletResults] = useState<FaucetResult[]>([]);
+  const [fundWalletRunning, setFundWalletRunning] = useState(false);
+
+  // ── DEX settings state ──────────────────────────────────────────
+  const [dexSlippage, setDexSlippage] = useState<number>(() => getDexSlippageSetting() * 100);
+  const [preferredDex, setPreferredDex] = useState<string>(() => getPreferredDex());
+  const [gasPreference, setGasPreferenceState] = useState<"fast" | "medium" | "slow">(() => getGasPreference());
+
+  // ── Autonomous wallet state ─────────────────────────────────────
+  const [walletData, setWalletData] = useState<AutonomousWalletPublic>(initial.walletInfo);
+  const [showSeedConfirm, setShowSeedConfirm] = useState(false);
+  const [seedPhrase, setSeedPhrase] = useState<string | null>(null);
+  const [privateKey, setPrivateKey] = useState<string | null>(null);
+  const [revealingSeed, setRevealingSeed] = useState(false);
+  const [revealingKey, setRevealingKey] = useState(false);
+  const [copiedField, setCopiedField] = useState<string | null>(null);
 
   // ── RPC form state ─────────────────────────────────────────────
   const [newRpcLabel, setNewRpcLabel] = useState("");
@@ -321,7 +392,131 @@ function SettingsPage() {
     }
   }, []);
 
-  // ── Render ─────────────────────────────────────────────────────
+  // ── Trading venue actions ──────────────────────────────────────
+  
+  const handleVenueChange = useCallback((venue: TradingVenue) => {
+    setTradingVenue(venue);
+    setVenuePreference(venue);
+  }, []);
+
+  // ── Wallet chain actions ───────────────────────────────────────
+
+  const handleChainChange = useCallback((chainId: string) => {
+    setWalletChain(chainId);
+    setWalletChainState(chainId);
+    setWalletTestnet(WALLET_CHAINS[chainId]?.testnet ?? false);
+    setFaucetResult(null);
+    setFundWalletResults([]);
+  }, []);
+
+  const handleFaucetRequest = useCallback(async () => {
+    if (!faucetAddress.trim()) return;
+    setFaucetRequesting(true);
+    setFaucetResult(null);
+    try {
+      const result = await requestSepoliaFaucet(faucetAddress.trim());
+      setFaucetResult(result.success ? result.message : result.message);
+    } catch (err) {
+      setFaucetResult(`Request failed: ${(err as Error).message}`);
+    } finally {
+      setFaucetRequesting(false);
+    }
+  }, [faucetAddress]);
+
+  const handleFundWallet = useCallback(async () => {
+    if (!faucetAddress.trim()) return;
+    setFundWalletRunning(true);
+    setFundWalletResults([]);
+    try {
+      const results = await fundWallet(faucetAddress.trim(), walletChain);
+      setFundWalletResults(results);
+    } catch (err) {
+      setFundWalletResults([{
+        faucet: { name: "Error", url: "", chain: walletChain, token: "", type: "web", description: "" },
+        status: "failed",
+        message: `Fund wallet error: ${(err as Error).message}`,
+      }]);
+    } finally {
+      setFundWalletRunning(false);
+    }
+  }, [faucetAddress, walletChain]);
+
+  // ── DEX settings handlers ──────────────────────────────────────
+
+  const handleDexSlippageChange = useCallback((value: number) => {
+    setDexSlippage(value);
+    if (typeof window !== "undefined" && window.localStorage) {
+      window.localStorage.setItem("hsmc_dex_slippage", (value / 100).toString());
+    }
+  }, []);
+
+  const handlePreferredDexChange = useCallback((dex: string) => {
+    setPreferredDex(dex);
+    if (typeof window !== "undefined" && window.localStorage) {
+      window.localStorage.setItem("hsmc_preferred_dex", dex);
+    }
+  }, []);
+
+  const handleGasPreferenceChange = useCallback((pref: "fast" | "medium" | "slow") => {
+    setGasPreferenceState(pref);
+    if (typeof window !== "undefined" && window.localStorage) {
+      window.localStorage.setItem("hsmc_gas_preference", pref);
+    }
+  }, []);
+
+  // ── Autonomous wallet handlers ──────────────────────────────────
+
+  const handleRevealSeed = useCallback(async () => {
+    setShowSeedConfirm(true);
+  }, []);
+
+  const handleConfirmRevealSeed = useCallback(async () => {
+    setShowSeedConfirm(false);
+    setRevealingSeed(true);
+    try {
+      const result = await getSeedPhrase({ data: {} });
+      setSeedPhrase(result.mnemonic);
+    } catch {
+      setSeedPhrase("Error: could not retrieve seed phrase");
+    } finally {
+      setRevealingSeed(false);
+    }
+  }, []);
+
+  const handleRevealKey = useCallback(async () => {
+    setRevealingKey(true);
+    try {
+      const result = await getPrivateKeyFn({ data: {} });
+      setPrivateKey(result.privateKey);
+    } catch {
+      setPrivateKey("Error: could not retrieve private key");
+    } finally {
+      setRevealingKey(false);
+    }
+  }, []);
+
+  const handleCopy = useCallback(async (text: string, field: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedField(field);
+      setTimeout(() => setCopiedField(null), 2000);
+    } catch {
+      // Clipboard not available
+    }
+  }, []);
+
+  // Auto-refresh wallet info every 30s
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      try {
+        const info = await getWalletInfo();
+        setWalletData(info);
+      } catch {
+        // keep current data
+      }
+    }, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   return (
     <div className="min-h-dvh bg-darker pt-20 pb-16">
@@ -935,6 +1130,393 @@ function SettingsPage() {
             </button>
           )}
         </div>
+        {/* Trading Venue Selector */}
+        <div className="mt-10 animate-fade-in-up" style={{ animationDelay: "0.35s" }}>
+          <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+            <span>📍</span> Trading Venue
+          </h2>
+          <p className="text-gray-400 text-sm mb-4">
+            Select where paper trades are routed. Bitunix is the primary
+            perpetuals exchange. Wallet/DEX simulates on-chain execution.
+          </p>
+          <div className="glass-card p-5">
+            <div className="flex gap-3 flex-wrap">
+              {([
+                { value: "bitunix" as TradingVenue, label: "🔵 Bitunix", desc: "Perpetuals & spot trading" },
+                { value: "wallet" as TradingVenue, label: "🔗 Wallet/DEX", desc: "On-chain simulated execution" },
+                { value: "auto" as TradingVenue, label: "🔄 Auto", desc: "Bitunix → Wallet fallback" },
+              ]).map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => handleVenueChange(opt.value)}
+                  className={`text-sm px-4 py-3 rounded-lg border transition-all duration-200 text-left ${
+                    tradingVenue === opt.value
+                      ? "border-accent-blue bg-accent-blue/10 text-white"
+                      : "border-dark-border text-gray-500 hover:border-dark-border-light hover:text-gray-300"
+                  }`}
+                >
+                  <div className="font-semibold">{opt.label}</div>
+                  <div className="text-xs text-gray-500 mt-0.5">{opt.desc}</div>
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-gray-600 mt-3">
+              Current venue:{" "}
+              <span className="text-accent-blue font-semibold">
+                {tradingVenue === "bitunix" ? "Bitunix" : tradingVenue === "wallet" ? "Wallet/DEX" : "Auto (Bitunix → Wallet)"}
+              </span>
+            </p>
+          </div>
+        </div>
+
+        {/* Wallet Network section */}
+        {tradingVenue === "wallet" && (
+          <div className="mt-10 animate-fade-in-up" style={{ animationDelay: "0.37s" }}>
+            <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+              <span>⛓️</span> Wallet Network
+            </h2>
+            <p className="text-gray-400 text-sm mb-4">
+              Select which blockchain to use for wallet/DEX trading.
+              Testnets let you trade with zero-value test tokens.
+            </p>
+
+            {/* Testnet warning banner */}
+            {walletTestnet && (
+              <div className="mb-4 p-4 rounded-lg border border-accent-yellow/30 bg-accent-yellow/5 text-accent-yellow text-sm flex items-center gap-3">
+                <span className="text-lg">⚠️</span>
+                <div>
+                  <p className="font-semibold">Testnet mode — no real value at risk</p>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    You are trading on {getWalletChainName()} testnet. Get free test tokens below.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Chain selector grid */}
+            <div className="glass-card p-5">
+              <div className="grid gap-3 grid-cols-2 sm:grid-cols-4">
+                {listWalletChainIds().map((chainId) => {
+                  const cfg = WALLET_CHAINS[chainId];
+                  if (!cfg) return null;
+                  const isSelected = walletChain === chainId;
+                  const isTestnet = cfg.testnet ?? false;
+
+                  return (
+                    <button
+                      key={chainId}
+                      onClick={() => handleChainChange(chainId)}
+                      className={`text-sm px-3 py-3 rounded-lg border transition-all duration-200 text-center ${
+                        isSelected
+                          ? isTestnet
+                            ? "border-accent-yellow bg-accent-yellow/10 text-white"
+                            : "border-accent-blue bg-accent-blue/10 text-white"
+                          : "border-dark-border text-gray-500 hover:border-dark-border-light hover:text-gray-300"
+                      }`}
+                    >
+                      <div className="font-semibold text-xs truncate">{cfg.name}</div>
+                      <div className={`text-[0.6rem] mt-1 ${isTestnet ? "text-accent-yellow" : "text-accent-green"}`}>
+                        {isTestnet ? "🟡 Testnet" : "🟢 Mainnet"}
+                      </div>
+                      {isSelected && (
+                        <div className={`text-[0.6rem] mt-0.5 ${isTestnet ? "text-accent-yellow" : "text-accent-blue"}`}>
+                          ● Active
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Faucet section — only on testnets */}
+            {walletTestnet && (
+              <div className="mt-6 glass-card p-5">
+                <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
+                  <span>🚰</span> Get Test Tokens
+                </h3>
+                <p className="text-xs text-gray-500 mb-4">
+                  Use these faucets to get free testnet tokens for {getWalletChainName()}.
+                </p>
+
+                {/* Address input + Fund My Wallet button */}
+                <div className="mb-4">
+                  <p className="text-xs text-gray-500 mb-2">
+                    Enter your wallet address and click "Fund My Wallet" to
+                    open all available faucets and try automatic requests.
+                  </p>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={faucetAddress}
+                      onChange={(e) => setFaucetAddress(e.target.value)}
+                      placeholder="0x... your wallet address"
+                      className="glass-input flex-1 text-sm font-mono"
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") handleFundWallet();
+                      }}
+                    />
+                    <button
+                      onClick={handleFundWallet}
+                      disabled={!faucetAddress.trim() || fundWalletRunning}
+                      className="glass-button text-sm px-4 py-2 whitespace-nowrap bg-accent-blue/20 border-accent-blue/40 hover:bg-accent-blue/30"
+                    >
+                      {fundWalletRunning ? (
+                        <span className="flex items-center gap-1.5">
+                          <span className="animate-spin inline-block w-3 h-3 border border-white border-t-transparent rounded-full" />
+                          Funding…
+                        </span>
+                      ) : (
+                        "🚰 Fund My Wallet"
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Fund Wallet results */}
+                {fundWalletResults.length > 0 && (() => {
+                  const summary = getFaucetSummary(fundWalletResults);
+                  return (
+                    <div className="mb-4">
+                      {/* Summary bar */}
+                      <div className="flex items-center gap-3 text-xs mb-3 px-3 py-2 rounded-lg bg-dark-hover/50 border border-dark-border">
+                        <span className="text-gray-400">
+                          {summary.total} faucets tried
+                        </span>
+                        <span className="text-accent-green">
+                          {summary.success} auto ✓
+                        </span>
+                        <span className="text-accent-yellow">
+                          {summary.web} opened in tabs
+                        </span>
+                        {summary.failed > 0 && (
+                          <span className="text-accent-red">
+                            {summary.failed} failed
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Individual results */}
+                      <div className="space-y-2 max-h-60 overflow-y-auto">
+                        {fundWalletResults.map((r, i) => (
+                          <div
+                            key={i}
+                            className={`flex items-start gap-2 text-xs px-3 py-2 rounded-lg border ${
+                              r.status === "success"
+                                ? "border-accent-green/20 bg-accent-green/5"
+                                : r.status === "failed"
+                                ? "border-accent-red/20 bg-accent-red/5"
+                                : "border-dark-border bg-dark-hover/20"
+                            }`}
+                          >
+                            <span className="mt-0.5">
+                              {r.status === "success" ? "✅" : r.status === "failed" ? "❌" : "🔗"}
+                            </span>
+                            <div className="flex-1 min-w-0">
+                              <div className="text-white font-medium">
+                                {r.faucet.name}
+                                <span className="text-gray-500 ml-1.5">
+                                  ({r.faucet.type})
+                                </span>
+                              </div>
+                              <div className="text-gray-500 truncate">{r.message}</div>
+                              {r.txHash && (
+                                <code className="text-accent-blue font-mono text-[0.65rem] truncate block mt-0.5">
+                                  tx: {r.txHash.slice(0, 16)}...
+                                </code>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Legacy: PoW faucet auto-request for Sepolia */}
+                {walletChain === "sepolia" && (
+                  <div className="mt-4 pt-4 border-t border-dark-border">
+                    <p className="text-xs text-gray-500 mb-3">
+                      Or try the automated PoW faucet directly (may require captcha):
+                    </p>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={faucetAddress}
+                        onChange={(e) => setFaucetAddress(e.target.value)}
+                        placeholder="0x... your wallet address"
+                        className="glass-input flex-1 text-sm font-mono"
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") handleFaucetRequest();
+                        }}
+                      />
+                      <button
+                        onClick={handleFaucetRequest}
+                        disabled={!faucetAddress.trim() || faucetRequesting}
+                        className="glass-button text-sm px-4 py-2 whitespace-nowrap"
+                      >
+                        {faucetRequesting ? "Sending…" : "Request ETH"}
+                      </button>
+                    </div>
+                    {faucetResult && (
+                      <div className={`mt-3 text-xs px-3 py-2 rounded-lg border ${
+                        faucetResult.startsWith("Faucet request submitted")
+                          ? "border-accent-green/30 bg-accent-green/5 text-accent-green"
+                          : "border-accent-yellow/30 bg-accent-yellow/5 text-accent-yellow"
+                      }`}>
+                        {faucetResult}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Manual faucet links */}
+                {getFaucetsForCurrentChain().length > 0 && (
+                  <div className="space-y-2 mt-4 pt-4 border-t border-dark-border">
+                    <p className="text-xs text-gray-500 mb-2">
+                      Manual faucet links — open individually:
+                    </p>
+                    {getFaucetsForCurrentChain().map((f, i) => (
+                      <a
+                        key={i}
+                        href={f.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-3 text-xs px-3 py-2 rounded-lg border border-dark-border bg-dark-hover/30 text-gray-300 hover:text-white hover:border-accent-blue/30 hover:bg-dark-hover/50 transition-all duration-200"
+                      >
+                        <span>🔗</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium">{f.label}</div>
+                          <div className="text-gray-500 truncate">{f.description}</div>
+                        </div>
+                        <span className="text-gray-500">↗</span>
+                      </a>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Venue status display */}
+            <div className="mt-4 flex items-center gap-2 text-sm text-gray-400">
+              <span className={walletTestnet ? "text-accent-yellow" : "text-accent-green"}>
+                {walletTestnet ? "🟡" : "🟢"}
+              </span>
+              <span>
+                {walletTestnet
+                  ? `Testnet (${getWalletChainName()}) — Test tokens only`
+                  : `Mainnet (${getWalletChainName()}) — Real funds`}
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* DEX Configuration section */}
+        <div className="mt-10 animate-fade-in-up" style={{ animationDelay: "0.38s" }}>
+          <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+            <span>🦄</span> DEX Configuration
+          </h2>
+          <p className="text-gray-400 text-sm mb-4">
+            Configure how DEX/Uniswap trades are simulated in paper mode.
+          </p>
+          <div className="glass-card p-5 space-y-6">
+            {/* Slippage tolerance */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-sm font-medium text-white">
+                  Slippage Tolerance
+                </label>
+                <span className="text-sm text-accent-blue font-mono">
+                  {dexSlippage.toFixed(1)}%
+                </span>
+              </div>
+              <p className="text-xs text-gray-500 mb-3">
+                Total DEX slippage = 0.3% Uniswap pool fee + this price impact.
+                Applied to both entry and exit.
+              </p>
+              <input
+                type="range"
+                min={0.1}
+                max={5}
+                step={0.1}
+                value={dexSlippage}
+                onChange={(e) => handleDexSlippageChange(parseFloat(e.target.value))}
+                className="w-full h-2 rounded-lg appearance-none cursor-pointer"
+                style={{
+                  background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${(dexSlippage / 5) * 100}%, #1e293b ${(dexSlippage / 5) * 100}%, #1e293b 100%)`,
+                }}
+              />
+              <div className="flex justify-between text-xs text-gray-600 mt-1">
+                <span>0.1% (tight)</span>
+                <span>5% (loose)</span>
+              </div>
+              <p className="text-xs text-accent-yellow mt-2">
+                Default: 0.5% price impact + 0.3% pool fee = 0.8% total.
+              </p>
+            </div>
+
+            {/* Preferred DEX */}
+            <div>
+              <label className="text-sm font-medium text-white mb-2 block">
+                Preferred DEX
+              </label>
+              <p className="text-xs text-gray-500 mb-3">
+                Select the DEX protocol to simulate swaps through.
+              </p>
+              <div className="flex gap-3 flex-wrap">
+                {([
+                  { value: "uniswap_v3", label: "🦄 Uniswap V3", desc: "Concentrated liquidity, best prices" },
+                  { value: "uniswap_v2", label: "🔄 Uniswap V2", desc: "Classic AMM, wider spreads" },
+                  { value: "sushiswap", label: "🍣 SushiSwap", desc: "0.25% fee (vs 0.3%)" },
+                ]).map((opt) => (
+                  <button
+                    key={opt.value}
+                    onClick={() => handlePreferredDexChange(opt.value)}
+                    className={`text-sm px-4 py-3 rounded-lg border transition-all duration-200 text-left ${
+                      preferredDex === opt.value
+                        ? "border-accent-blue bg-accent-blue/10 text-white"
+                        : "border-dark-border text-gray-500 hover:border-dark-border-light hover:text-gray-300"
+                    }`}
+                  >
+                    <div className="font-semibold">{opt.label}</div>
+                    <div className="text-xs text-gray-500 mt-0.5">{opt.desc}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Gas preference */}
+            <div>
+              <label className="text-sm font-medium text-white mb-2 block">
+                Gas Preference
+              </label>
+              <p className="text-xs text-gray-500 mb-3">
+                Simulated gas cost for DEX transactions. Affects fee estimates.
+              </p>
+              <div className="flex gap-3 flex-wrap">
+                {([
+                  { value: "fast" as const, label: "⚡ Fast", desc: "~50 gwei", cost: "~$26" },
+                  { value: "medium" as const, label: "🚶 Medium", desc: "~25 gwei", cost: "~$13" },
+                  { value: "slow" as const, label: "🐢 Slow", desc: "~10 gwei", cost: "~$5" },
+                ]).map((opt) => (
+                  <button
+                    key={opt.value}
+                    onClick={() => handleGasPreferenceChange(opt.value)}
+                    className={`text-sm px-4 py-3 rounded-lg border transition-all duration-200 text-left ${
+                      gasPreference === opt.value
+                        ? "border-accent-blue bg-accent-blue/10 text-white"
+                        : "border-dark-border text-gray-500 hover:border-dark-border-light hover:text-gray-300"
+                    }`}
+                  >
+                    <div className="font-semibold">{opt.label}</div>
+                    <div className="text-xs text-gray-500 mt-0.5">{opt.desc} · est. {opt.cost}/swap</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* Exchange Toggles section */}
         <div className="mt-10 animate-fade-in-up" style={{ animationDelay: "0.4s" }}>
           <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
@@ -1038,6 +1620,181 @@ function SettingsPage() {
               </p>
             </div>
           )}
+        </div>
+
+        {/* Autonomous Wallet section */}
+        <div className="mt-10 animate-fade-in-up" style={{ animationDelay: "0.45s" }}>
+          <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+            <span>🔐</span> Autonomous Wallet
+          </h2>
+          <p className="text-gray-400 text-sm mb-4">
+            This platform-generated wallet executes ALL agent trades on-chain.
+            Fund it with native tokens (ETH on Ethereum, etc.) and the agents will use it automatically.
+          </p>
+
+          <div className="glass-card p-5 space-y-4 border-l-2 border-accent-purple/40">
+            {/* Wallet address */}
+            <div>
+              <label className="text-xs text-gray-500 uppercase tracking-wider font-mono mb-1 block">
+                Wallet Address
+              </label>
+              <div className="flex items-center gap-2">
+                <code className="text-sm text-white font-mono break-all flex-1">
+                  {walletData.address || "Generating..."}
+                </code>
+                {walletData.address && (
+                  <button
+                    onClick={() => handleCopy(walletData.address, "address")}
+                    className="text-xs px-2 py-1 rounded-md text-gray-500 hover:text-accent-cyan hover:bg-accent-cyan/10 transition-colors shrink-0"
+                    title="Copy address"
+                  >
+                    {copiedField === "address" ? "✓ Copied" : "📋"}
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Wallet info grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+              <div>
+                <label className="text-xs text-gray-500 uppercase tracking-wider font-mono mb-1 block">
+                  Chain
+                </label>
+                <p className="text-sm text-white font-medium">{walletData.chain}</p>
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 uppercase tracking-wider font-mono mb-1 block">
+                  Balance
+                </label>
+                <p className="text-sm text-white font-mono">
+                  {walletData.balance} ETH
+                </p>
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 uppercase tracking-wider font-mono mb-1 block">
+                  Status
+                </label>
+                <div className="flex items-center gap-1.5">
+                  <span className={walletData.address ? "status-dot-online" : "status-dot-offline"} />
+                  <span className="text-sm text-gray-400">
+                    {walletData.address ? "Active" : "Pending"}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Warning */}
+            <div className="bg-accent-yellow/5 border border-accent-yellow/20 rounded-lg p-3 flex items-start gap-2">
+              <span className="text-accent-yellow text-sm shrink-0 mt-0.5">⚠️</span>
+              <p className="text-xs text-accent-yellow/80">
+                Store this safely. Never share. This wallet executes ALL agent trades.
+                Anyone with access to the seed phrase or private key controls all agent funds.
+              </p>
+            </div>
+
+            {/* Seed phrase section */}
+            <div className="pt-2 border-t border-dark-border">
+              <label className="text-sm font-medium text-white mb-2 block">
+                Seed Phrase (12 words)
+              </label>
+              {seedPhrase ? (
+                <div className="space-y-2">
+                  <div className="bg-dark-hover border border-dark-border rounded-lg p-3">
+                    <p className="text-sm text-white font-mono leading-relaxed break-words">
+                      {seedPhrase}
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleCopy(seedPhrase, "seed")}
+                      className="text-xs px-3 py-1.5 rounded-lg border border-dark-border text-gray-400 hover:text-white hover:border-accent-blue/40 hover:bg-dark-hover transition-all duration-200"
+                    >
+                      {copiedField === "seed" ? "✓ Copied" : "📋 Copy"}
+                    </button>
+                    <button
+                      onClick={() => { setSeedPhrase(null); setShowSeedConfirm(false); }}
+                      className="text-xs px-3 py-1.5 rounded-lg border border-dark-border text-gray-400 hover:text-accent-red hover:border-accent-red/40 transition-all duration-200"
+                    >
+                      Hide
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  {showSeedConfirm ? (
+                    <div className="bg-accent-red/5 border border-accent-red/20 rounded-lg p-4 space-y-3">
+                      <p className="text-sm text-accent-red font-medium">
+                        ⚠️ Anyone with this seed phrase can access ALL agent funds.
+                      </p>
+                      <p className="text-xs text-gray-400">
+                        Make sure nobody is watching your screen. Never share the seed phrase.
+                      </p>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={handleConfirmRevealSeed}
+                          disabled={revealingSeed}
+                          className="text-sm px-4 py-2 rounded-lg bg-accent-red/20 border border-accent-red/40 text-accent-red hover:bg-accent-red/30 transition-all duration-200 disabled:opacity-40 font-semibold"
+                        >
+                          {revealingSeed ? "Revealing…" : "Yes, Reveal Seed Phrase"}
+                        </button>
+                        <button
+                          onClick={() => setShowSeedConfirm(false)}
+                          className="text-sm px-4 py-2 rounded-lg border border-dark-border text-gray-400 hover:text-white hover:bg-dark-hover transition-all duration-200"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={handleRevealSeed}
+                      className="text-sm px-4 py-2 rounded-lg border border-accent-yellow/40 text-accent-yellow hover:bg-accent-yellow/10 transition-all duration-200 font-medium"
+                    >
+                      🔓 Reveal Seed Phrase
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Private key section */}
+            <div className="pt-2 border-t border-dark-border">
+              <label className="text-sm font-medium text-white mb-2 block">
+                Private Key
+              </label>
+              {privateKey ? (
+                <div className="space-y-2">
+                  <div className="bg-dark-hover border border-dark-border rounded-lg p-3">
+                    <code className="text-xs text-white font-mono break-all">
+                      {privateKey}
+                    </code>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleCopy(privateKey, "key")}
+                      className="text-xs px-3 py-1.5 rounded-lg border border-dark-border text-gray-400 hover:text-white hover:border-accent-blue/40 hover:bg-dark-hover transition-all duration-200"
+                    >
+                      {copiedField === "key" ? "✓ Copied" : "📋 Copy"}
+                    </button>
+                    <button
+                      onClick={() => setPrivateKey(null)}
+                      className="text-xs px-3 py-1.5 rounded-lg border border-dark-border text-gray-400 hover:text-accent-red hover:border-accent-red/40 transition-all duration-200"
+                    >
+                      Hide
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  onClick={handleRevealKey}
+                  disabled={revealingKey}
+                  className="text-sm px-4 py-2 rounded-lg border border-accent-red/40 text-accent-red hover:bg-accent-red/10 transition-all duration-200 font-medium disabled:opacity-40"
+                >
+                  {revealingKey ? "Revealing…" : "🔓 Reveal Private Key"}
+                </button>
+              )}
+            </div>
+          </div>
         </div>
       </div>
     </div>

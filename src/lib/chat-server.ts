@@ -15,6 +15,8 @@ export interface ChatStreamResponse {
   responseText: string;
 }
 
+let _callIdCounter = 0;
+
 const TOOL_NAMES = [
   "executeSwap",
   "getPortfolioValue",
@@ -25,7 +27,7 @@ const TOOL_NAMES = [
   "configurePaymentDestination",
 ];
 
-const SYSTEM_PROMPT = `You are Păun AI, a DeFi assistant. You have access to these tools: ${TOOL_NAMES.join(", ")}. 
+const SYSTEM_PROMPT = `You are HSMC, a DeFi assistant. You have access to these tools: ${TOOL_NAMES.join(", ")}. 
 Based on the user's message, determine which single tool to call. 
 Respond with ONLY the tool name — nothing else, no punctuation, no explanation.
 If no tool fits, respond with: getAgentStatus`;
@@ -73,7 +75,8 @@ async function detectToolOpenAI(
       choices: Array<{ message: { content: string } }>;
     };
     return data.choices?.[0]?.message?.content?.trim() ?? null;
-  } catch {
+  } catch (err) {
+    console.warn("[ChatServer] detectToolOpenAI failed:", err);
     return null;
   } finally {
     clearTimeout(timeout);
@@ -105,7 +108,8 @@ async function detectToolAnthropic(
     if (!res.ok) return null;
     const data = (await res.json()) as { content: Array<{ text: string }> };
     return data.content?.[0]?.text?.trim() ?? null;
-  } catch {
+  } catch (err) {
+    console.warn("[ChatServer] detectToolAnthropic failed:", err);
     return null;
   } finally {
     clearTimeout(timeout);
@@ -125,7 +129,8 @@ async function detectToolOllama(messages: ChatMessage[]): Promise<string | null>
       max_tokens: 50,
     });
     return response.content.trim() || null;
-  } catch {
+  } catch (err) {
+    console.warn("[ChatServer] detectToolOllama failed:", err);
     return null;
   }
 }
@@ -429,7 +434,7 @@ export const processChat = createServerFn({ method: "POST" })
     }
 
     const args = getToolArgs(toolName, messages);
-    const id = `call_${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
+    const id = `call_${Date.now().toString(36)}_${(_callIdCounter++).toString(36)}`;
     const tc: ToolCall = { id, name: toolName, arguments: args };
     const tr = await executeToolCall(tc);
     return { toolCall: { id: tc.id, name: tc.name, arguments: tc.arguments }, toolResult: tr.result, responseText: fmtResult(tc.name, tr.result) };

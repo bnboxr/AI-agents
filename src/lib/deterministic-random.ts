@@ -1,49 +1,30 @@
-// ── Deterministic Random ─────────────────────────────────────────────
-// Hash-based seeded random number generator. Produces identical output
-// for identical seed strings — critical for reproducible backtesting
-// and audit-trail consistency across the agent pipeline.
-//
-// Usage:
-//   seededRandom("BTC-12345")        → deterministic float [0, 1)
-//   deterministicUUID("my-seed")     → deterministic UUID string
-
 /**
- * Simple polynomial hash of a string seed, normalized to [0, 1).
- * Same seed always produces the same float — suitable for slippage
- * simulation, randomized-but-repeatable agent decisions, etc.
+ * Deterministic pseudo-random number generator (mulberry32).
+ * Used in place of Math.random() for reproducible simulation data.
+ * Seed derived from a source string (e.g., wallet address, collection name).
  */
 export function seededRandom(seed: string): number {
-  let hash = 0;
+  let h = 0;
   for (let i = 0; i < seed.length; i++) {
-    const char = seed.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash; // Convert to 32-bit integer
+    h = (Math.imul(31, h) + seed.charCodeAt(i)) | 0;
   }
-  // Normalize to [0, 1)
-  return ((Math.abs(hash) % 1_000_000) / 1_000_000);
+  // mulberry32
+  let t = (h += 0x6d2b79f5);
+  t = Math.imul(t ^ (t >>> 15), t | 1);
+  t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
 }
 
-const HEX = "0123456789abcdef";
+/**
+ * Deterministic random integer in [min, max) range.
+ */
+export function seededRandomInt(seed: string, min: number, max: number): number {
+  return min + Math.floor(seededRandom(seed) * (max - min));
+}
 
 /**
- * Deterministic UUID v4-formatted string from a seed.
- * Generates 32 hex digits via seededRandom, then formats as 8-4-4-4-12.
+ * Deterministic element pick from array.
  */
-export function deterministicUUID(seed: string): string {
-  const digits: string[] = [];
-  for (let i = 0; i < 32; i++) {
-    const r = seededRandom(`${seed}-uuid-${i}`);
-    digits.push(HEX[Math.floor(r * 16)]);
-  }
-  return (
-    digits.slice(0, 8).join("") +
-    "-" +
-    digits.slice(8, 12).join("") +
-    "-" +
-    digits.slice(12, 16).join("") +
-    "-" +
-    digits.slice(16, 20).join("") +
-    "-" +
-    digits.slice(20, 32).join("")
-  );
+export function seededPick<T>(seed: string, arr: T[]): T {
+  return arr[seededRandomInt(seed, 0, arr.length)];
 }

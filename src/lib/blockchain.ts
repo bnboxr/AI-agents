@@ -294,7 +294,8 @@ export const getPrices = createServerFn({ method: 'GET' }).handler(async (): Pro
       btc: data.bitcoin ? { usd: data.bitcoin.usd, change24h: data.bitcoin.usd_24h_change ?? 0 } : null,
       eth: data.ethereum ? { usd: data.ethereum.usd, change24h: data.ethereum.usd_24h_change ?? 0 } : null,
     };
-  } catch {
+  } catch (err) {
+    console.warn("[Blockchain] getPrices CoinGecko failed:", err);
     return { btc: null, eth: null };
   }
 });
@@ -313,7 +314,8 @@ export const getFearGreed = createServerFn({ method: 'GET' }).handler(async (): 
       classification: item.value_classification || 'Neutral',
       timestamp: parseInt(item.timestamp, 10),
     };
-  } catch {
+  } catch (err) {
+    console.warn("[Blockchain] getFearGreed failed:", err);
     return null;
   }
 });
@@ -331,63 +333,11 @@ export interface ArbitrageOpportunity {
 }
 
 export const getArbitrageOpportunities = createServerFn({ method: 'GET' }).handler(async (): Promise<ArbitrageOpportunity[]> => {
-  // Compare wrapped token prices across chains using CoinGecko
-  // This checks for same-asset price discrepancies
-  const assetPairs = [
-    { id: 'weth', name: 'WETH', chains: ['ethereum', 'arbitrum', 'optimism', 'base', 'polygon', 'zksync', 'linea', 'scroll'] },
-    { id: 'wbtc', name: 'WBTC', chains: ['ethereum', 'arbitrum', 'optimism', 'polygon'] },
-    { id: 'usdc', name: 'USDC', chains: ['ethereum', 'arbitrum', 'optimism', 'base', 'polygon', 'avalanche', 'solana'] },
-    { id: 'usdt', name: 'USDT', chains: ['ethereum', 'arbitrum', 'optimism', 'polygon', 'avalanche', 'tron'] },
-    { id: 'matic-network', name: 'MATIC', chains: ['polygon', 'ethereum'] },
-  ];
-
-  const opportunities: ArbitrageOpportunity[] = [];
-
-  for (const asset of assetPairs) {
-    try {
-      // Get price across different chains via CoinGecko platform filter
-      const res = await fetchWithTimeout(
-        `https://api.coingecko.com/api/v3/simple/price?ids=${asset.id}&vs_currencies=usd`,
-        {},
-        4000
-      );
-      if (!res.ok) continue;
-      const data = await res.json();
-      const price = data[asset.id]?.usd;
-      if (!price) continue;
-
-      // Simulate chain-specific slight variations (real arbitrage would use DEX prices per chain)
-      // We detect if there's a meaningful spread by checking against stablecoin peg
-      const variations: { chain: string; price: number }[] = [];
-      for (const chain of asset.chains) {
-        // Small variations based on chain characteristics
-        const variation = 1 + (Math.sin(chain.length * 1.7 + Date.now() / 3600000) * 0.003);
-        variations.push({ chain, price: price * variation });
-      }
-
-      variations.sort((a, b) => a.price - b.price);
-      const cheapest = variations[0];
-      const mostExpensive = variations[variations.length - 1];
-
-      const profitPct = ((mostExpensive.price - cheapest.price) / cheapest.price) * 100;
-
-      if (profitPct > 0.1) {
-        opportunities.push({
-          pair: `${asset.name}/USD`,
-          sourceChain: cheapest.chain,
-          destChain: mostExpensive.chain,
-          sourcePrice: Math.round(cheapest.price * 100) / 100,
-          destPrice: Math.round(mostExpensive.price * 100) / 100,
-          profitPct: Math.round(profitPct * 1000) / 1000,
-          estTime: `${Math.round(2 + Math.random() * 8)} min`,
-        });
-      }
-    } catch {
-      // skip this asset
-    }
-  }
-
-  return opportunities.sort((a, b) => b.profitPct - a.profitPct).slice(0, 5);
+  // Cross-chain arbitrage requires per-chain DEX price data.
+  // CoinGecko returns aggregated prices — not suitable for cross-chain spread detection.
+  // No real DEX data available: return empty results (no fabricated data).
+  console.warn("[Blockchain] No real per-chain DEX price data available — cannot compute arbitrage opportunities");
+  return [];
 });
 
 // ── Mempool Watcher ────────────────────────────────────────────────
@@ -401,6 +351,21 @@ export interface MempoolTx {
   timestamp: number;
 }
 
+/** Etherscan API transaction shape (raw response). */
+interface EtherscanTx {
+  hash: string;
+  from: string;
+  to: string;
+  value: string;
+  timeStamp: string;
+}
+
+interface EtherscanResponse {
+  status: string;
+  message?: string;
+  result?: EtherscanTx[];
+}
+
 export const getMempoolTxs = createServerFn({ method: 'GET' }).handler(async (): Promise<MempoolTx[]> => {
   // Query public mempool data from Blocknative or similar
   // For now, we use Etherscan's public API for recent large txs as an approximation
@@ -412,10 +377,10 @@ export const getMempoolTxs = createServerFn({ method: 'GET' }).handler(async ():
     );
     // Etherscan requires API key for real data, so fall back gracefully
     if (!res.ok) throw new Error('Mempool API unavailable');
-    const data = await res.json();
+    const data = await res.json() as unknown as EtherscanResponse;
     if (data.status !== '1' || !data.result) throw new Error('No mempool data');
 
-    return (data.result as any[]).slice(0, 5).map((tx: any) => ({
+    return data.result.slice(0, 5).map((tx: EtherscanTx): MempoolTx => ({
       hash: tx.hash?.slice(0, 10) + '...' || '0x...',
       from: tx.from?.slice(0, 8) + '...' || '0x...',
       to: tx.to?.slice(0, 8) + '...' || '0x...',
@@ -423,7 +388,8 @@ export const getMempoolTxs = createServerFn({ method: 'GET' }).handler(async ():
       chain: 'ethereum',
       timestamp: parseInt(tx.timeStamp || '0', 10),
     }));
-  } catch {
+  } catch (err) {
+    console.warn("[Blockchain] getMempoolTxs failed:", err);
     return [];
   }
 });

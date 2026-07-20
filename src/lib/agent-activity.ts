@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { COINGECKO_IDS, UNIQUE_NATIVE_IDS, type AgentConfig } from "./agents";
 import { CHAINS } from "./chains";
+import { sql, isDbAvailable } from "./db";
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -44,7 +45,8 @@ export const getPriceHistory = createServerFn({ method: 'GET' }).handler(async (
       timestamp: ts,
       price: Math.round(price * 100) / 100,
     }));
-  } catch {
+  } catch (err) {
+    console.warn("[AgentActivity] getPriceHistory failed:", err);
     return [];
   }
 });
@@ -67,7 +69,8 @@ export const getTokenPrice = createServerFn({ method: 'GET' }).handler(async (op
       usd: token.usd,
       change24h: token.usd_24h_change ?? 0,
     };
-  } catch {
+  } catch (err) {
+    console.warn("[AgentActivity] getTokenPrice failed:", err);
     return null;
   }
 });
@@ -97,7 +100,8 @@ export const getAllNativePrices = createServerFn({ method: 'GET' }).handler(asyn
       }
     }
     return result;
-  } catch {
+  } catch (err) {
+    console.warn("[AgentActivity] getAllNativePrices failed:", err);
     return {};
   }
 });
@@ -107,6 +111,7 @@ export const getAllNativePrices = createServerFn({ method: 'GET' }).handler(asyn
 // Server-side in-memory activity log (resets on server restart)
 // In production this would use a database
 const activityLog: AgentActivity[] = [];
+let _activityIdCounter = 0;
 
 export const logAgentActivity = createServerFn({ method: 'POST' }).handler(async (opts: {
   chainId: string;
@@ -115,7 +120,7 @@ export const logAgentActivity = createServerFn({ method: 'POST' }).handler(async
   type: 'trade' | 'deposit' | 'withdraw' | 'scan' | 'info';
 }): Promise<AgentActivity> => {
   const entry: AgentActivity = {
-    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    id: `activity_${Date.now().toString(36)}_${(_activityIdCounter++).toString(36)}`,
     chainId: opts.chainId,
     agentName: opts.agentName,
     action: opts.action,
@@ -127,6 +132,17 @@ export const logAgentActivity = createServerFn({ method: 'POST' }).handler(async
   if (activityLog.length > 200) {
     activityLog.length = 200;
   }
+  
+  // DB write-through — non-blocking
+  if (isDbAvailable()) {
+    sql`
+      INSERT INTO agent_activities (id, chain_id, agent_name, action, type, created_at)
+      VALUES (${entry.id}, ${entry.chainId}, ${entry.agentName}, ${entry.action}, ${entry.type}, to_timestamp(${entry.timestamp / 1000}))
+    `.catch((err) => {
+      console.warn("[AgentActivity] DB write failed for activity:", err);
+    });
+  }
+
   return entry;
 });
 
@@ -147,7 +163,7 @@ export const initializeAgentScanning = createServerFn({ method: 'POST' }).handle
         chainId: chain.id,
         agentName: AGENTS[chain.id]?.name ?? 'Unknown',
         action: `Initializare monitorizare ${chain.name} — agentul e pregătit`,
-        timestamp: now - Math.floor(Math.random() * 60000),
+        timestamp: now - Math.floor(Date.now() % 60000),
         type: 'info',
       });
     }
@@ -212,7 +228,8 @@ export const getPortfolioHistory = createServerFn({ method: 'GET' }).handler(asy
     }));
 
     return { points, currentTotal };
-  } catch {
+  } catch (err) {
+    console.warn("[AgentActivity] getPortfolioHistory failed:", err);
     return { points: [], currentTotal: 0 };
   }
 });

@@ -24,7 +24,7 @@ const toolCommandList = [
 ];
 
 const welcomeText = [
-  "👋 **Welcome to Păun AI Chat!**",
+  "👋 **Welcome to HSMC Chat!**",
   "",
   "I'm your AI assistant connected to the DeFi command center. I can help you with:",
   "",
@@ -138,7 +138,7 @@ function ChatPage() {
           <div className="glass-card p-6 max-w-2xl w-full text-left animate-fade-in-up">
             <div className="flex items-center gap-2 mb-3">
               <span className="text-2xl">🦚</span>
-              <span className="text-sm font-semibold text-accent-cyan">Păun AI Assistant</span>
+              <span className="text-sm font-semibold text-accent-cyan">HSMC Assistant</span>
             </div>
             <div className="text-gray-300 text-sm leading-relaxed whitespace-pre-wrap">{renderMD(msg.content)}</div>
           </div>
@@ -173,7 +173,7 @@ function ChatPage() {
       <div className="glass-card mx-4 mt-4 sm:mx-auto sm:max-w-2xl lg:max-w-3xl p-4 flex items-center gap-3">
         <span className="text-2xl">🦚</span>
         <div>
-          <h1 className="text-lg font-bold text-white">Păun AI Chat</h1>
+          <h1 className="text-lg font-bold text-white">HSMC Chat</h1>
           <p className="text-xs text-gray-400">
             {isStreaming ? currentTool ? `Running ${currentTool}...` : "Thinking..." : "Ask about chains, prices, agents, portfolio, or swaps"}
           </p>

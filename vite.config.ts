@@ -30,7 +30,7 @@ export default defineConfig({
   },
   build: {
     rollupOptions: {
-      external: ["node:fs", "node:path"],
+      external: ['node:path', 'node:fs', '@solana/web3.js'],
     },
   },
 });

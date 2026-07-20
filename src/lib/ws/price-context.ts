@@ -110,7 +110,8 @@ export async function getPrices(symbols: string[]): Promise<Map<string, number |
             result.set(sym, null);
           }
         }
-      } catch {
+      } catch (err) {
+        console.warn("[PriceContext] getPrices fallback failed:", err);
         for (const sym of missing) {
           result.set(sym, null);
         }

@@ -25,14 +25,44 @@ const REQUEST_TIMEOUT = 8_000;
 
 // ── Paper Trading State ────────────────────────────────────────────
 
+/**
+ * Parse paper trading balances from PAPER_BALANCES environment variable.
+ *
+ * Format: JSON string, e.g. `{"USDT":5000,"BTC":0.1,"ETH":0,"SOL":0,"BNB":0}`
+ *
+ * If the env var is not set or fails to parse, modest defaults are used:
+ *   USDT: 1000 (realistic starting capital for a new account)
+ *   All other assets: 0 (must be acquired through paper trading)
+ */
+function parsePaperBalances(): AssetBalance[] {
+  const envBalances = process.env.PAPER_BALANCES;
+  if (envBalances) {
+    try {
+      const parsed = JSON.parse(envBalances) as Record<string, unknown>;
+      if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+        return Object.entries(parsed).map(([asset, amount]) => ({
+          asset,
+          free: typeof amount === 'number' ? amount : 0,
+          locked: 0,
+          usdValue: asset === 'USDT' ? (typeof amount === 'number' ? amount : 0) : 0,
+        }));
+      }
+    } catch (err) {
+      console.warn("[Binance] PAPER_BALANCES parse failed — using defaults:", err);
+    }
+  }
+  // Modest defaults for a new account
+  return [
+    { asset: "USDT", free: 1_000, locked: 0, usdValue: 1_000 },
+    { asset: "BTC", free: 0, locked: 0, usdValue: 0 },
+    { asset: "ETH", free: 0, locked: 0, usdValue: 0 },
+    { asset: "SOL", free: 0, locked: 0, usdValue: 0 },
+    { asset: "BNB", free: 0, locked: 0, usdValue: 0 },
+  ];
+}
+
 const paperOrders = new Map<string, Order>();
-const paperBalances: AssetBalance[] = [
-  { asset: "USDT", free: 100_000, locked: 0, usdValue: 100_000 },
-  { asset: "BTC", free: 1.5, locked: 0, usdValue: 0 },
-  { asset: "ETH", free: 15, locked: 0, usdValue: 0 },
-  { asset: "SOL", free: 200, locked: 0, usdValue: 0 },
-  { asset: "BNB", free: 50, locked: 0, usdValue: 0 },
-];
+const paperBalances: AssetBalance[] = parsePaperBalances();
 let paperOrderCounter = 0;
 
 // ── Helpers ────────────────────────────────────────────────────────
@@ -68,7 +98,8 @@ async function fetchBinancePrice(symbol: string): Promise<number> {
     }
     const data = await res.json() as { price: string };
     return parseFloat(data.price);
-  } catch {
+  } catch (err) {
+    console.warn("[Binance] fetchBinancePrice failed:", err);
     const cached = getCachedPrice(symbol.replace("USDT", ""));
     if (cached !== null) return cached;
     throw new Error(`No price available for ${symbol}`);
@@ -83,7 +114,8 @@ async function paperPlaceOrder(orderReq: OrderRequest): Promise<OrderResult> {
 
   try {
     fillPrice = await fetchBinancePrice(pair);
-  } catch {
+  } catch (err) {
+    console.warn("[Binance] paperPlaceOrder fetchBinancePrice failed:", err);
     throw new Error(`Cannot get price for ${pair}`);
   }
 
@@ -158,6 +190,7 @@ async function paperPlaceOrder(orderReq: OrderRequest): Promise<OrderResult> {
 
 class BinanceAdapter implements ExchangeAdapter {
   name = "Binance";
+  role: ExchangeRole = "data";
   wsEndpoint = BINANCE_WS;
   isEnabled = true;
   isLive = false;
@@ -214,11 +247,21 @@ class BinanceAdapter implements ExchangeAdapter {
   }
 
   async placeOrder(order: OrderRequest): Promise<OrderResult> {
-    if (!this.isLive) {
-      return paperPlaceOrder(order);
-    }
-    // Live mode — placeholder for real API integration
-    throw new Error("Live Binance trading not yet implemented. Use paper mode.");
+    // Binance is data-only — reject all trading requests
+    return {
+      orderId: `rejected_${Date.now()}`,
+      symbol: getPair(order.symbol),
+      side: order.side,
+      type: order.type,
+      quantity: order.quantity,
+      filledQuantity: 0,
+      avgPrice: 0,
+      status: "REJECTED",
+      fee: 0,
+      feeAsset: "USDT",
+      timestamp: Date.now(),
+      isPaper: !this.isLive,
+    };
   }
 
   async cancelOrder(orderId: string): Promise<void> {
@@ -242,7 +285,8 @@ class BinanceAdapter implements ExchangeAdapter {
           try {
             const price = await this.getPrice(`${bal.asset}USDT`);
             bal.usdValue = (bal.free + bal.locked) * price;
-          } catch {
+          } catch (err) {
+            console.warn("[Binance] getBalance price fetch failed:", err);
             bal.usdValue = 0;
           }
         }

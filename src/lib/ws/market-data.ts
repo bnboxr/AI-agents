@@ -4,6 +4,8 @@
 //
 // Symbols are mapped from internal token names to Binance USDT pairs.
 
+import { recordMarketPrice } from "../risk-engine";
+
 // ── Types ──────────────────────────────────────────────────────────
 
 export interface PriceTick {
@@ -123,7 +125,8 @@ function notifySubscribers(tick: PriceTick): void {
   for (const cb of subscribers) {
     try {
       cb(tick);
-    } catch {
+    } catch (err) {
+      console.warn("[MarketData] subscriber callback error:", err);
       // subscriber errors shouldn't break the pipe
     }
   }
@@ -176,7 +179,11 @@ function connectBinance(symbols: string[]): void {
         priceCache.set(symbol, { price, timestamp });
         pushHistory(tick);
         notifySubscribers(tick);
-      } catch {
+
+        // Feed live price into circuit breaker
+        recordMarketPrice(symbol, price);
+      } catch (err) {
+        console.warn("[MarketData] onmessage parse error:", err);
         // malformed message — skip
       }
     };
@@ -254,6 +261,9 @@ async function pollCoinGecko(symbols: string[]): Promise<void> {
       priceCache.set(symbol, { price, timestamp: now });
       pushHistory(tick);
       notifySubscribers(tick);
+
+      // Feed live price into circuit breaker (fallback path)
+      recordMarketPrice(symbol, price);
     }
 
     // If we're in fallback and WebSocket comes back, try reconnecting
@@ -263,7 +273,8 @@ async function pollCoinGecko(symbols: string[]): Promise<void> {
         attemptWsRecovery(symbols);
       }
     }
-  } catch {
+  } catch (err) {
+    console.warn("[MarketData] pollCoinGecko failed:", err);
     // CoinGecko poll failed — will retry on next interval
   }
 }

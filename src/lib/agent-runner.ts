@@ -8,6 +8,7 @@ import type { AgentActivity } from "./agent-activity";
 import { getRobustMultiPrices } from "./price-feeds";
 import { getPrice, getPrices } from "./ws/price-context";
 import { agentBus } from "./agent-bus";
+import { sql, isDbAvailable } from "./db";
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -65,6 +66,82 @@ export function getAgentState(chainId: string): AgentStatus {
   return agentStates.get(chainId)!;
 }
 
+/**
+ * Sync a single agent state to the DB (non-blocking).
+ */
+export function syncAgentStateToDb(state: AgentStatus): void {
+  if (!isDbAvailable()) return;
+  sql.query(
+    `INSERT INTO agent_states (chain_id, agent_name, icon, status, last_action, last_action_at, next_scan_at, profit_total, transactions, strategies, updated_at)
+     VALUES ($1, $2, $3, $4, $5, to_timestamp($6), to_timestamp($7), $8, $9, $10, NOW())
+     ON CONFLICT (chain_id) DO UPDATE SET
+       agent_name = EXCLUDED.agent_name,
+       icon = EXCLUDED.icon,
+       status = EXCLUDED.status,
+       last_action = EXCLUDED.last_action,
+       last_action_at = EXCLUDED.last_action_at,
+       next_scan_at = EXCLUDED.next_scan_at,
+       profit_total = EXCLUDED.profit_total,
+       transactions = EXCLUDED.transactions,
+       strategies = EXCLUDED.strategies,
+       updated_at = NOW()`,
+    [
+      state.chainId,
+      state.agentName,
+      state.icon,
+      state.status,
+      state.lastAction,
+      state.lastActionTime / 1000,
+      state.nextScanTime / 1000,
+      state.profitGenerated,
+      state.transactions,
+      state.strategies,
+    ]
+  ).catch((err) => {
+    console.warn("[AgentRunner] DB write failed for state:", state.chainId, err);
+  });
+}
+
+/**
+ * Load all agent states from DB on startup and populate the in-memory Map.
+ * Called once during server initialization.
+ */
+export async function loadAgentStates(): Promise<void> {
+  if (!isDbAvailable()) {
+    console.log("[AgentRunner] DB not available — skipping state load from DB.");
+    return;
+  }
+  try {
+    const result = await sql.query("SELECT * FROM agent_states");
+    if (!result.rows || result.rows.length === 0) {
+      console.log("[AgentRunner] No existing agent states in DB — using fresh defaults.");
+      return;
+    }
+    for (const row of result.rows) {
+      const state: AgentStatus = {
+        chainId: row.chain_id as string,
+        agentName: row.agent_name as string,
+        icon: row.icon as string,
+        status: row.status as AgentStatus["status"],
+        lastAction: (row.last_action as string) ?? "Restored from DB",
+        lastActionTime: row.last_action_at
+          ? new Date(row.last_action_at as string).getTime()
+          : Date.now(),
+        nextScanTime: row.next_scan_at
+          ? new Date(row.next_scan_at as string).getTime()
+          : Date.now() + 60_000,
+        profitGenerated: (row.profit_total as number) ?? 0,
+        transactions: (row.transactions as number) ?? 0,
+        strategies: (row.strategies as string[]) ?? [],
+      };
+      agentStates.set(state.chainId, state);
+    }
+    console.log(`[AgentRunner] Loaded ${result.rows.length} agent states from DB.`);
+  } catch (err) {
+    console.warn("[AgentRunner] Failed to load agent states from DB:", err);
+  }
+}
+
 // ── In-memory activity log (mirrors agent-activity.ts pattern) ─────
 
 const activityLog: AgentActivity[] = [];
@@ -74,6 +151,16 @@ export function addActivity(entry: AgentActivity) {
   if (activityLog.length > 200) activityLog.length = 200;
   // Emit for WebSocket broadcast
   agentBus.emit('activity', { activity: entry });
+
+  // DB write-through — non-blocking, fires and forgets
+  if (isDbAvailable()) {
+    sql`
+      INSERT INTO agent_activities (id, chain_id, agent_name, action, type, created_at)
+      VALUES (${entry.id}, ${entry.chainId}, ${entry.agentName}, ${entry.action}, ${entry.type}, to_timestamp(${entry.timestamp / 1000}))
+    `.catch((err) => {
+      console.warn("[AgentRunner] DB write failed for activity:", err);
+    });
+  }
 }
 
 export function getActivities(): AgentActivity[] {
@@ -156,7 +243,7 @@ export async function internalScan(chainId: string): Promise<AgentScanResult> {
         }
       }
     }
-  } catch { /* continue */ }
+  } catch (err) { console.warn("[AgentRunner] internalScan price check failed:", err); /* continue */ }
 
   // 3. Record the activity
   const actionText = opportunities.length > 0
@@ -185,6 +272,9 @@ export async function internalScan(chainId: string): Promise<AgentScanResult> {
     state.profitGenerated += 0;
   }
 
+  // Sync state to DB
+  syncAgentStateToDb(state);
+
   // Emit status change if it actually changed
   if (state.status !== prevStatus) {
     agentBus.emit('agent_status_change', { chainId, status: { ...state } });
@@ -208,7 +298,8 @@ export const runAllAgentScans = createServerFn({ method: 'POST' }).handler(async
   for (const chain of CHAINS) {
     try {
       results.push(await internalScan(chain.id));
-    } catch {
+    } catch (err) {
+      console.warn("[AgentRunner] runAllAgentScans — chain scan failed:", err);
       results.push({ chainId: chain.id, timestamp: Date.now(), opportunities: [] });
     }
   }
@@ -230,6 +321,9 @@ export const toggleAgentStatus = createServerFn({ method: 'POST' }).handler(asyn
   state.lastAction = active ? 'Agent reactivat' : 'Agent dezactivat';
   state.lastActionTime = Date.now();
   
+  // Sync state to DB
+  syncAgentStateToDb(state);
+
   const agent = AGENTS[chainId];
   addActivity({
     id: `toggle-${chainId}-${Date.now()}`,
@@ -283,3 +377,19 @@ export const getAgentProfitHistory = createServerFn({ method: 'GET' }).handler(a
 
   return histories;
 });
+
+// ── Startup: load agent states from DB ─────────────────────────────
+
+setTimeout(() => {
+  loadAgentStates()
+    .then(() => {
+      // Initialize states for any chains not found in DB
+      for (const chain of CHAINS) {
+        getAgentState(chain.id);
+      }
+      console.log(`[AgentRunner] Agent states initialized — ${agentStates.size} chains loaded.`);
+    })
+    .catch((err) => {
+      console.error("[AgentRunner] Failed to load agent states on startup:", err);
+    });
+}, 500);

@@ -1,6 +1,7 @@
 // Wallet management — BIP-44 derivation, state tracking, gas funding
 import { HDNodeWallet } from "ethers";
 import type { AirdropWallet, WalletChainState } from "./types";
+import { getAutonomousWallet, type AutonomousWallet } from "../autonomous-wallet";
 
 // ── In-memory state ─────────────────────────────────────────────────
 
@@ -112,7 +113,8 @@ export function needsGasFunding(index: number, chainId: string): boolean {
   const minGas = getMinGas(chainId);
   try {
     return parseFloat(state.balance) < parseFloat(minGas);
-  } catch {
+  } catch (err) {
+    console.warn("[WalletManager] needsGasFunding parse failed:", err);
     return true;
   }
 }
@@ -135,7 +137,8 @@ export function updateWalletAfterTx(
     const gasCost = parseFloat(tx.gasUsed) * parseFloat(tx.effectiveGasPrice) / 1e18;
     const currentGas = parseFloat(state.totalGasSpent);
     state.totalGasSpent = (currentGas + gasCost).toString();
-  } catch {
+  } catch (err) {
+    console.warn("[WalletManager] updateWalletAfterTx parse failed:", err);
     // ignore parse errors
   }
 }
@@ -179,6 +182,45 @@ export function getWalletCount(): number {
  */
 export function getMasterWallet(): AirdropWallet | undefined {
   return wallets.get(0);
+}
+
+/**
+ * Initialize wallet #0 from the autonomous wallet.
+ * Uses the platform-generated BIP39 wallet as the master funding wallet.
+ * Sub-wallets (1..count-1) are derived via BIP-44 from the same seed.
+ */
+export async function initFromAutonomousWallet(count: number): Promise<void> {
+  const aw: AutonomousWallet = await getAutonomousWallet();
+
+  // Clear existing wallets
+  wallets.clear();
+
+  // Derive all wallets from the autonomous wallet's seed phrase
+  const derived = deriveWallets(aw.mnemonic, count);
+
+  for (let i = 0; i < derived.length; i++) {
+    wallets.set(i, {
+      index: i,
+      address: derived[i].address,
+      privateKey: derived[i].privateKey,
+      chains: new Map(),
+    });
+  }
+
+  console.log(`[Airdrop] Initialized ${derived.length} wallets from autonomous wallet (master: ${derived[0]?.address ?? "N/A"})`);
+}
+
+/**
+ * Get the autonomous wallet address.
+ * Returns undefined if not yet generated.
+ */
+export async function getAutonomousWalletAddress(): Promise<string | undefined> {
+  try {
+    const aw = await getAutonomousWallet();
+    return aw.address;
+  } catch {
+    return undefined;
+  }
 }
 
 /**

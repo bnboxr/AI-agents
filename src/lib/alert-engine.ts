@@ -144,33 +144,63 @@ export function pushAlert(
 
 // ── Core: Price Alert Checking ─────────────────────────────────────
 
-const SIMULATED_TOKENS = [
-  { token: "ETH", basePrice: 2400 },
-  { token: "BTC", basePrice: 62000 },
-  { token: "SOL", basePrice: 130 },
-  { token: "BNB", basePrice: 560 },
-  { token: "AVAX", basePrice: 28 },
-  { token: "MATIC", basePrice: 0.55 },
-];
+// CoinGecko ID → token symbol mapping for price alert tokens
+const PRICE_ALERT_TOKENS: Record<string, string> = {
+  ethereum: "ETH",
+  bitcoin: "BTC",
+  solana: "SOL",
+  binancecoin: "BNB",
+  "avalanche-2": "AVAX",
+  "matic-network": "MATIC",
+};
 
-function getSimulatedPrice(token: string): number {
-  const base = SIMULATED_TOKENS.find((t) => t.token === token);
-  if (!base) return 100;
+let cachedPrices: Record<string, number> | null = null;
+let lastPriceFetch = 0;
+const PRICE_CACHE_TTL = 30_000; // 30s
 
-  // Simulate realistic price movement (±3% from base + noise)
-  const drift = (Math.random() - 0.5) * base.basePrice * 0.06;
-  return base.basePrice + drift;
+async function fetchRealPrices(): Promise<Record<string, number> | null> {
+  const now = Date.now();
+  if (cachedPrices && now - lastPriceFetch < PRICE_CACHE_TTL) {
+    return cachedPrices;
+  }
+
+  const ids = Object.keys(PRICE_ALERT_TOKENS).join(",");
+  try {
+    const res = await fetch(
+      `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd`,
+      { signal: AbortSignal.timeout(6000) },
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    const prices: Record<string, number> = {};
+    for (const [id, token] of Object.entries(PRICE_ALERT_TOKENS)) {
+      if (data[id]?.usd) {
+        prices[token] = data[id].usd;
+      }
+    }
+    cachedPrices = prices;
+    lastPriceFetch = now;
+    return prices;
+  } catch (err) {
+    console.warn("[AlertEngine] CoinGecko price fetch failed:", err);
+    return null;
+  }
 }
 
 /**
  * Called every 30s to update price snapshots and detect alerts.
- * In production, this would be called by the orchestrator or a cron.
+ * Uses real CoinGecko price data. Returns early if price feed unavailable.
  */
-export function checkPriceAlerts(): void {
+export async function checkPriceAlerts(): Promise<void> {
+  const prices = await fetchRealPrices();
+  if (!prices || Object.keys(prices).length === 0) {
+    console.warn("[AlertEngine] No real price feed available — skipping alert check");
+    return;
+  }
+
   const now = Date.now();
 
-  for (const { token } of SIMULATED_TOKENS) {
-    const price = getSimulatedPrice(token);
+  for (const [token, price] of Object.entries(prices)) {
     addPriceSnapshot(token, price);
 
     const snapshots = getPriceSnapshots(token);
@@ -408,7 +438,7 @@ export function startPriceAlertChecking(): void {
   if (priceCheckInterval) return;
 
   // Run initial check
-  checkPriceAlerts();
+  checkPriceAlerts().catch(() => {});
 
   // Then every 30 seconds
   priceCheckInterval = setInterval(() => {
@@ -434,8 +464,9 @@ export function startPriceAlertChecking(): void {
           // Silently ignore — risk engine may not be available
         });
 
-      checkPriceAlerts();
-    } catch {
+      checkPriceAlerts().catch(() => {});
+    } catch (err) {
+      console.warn("[AlertEngine] price check failed:", err);
       // Silently ignore errors in automated checking
     }
   }, 30_000);

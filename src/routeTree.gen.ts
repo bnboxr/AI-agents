@@ -11,12 +11,14 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as WithdrawRouteImport } from './routes/withdraw'
 import { Route as VaultRouteImport } from './routes/vault'
+import { Route as TrainingRouteImport } from './routes/training'
 import { Route as TradeRouteImport } from './routes/trade'
 import { Route as SwapRouteImport } from './routes/swap'
 import { Route as StakeRouteImport } from './routes/stake'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as RiskRouteImport } from './routes/risk'
 import { Route as PortfolioRouteImport } from './routes/portfolio'
+import { Route as NetworkRouteImport } from './routes/network'
 import { Route as GasRouteImport } from './routes/gas'
 import { Route as EarnRouteImport } from './routes/earn'
 import { Route as DepositRouteImport } from './routes/deposit'
@@ -40,6 +42,11 @@ const WithdrawRoute = WithdrawRouteImport.update({
 const VaultRoute = VaultRouteImport.update({
   id: '/vault',
   path: '/vault',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TrainingRoute = TrainingRouteImport.update({
+  id: '/training',
+  path: '/training',
   getParentRoute: () => rootRouteImport,
 } as any)
 const TradeRoute = TradeRouteImport.update({
@@ -70,6 +77,11 @@ const RiskRoute = RiskRouteImport.update({
 const PortfolioRoute = PortfolioRouteImport.update({
   id: '/portfolio',
   path: '/portfolio',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const NetworkRoute = NetworkRouteImport.update({
+  id: '/network',
+  path: '/network',
   getParentRoute: () => rootRouteImport,
 } as any)
 const GasRoute = GasRouteImport.update({
@@ -157,12 +169,14 @@ export interface FileRoutesByFullPath {
   '/deposit': typeof DepositRoute
   '/earn': typeof EarnRoute
   '/gas': typeof GasRoute
+  '/network': typeof NetworkRoute
   '/portfolio': typeof PortfolioRoute
   '/risk': typeof RiskRoute
   '/settings': typeof SettingsRoute
   '/stake': typeof StakeRoute
   '/swap': typeof SwapRoute
   '/trade': typeof TradeRoute
+  '/training': typeof TrainingRoute
   '/vault': typeof VaultRoute
   '/withdraw': typeof WithdrawRoute
   '/chains/$chainId': typeof ChainsChainIdRoute
@@ -181,12 +195,14 @@ export interface FileRoutesByTo {
   '/deposit': typeof DepositRoute
   '/earn': typeof EarnRoute
   '/gas': typeof GasRoute
+  '/network': typeof NetworkRoute
   '/portfolio': typeof PortfolioRoute
   '/risk': typeof RiskRoute
   '/settings': typeof SettingsRoute
   '/stake': typeof StakeRoute
   '/swap': typeof SwapRoute
   '/trade': typeof TradeRoute
+  '/training': typeof TrainingRoute
   '/vault': typeof VaultRoute
   '/withdraw': typeof WithdrawRoute
   '/chains/$chainId': typeof ChainsChainIdRoute
@@ -206,12 +222,14 @@ export interface FileRoutesById {
   '/deposit': typeof DepositRoute
   '/earn': typeof EarnRoute
   '/gas': typeof GasRoute
+  '/network': typeof NetworkRoute
   '/portfolio': typeof PortfolioRoute
   '/risk': typeof RiskRoute
   '/settings': typeof SettingsRoute
   '/stake': typeof StakeRoute
   '/swap': typeof SwapRoute
   '/trade': typeof TradeRoute
+  '/training': typeof TrainingRoute
   '/vault': typeof VaultRoute
   '/withdraw': typeof WithdrawRoute
   '/chains/$chainId': typeof ChainsChainIdRoute
@@ -232,12 +250,14 @@ export interface FileRouteTypes {
     | '/deposit'
     | '/earn'
     | '/gas'
+    | '/network'
     | '/portfolio'
     | '/risk'
     | '/settings'
     | '/stake'
     | '/swap'
     | '/trade'
+    | '/training'
     | '/vault'
     | '/withdraw'
     | '/chains/$chainId'
@@ -256,12 +276,14 @@ export interface FileRouteTypes {
     | '/deposit'
     | '/earn'
     | '/gas'
+    | '/network'
     | '/portfolio'
     | '/risk'
     | '/settings'
     | '/stake'
     | '/swap'
     | '/trade'
+    | '/training'
     | '/vault'
     | '/withdraw'
     | '/chains/$chainId'
@@ -280,12 +302,14 @@ export interface FileRouteTypes {
     | '/deposit'
     | '/earn'
     | '/gas'
+    | '/network'
     | '/portfolio'
     | '/risk'
     | '/settings'
     | '/stake'
     | '/swap'
     | '/trade'
+    | '/training'
     | '/vault'
     | '/withdraw'
     | '/chains/$chainId'
@@ -305,12 +329,14 @@ export interface RootRouteChildren {
   DepositRoute: typeof DepositRoute
   EarnRoute: typeof EarnRoute
   GasRoute: typeof GasRoute
+  NetworkRoute: typeof NetworkRoute
   PortfolioRoute: typeof PortfolioRoute
   RiskRoute: typeof RiskRoute
   SettingsRoute: typeof SettingsRoute
   StakeRoute: typeof StakeRoute
   SwapRoute: typeof SwapRoute
   TradeRoute: typeof TradeRoute
+  TrainingRoute: typeof TrainingRoute
   VaultRoute: typeof VaultRoute
   WithdrawRoute: typeof WithdrawRoute
 }
@@ -329,6 +355,13 @@ declare module '@tanstack/react-router' {
       path: '/vault'
       fullPath: '/vault'
       preLoaderRoute: typeof VaultRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/training': {
+      id: '/training'
+      path: '/training'
+      fullPath: '/training'
+      preLoaderRoute: typeof TrainingRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/trade': {
@@ -371,6 +404,13 @@ declare module '@tanstack/react-router' {
       path: '/portfolio'
       fullPath: '/portfolio'
       preLoaderRoute: typeof PortfolioRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/network': {
+      id: '/network'
+      path: '/network'
+      fullPath: '/network'
+      preLoaderRoute: typeof NetworkRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/gas': {
@@ -499,12 +539,14 @@ const rootRouteChildren: RootRouteChildren = {
   DepositRoute: DepositRoute,
   EarnRoute: EarnRoute,
   GasRoute: GasRoute,
+  NetworkRoute: NetworkRoute,
   PortfolioRoute: PortfolioRoute,
   RiskRoute: RiskRoute,
   SettingsRoute: SettingsRoute,
   StakeRoute: StakeRoute,
   SwapRoute: SwapRoute,
   TradeRoute: TradeRoute,
+  TrainingRoute: TrainingRoute,
   VaultRoute: VaultRoute,
   WithdrawRoute: WithdrawRoute,
 }

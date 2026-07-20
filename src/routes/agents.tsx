@@ -48,12 +48,6 @@ function getExplorerTxUrl(chainId: string, txHash: string): string {
   return `${chain.explorer}/tx/${txHash}`;
 }
 
-function generateTxHash(): string {
-  const chars = "0123456789abcdef";
-  let hash = "0x";
-  for (let i = 0; i < 64; i++) hash += chars[Math.floor(Math.random() * 16)];
-  return hash;
-}
 
 // ── Animated Number Hook ─────────────────────────────────────────────
 
@@ -228,21 +222,6 @@ function AgentsPage() {
                     : s
                 )
               );
-
-              // Add to tx history if opportunities found
-              if (msg.opportunitiesFound > 0) {
-                const agent = AGENTS[msg.chainId];
-                const newTx: TxRecord = {
-                  id: `tx-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-                  chainId: msg.chainId,
-                  agentName: agent?.name ?? msg.agentName,
-                  txHash: generateTxHash(),
-                  type: "scan",
-                  amount: msg.opportunitiesFound * (0.5 + Math.random() * 2),
-                  timestamp: Date.now(),
-                };
-                setTxHistory((prev) => [newTx, ...prev].slice(0, 50));
-              }
               break;
             }
             case "opportunity_found": {

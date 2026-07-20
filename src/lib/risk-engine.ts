@@ -112,7 +112,7 @@ function ensureAgentState(chainId: string): AgentRiskState {
     const agent = AGENTS[chainId];
     const chain = CHAINS.find((c) => c.id === chainId);
     // Fallback initial portfolio value — set STARTING_CAPITAL env var
-    const initialValue = Number(process.env.STARTING_CAPITAL) || 10_000;
+    const initialValue = Number(process.env.STARTING_CAPITAL) || 1_000_000;
     agentRisk[chainId] = {
       chainId,
       agentName: agent?.name ?? "Unknown",
@@ -138,7 +138,7 @@ for (const chain of CHAINS) {
 // ── Market price tracking ───────────────────────────────────────────
 
 /** Record a market price snapshot for crash detection */
-export function recordMarketPrice(price: number): void {
+export function recordMarketPrice(symbol: string, price: number): void {
   const now = Date.now();
   marketPriceHistory.push({ timestamp: now, price });
 
@@ -159,7 +159,7 @@ export function recordMarketPrice(price: number): void {
 
       if (marketDropPct >= currentLimits.marketCrashThresholdPct && !circuitBreakerTripped) {
         circuitBreakerTripped = true;
-        circuitBreakerReason = `Market drop of ${marketDropPct.toFixed(1)}% detected (>${currentLimits.marketCrashThresholdPct}% threshold in 1h)`;
+        circuitBreakerReason = `Market drop of ${marketDropPct.toFixed(1)}% detected on ${symbol} (>${currentLimits.marketCrashThresholdPct}% threshold in 1h)`;
 
         // Pause all agents
         for (const state of Object.values(agentRisk)) {
@@ -782,7 +782,7 @@ export const simulateMarketCrash = createServerFn({ method: "POST" }).handler(as
   // Add current crashed price
   const crashedPrice = 100 * (1 - data.dropPct / 100);
   marketPriceHistory.push({ timestamp: now, price: crashedPrice });
-  recordMarketPrice(crashedPrice);
+  recordMarketPrice("SIM", crashedPrice);
   return { success: true };
 });
 

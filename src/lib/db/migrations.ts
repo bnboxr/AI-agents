@@ -41,6 +41,9 @@ export async function runMigrations(): Promise<void> {
     `);
 
     await sql.query(`CREATE INDEX IF NOT EXISTS idx_trades_status ON trades (status) WHERE status = 'open'`);
+
+    // Add is_paper column for distinguishing paper vs live trades
+    await sql.query(`ALTER TABLE trades ADD COLUMN IF NOT EXISTS is_paper BOOLEAN DEFAULT true`);
     await sql.query(`CREATE INDEX IF NOT EXISTS idx_trades_opened_at ON trades (opened_at DESC)`);
     await sql.query(`CREATE INDEX IF NOT EXISTS idx_trades_chain_token ON trades (chain_id, token)`);
 

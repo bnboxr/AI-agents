@@ -418,5 +418,3 @@ export function isSymbolTracked(symbol: string): boolean {
 export function getTrackedSymbols(): string[] {
   return [...trackedSymbols];
 }
-/home/agent-lead/.profile: line 28: /home/agent-lead/.cargo/env: No such file or directory
-/home/agent-lead/.profile: line 28: /home/agent-lead/.cargo/env: No such file or directory

@@ -30,6 +30,7 @@ const TICKER_PAIRS = [
   { symbol: "UNI", coingeckoId: "uniswap" },
   { symbol: "AAVE", coingeckoId: "aave" },
   { symbol: "SUI", coingeckoId: "sui" },
+  { symbol: "XRP", coingeckoId: "ripple" },
 ];
 
 interface TickerData {
@@ -164,6 +165,8 @@ function NavBar() {
             <NavLink to="/withdraw">SEND</NavLink>
             <NavLink to="/arbitrage">ARB</NavLink>
             <NavLink to="/chains">CHAINS</NavLink>
+            <NavLink to="/chains/solana">SOL</NavLink>
+            <NavLink to="/chains/xrp">XRP</NavLink>
             <NavLink to="/contracts">CTRCT</NavLink>
             <NavLink to="/settings">CFG</NavLink>
             <NavLink to="/deposit">DEPO</NavLink>

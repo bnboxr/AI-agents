@@ -32,6 +32,8 @@ import { Route as AnalyticsRouteImport } from './routes/analytics'
 import { Route as AlertsRouteImport } from './routes/alerts'
 import { Route as AgentsRouteImport } from './routes/agents'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ChainsXrpRouteImport } from './routes/chains.xrp'
+import { Route as ChainsSolanaRouteImport } from './routes/chains.solana'
 import { Route as ChainsChainIdRouteImport } from './routes/chains.$chainId'
 
 const WithdrawRoute = WithdrawRouteImport.update({
@@ -149,6 +151,16 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ChainsXrpRoute = ChainsXrpRouteImport.update({
+  id: '/xrp',
+  path: '/xrp',
+  getParentRoute: () => ChainsRoute,
+} as any)
+const ChainsSolanaRoute = ChainsSolanaRouteImport.update({
+  id: '/solana',
+  path: '/solana',
+  getParentRoute: () => ChainsRoute,
+} as any)
 const ChainsChainIdRoute = ChainsChainIdRouteImport.update({
   id: '/$chainId',
   path: '/$chainId',
@@ -180,6 +192,8 @@ export interface FileRoutesByFullPath {
   '/vault': typeof VaultRoute
   '/withdraw': typeof WithdrawRoute
   '/chains/$chainId': typeof ChainsChainIdRoute
+  '/chains/solana': typeof ChainsSolanaRoute
+  '/chains/xrp': typeof ChainsXrpRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -206,6 +220,8 @@ export interface FileRoutesByTo {
   '/vault': typeof VaultRoute
   '/withdraw': typeof WithdrawRoute
   '/chains/$chainId': typeof ChainsChainIdRoute
+  '/chains/solana': typeof ChainsSolanaRoute
+  '/chains/xrp': typeof ChainsXrpRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -233,6 +249,8 @@ export interface FileRoutesById {
   '/vault': typeof VaultRoute
   '/withdraw': typeof WithdrawRoute
   '/chains/$chainId': typeof ChainsChainIdRoute
+  '/chains/solana': typeof ChainsSolanaRoute
+  '/chains/xrp': typeof ChainsXrpRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -261,6 +279,8 @@ export interface FileRouteTypes {
     | '/vault'
     | '/withdraw'
     | '/chains/$chainId'
+    | '/chains/solana'
+    | '/chains/xrp'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -287,6 +307,8 @@ export interface FileRouteTypes {
     | '/vault'
     | '/withdraw'
     | '/chains/$chainId'
+    | '/chains/solana'
+    | '/chains/xrp'
   id:
     | '__root__'
     | '/'
@@ -313,6 +335,8 @@ export interface FileRouteTypes {
     | '/vault'
     | '/withdraw'
     | '/chains/$chainId'
+    | '/chains/solana'
+    | '/chains/xrp'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -504,6 +528,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/chains/xrp': {
+      id: '/chains/xrp'
+      path: '/xrp'
+      fullPath: '/chains/xrp'
+      preLoaderRoute: typeof ChainsXrpRouteImport
+      parentRoute: typeof ChainsRoute
+    }
+    '/chains/solana': {
+      id: '/chains/solana'
+      path: '/solana'
+      fullPath: '/chains/solana'
+      preLoaderRoute: typeof ChainsSolanaRouteImport
+      parentRoute: typeof ChainsRoute
+    }
     '/chains/$chainId': {
       id: '/chains/$chainId'
       path: '/$chainId'
@@ -516,10 +554,14 @@ declare module '@tanstack/react-router' {
 
 interface ChainsRouteChildren {
   ChainsChainIdRoute: typeof ChainsChainIdRoute
+  ChainsSolanaRoute: typeof ChainsSolanaRoute
+  ChainsXrpRoute: typeof ChainsXrpRoute
 }
 
 const ChainsRouteChildren: ChainsRouteChildren = {
   ChainsChainIdRoute: ChainsChainIdRoute,
+  ChainsSolanaRoute: ChainsSolanaRoute,
+  ChainsXrpRoute: ChainsXrpRoute,
 }
 
 const ChainsRouteWithChildren =

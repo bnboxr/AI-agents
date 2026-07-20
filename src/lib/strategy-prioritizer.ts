@@ -53,6 +53,18 @@ const STRATEGIES: Strategy[] = [
     expectedReturn: "0.1-2%/trade",
     risk: "medium",
   },
+  {
+    name: "Solana DEX (Jupiter)",
+    minCapital: 10,
+    expectedReturn: "Variable",
+    risk: "medium",
+  },
+  {
+    name: "XRP DEX (XRPL)",
+    minCapital: 10,
+    expectedReturn: "Variable",
+    risk: "medium",
+  },
 ];
 
 // ── Allocation presets by capital bracket ─────────────────────────────
@@ -80,19 +92,21 @@ const ALLOCATION_BRACKETS: AllocationBracket[] = [
       { name: "LP Fees", pct: 0.1 },
     ],
   },
-  // Tier 2: $50-$500 — diversify into LP, spot, perps
+  // Tier 2: $50-$500 — diversify into LP, spot, perps + Solana
   {
     minCapital: 50,
     maxCapital: 500,
     allocations: [
       { name: "Airdrop Farming", pct: 0.1 },
-      { name: "Micro-Yield (AAVE)", pct: 0.15 },
-      { name: "LP Fees", pct: 0.25 },
+      { name: "Micro-Yield (AAVE)", pct: 0.1 },
+      { name: "LP Fees", pct: 0.2 },
       { name: "Spot Trading", pct: 0.25 },
-      { name: "Perpetuals", pct: 0.25 },
+      { name: "Perpetuals", pct: 0.2 },
+      { name: "Solana DEX (Jupiter)", pct: 0.1 },
+      { name: "XRP DEX (XRPL)", pct: 0.05 },
     ],
   },
-  // Tier 3: $500+ — full suite including flash loan arb
+  // Tier 3: $500+ — full suite including flash loan arb + Solana
   {
     minCapital: 500,
     maxCapital: Number.POSITIVE_INFINITY,
@@ -100,9 +114,11 @@ const ALLOCATION_BRACKETS: AllocationBracket[] = [
       { name: "Airdrop Farming", pct: 0.05 },
       { name: "Micro-Yield (AAVE)", pct: 0.1 },
       { name: "LP Fees", pct: 0.15 },
-      { name: "Spot Trading", pct: 0.25 },
+      { name: "Spot Trading", pct: 0.2 },
       { name: "Perpetuals", pct: 0.25 },
-      { name: "Flash Loan Arb", pct: 0.2 },
+      { name: "Flash Loan Arb", pct: 0.15 },
+      { name: "Solana DEX (Jupiter)", pct: 0.05 },
+      { name: "XRP DEX (XRPL)", pct: 0.05 },
     ],
   },
 ];

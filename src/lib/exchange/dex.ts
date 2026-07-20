@@ -40,6 +40,9 @@ const DEX_PAIRS: Record<string, { baseId: string; quoteId: string; baseDecimals:
   "LINK/ETH":  { baseId: "chainlink",      quoteId: "ethereum",      baseDecimals: 18 },
   "AAVE/ETH":  { baseId: "aave",           quoteId: "ethereum",      baseDecimals: 18 },
   "MATIC/USDC":{ baseId: "matic-network",  quoteId: "usd-coin",      baseDecimals: 18 },
+  "SOL/USDT":  { baseId: "solana",         quoteId: "tether",        baseDecimals: 9  },
+  "XRP/USD":   { baseId: "ripple",         quoteId: "usd-coin",      baseDecimals: 6  },
+  "XRP/BTC":   { baseId: "ripple",         quoteId: "bitcoin",       baseDecimals: 6  },
 };
 
 /** CoinGecko IDs we query for pricing */

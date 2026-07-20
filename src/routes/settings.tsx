@@ -27,7 +27,17 @@ import { CHAINS } from "~/lib/chains";
 import { getExchangeConfigs, toggleExchange } from "~/lib/exchange";
 import type { ExchangeConfig } from "~/lib/exchange";
 import { getVenuePreference, setVenuePreference, type TradingVenue } from "~/lib/venue-selector";
+import {
+  getWalletChainId,
+  getWalletChainName,
+  setWalletChain,
+  listWalletChainIds,
+  isWalletTestnet,
+  WALLET_CHAINS,
+  type WalletChainConfig,
+} from "~/lib/venue-selector";
 import { getDexSlippageSetting, getPreferredDex, getGasPreference } from "~/lib/exchange/dex";
+import { getFaucetsForCurrentChain, requestSepoliaFaucet } from "~/lib/faucet";
 
 // ── Service definitions ────────────────────────────────────────────
 
@@ -129,6 +139,13 @@ function SettingsPage() {
   const [saving, setSaving] = useState<Record<string, boolean>>({});
   const [exchangeToggling, setExchangeToggling] = useState<Record<string, boolean>>({});
   const [tradingVenue, setTradingVenue] = useState<TradingVenue>(getVenuePreference());
+
+  // ── Wallet chain state ──────────────────────────────────────────
+  const [walletChain, setWalletChainState] = useState<string>(() => getWalletChainId());
+  const [walletTestnet, setWalletTestnet] = useState<boolean>(() => isWalletTestnet());
+  const [faucetAddress, setFaucetAddress] = useState("");
+  const [faucetRequesting, setFaucetRequesting] = useState(false);
+  const [faucetResult, setFaucetResult] = useState<string | null>(null);
 
   // ── DEX settings state ──────────────────────────────────────────
   const [dexSlippage, setDexSlippage] = useState<number>(() => getDexSlippageSetting() * 100);
@@ -335,6 +352,29 @@ function SettingsPage() {
     setTradingVenue(venue);
     setVenuePreference(venue);
   }, []);
+
+  // ── Wallet chain actions ───────────────────────────────────────
+
+  const handleChainChange = useCallback((chainId: string) => {
+    setWalletChain(chainId);
+    setWalletChainState(chainId);
+    setWalletTestnet(WALLET_CHAINS[chainId]?.testnet ?? false);
+    setFaucetResult(null);
+  }, []);
+
+  const handleFaucetRequest = useCallback(async () => {
+    if (!faucetAddress.trim()) return;
+    setFaucetRequesting(true);
+    setFaucetResult(null);
+    try {
+      const result = await requestSepoliaFaucet(faucetAddress.trim());
+      setFaucetResult(result.success ? result.message : result.message);
+    } catch (err) {
+      setFaucetResult(`Request failed: ${(err as Error).message}`);
+    } finally {
+      setFaucetRequesting(false);
+    }
+  }, [faucetAddress]);
 
   // ── DEX settings handlers ──────────────────────────────────────
 
@@ -1009,6 +1049,151 @@ function SettingsPage() {
             </p>
           </div>
         </div>
+
+        {/* Wallet Network section */}
+        {tradingVenue === "wallet" && (
+          <div className="mt-10 animate-fade-in-up" style={{ animationDelay: "0.37s" }}>
+            <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+              <span>⛓️</span> Wallet Network
+            </h2>
+            <p className="text-gray-400 text-sm mb-4">
+              Select which blockchain to use for wallet/DEX trading.
+              Testnets let you trade with zero-value test tokens.
+            </p>
+
+            {/* Testnet warning banner */}
+            {walletTestnet && (
+              <div className="mb-4 p-4 rounded-lg border border-accent-yellow/30 bg-accent-yellow/5 text-accent-yellow text-sm flex items-center gap-3">
+                <span className="text-lg">⚠️</span>
+                <div>
+                  <p className="font-semibold">Testnet mode — no real value at risk</p>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    You are trading on {getWalletChainName()} testnet. Get free test tokens below.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Chain selector grid */}
+            <div className="glass-card p-5">
+              <div className="grid gap-3 grid-cols-2 sm:grid-cols-4">
+                {listWalletChainIds().map((chainId) => {
+                  const cfg = WALLET_CHAINS[chainId];
+                  if (!cfg) return null;
+                  const isSelected = walletChain === chainId;
+                  const isTestnet = cfg.testnet ?? false;
+
+                  return (
+                    <button
+                      key={chainId}
+                      onClick={() => handleChainChange(chainId)}
+                      className={`text-sm px-3 py-3 rounded-lg border transition-all duration-200 text-center ${
+                        isSelected
+                          ? isTestnet
+                            ? "border-accent-yellow bg-accent-yellow/10 text-white"
+                            : "border-accent-blue bg-accent-blue/10 text-white"
+                          : "border-dark-border text-gray-500 hover:border-dark-border-light hover:text-gray-300"
+                      }`}
+                    >
+                      <div className="font-semibold text-xs truncate">{cfg.name}</div>
+                      <div className={`text-[0.6rem] mt-1 ${isTestnet ? "text-accent-yellow" : "text-accent-green"}`}>
+                        {isTestnet ? "🟡 Testnet" : "🟢 Mainnet"}
+                      </div>
+                      {isSelected && (
+                        <div className={`text-[0.6rem] mt-0.5 ${isTestnet ? "text-accent-yellow" : "text-accent-blue"}`}>
+                          ● Active
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Faucet section — only on testnets */}
+            {walletTestnet && (
+              <div className="mt-6 glass-card p-5">
+                <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
+                  <span>🚰</span> Get Test Tokens
+                </h3>
+                <p className="text-xs text-gray-500 mb-4">
+                  Use these faucets to get free testnet tokens for {getWalletChainName()}.
+                </p>
+
+                {/* Faucet links */}
+                {getFaucetsForCurrentChain().length > 0 && (
+                  <div className="space-y-3 mb-4">
+                    {getFaucetsForCurrentChain().map((f, i) => (
+                      <a
+                        key={i}
+                        href={f.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-3 text-sm px-4 py-3 rounded-lg border border-dark-border bg-dark-hover/30 text-gray-300 hover:text-white hover:border-accent-blue/30 hover:bg-dark-hover/50 transition-all duration-200"
+                      >
+                        <span className="text-lg">🔗</span>
+                        <div>
+                          <div className="font-medium text-sm">{f.label}</div>
+                          <div className="text-xs text-gray-500">{f.description}</div>
+                        </div>
+                        <span className="ml-auto text-gray-500">↗</span>
+                      </a>
+                    ))}
+                  </div>
+                )}
+
+                {/* Auto-faucet for Sepolia */}
+                {walletChain === "sepolia" && (
+                  <div className="mt-4 pt-4 border-t border-dark-border">
+                    <p className="text-xs text-gray-500 mb-3">
+                      Or try the automated PoW faucet (may require captcha):
+                    </p>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={faucetAddress}
+                        onChange={(e) => setFaucetAddress(e.target.value)}
+                        placeholder="0x... your wallet address"
+                        className="glass-input flex-1 text-sm font-mono"
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") handleFaucetRequest();
+                        }}
+                      />
+                      <button
+                        onClick={handleFaucetRequest}
+                        disabled={!faucetAddress.trim() || faucetRequesting}
+                        className="glass-button text-sm px-4 py-2 whitespace-nowrap"
+                      >
+                        {faucetRequesting ? "Sending…" : "Request ETH"}
+                      </button>
+                    </div>
+                    {faucetResult && (
+                      <div className={`mt-3 text-xs px-3 py-2 rounded-lg border ${
+                        faucetResult.startsWith("Faucet request submitted")
+                          ? "border-accent-green/30 bg-accent-green/5 text-accent-green"
+                          : "border-accent-yellow/30 bg-accent-yellow/5 text-accent-yellow"
+                      }`}>
+                        {faucetResult}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Venue status display */}
+            <div className="mt-4 flex items-center gap-2 text-sm text-gray-400">
+              <span className={walletTestnet ? "text-accent-yellow" : "text-accent-green"}>
+                {walletTestnet ? "🟡" : "🟢"}
+              </span>
+              <span>
+                {walletTestnet
+                  ? `Testnet (${getWalletChainName()}) — Test tokens only`
+                  : `Mainnet (${getWalletChainName()}) — Real funds`}
+              </span>
+            </div>
+          </div>
+        )}
 
         {/* DEX Configuration section */}
         <div className="mt-10 animate-fade-in-up" style={{ animationDelay: "0.38s" }}>

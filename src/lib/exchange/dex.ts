@@ -18,6 +18,8 @@ import type {
   AssetBalance,
   Order,
 } from "./types";
+import { getWalletChainId, getWalletChainConfig, isWalletTestnet } from "../chains-config";
+import type { WalletChainConfig } from "../chains-config";
 
 // ── Constants ──────────────────────────────────────────────────────
 
@@ -99,6 +101,9 @@ interface DexPosition {
   quantity: number;
   entryPrice: number;
   pair: string; // e.g., "ETH/USDC"
+  chainId: string; // wallet chain id (e.g., "ethereum", "arbitrum")
+  chainName: string; // human-readable (e.g., "Ethereum", "Arbitrum")
+  routerAddress: string; // Uniswap V3 router on this chain
 }
 
 const paperDexPositions = new Map<string, DexPosition>();
@@ -336,6 +341,9 @@ async function dexPaperPlaceOrder(orderReq: OrderRequest): Promise<OrderResult> 
       quantity: orderReq.quantity,
       entryPrice: execPrice,
       pair,
+      chainId: getCurrentChainId(),
+      chainName: getCurrentChainName(),
+      routerAddress: getCurrentRouterAddress(),
     });
   } else {
     baseBal.free -= orderReq.quantity;
@@ -349,6 +357,9 @@ async function dexPaperPlaceOrder(orderReq: OrderRequest): Promise<OrderResult> 
       quantity: orderReq.quantity,
       entryPrice: execPrice,
       pair,
+      chainId: getCurrentChainId(),
+      chainName: getCurrentChainName(),
+      routerAddress: getCurrentRouterAddress(),
     });
   }
 
@@ -488,6 +499,23 @@ function getDexFallbackPrice(pair: string): number {
   return basePrice;
 }
 
+// ── Chain-aware helpers ─────────────────────────────────────────────
+
+/** Get the current wallet chain ID */
+function getCurrentChainId(): string {
+  return getWalletChainId();
+}
+
+/** Get the current wallet chain name */
+function getCurrentChainName(): string {
+  return getWalletChainConfig().name;
+}
+
+/** Get the Uniswap V3 router address for the current chain */
+function getCurrentRouterAddress(): string {
+  return getWalletChainConfig().uniswapV3Router ?? "0xE592427A0AEce92De3Edee1F18E0157C05861564";
+}
+
 // ── DEX Adapter Class ──────────────────────────────────────────────
 
 class DexAdapter implements ExchangeAdapter {
@@ -500,6 +528,21 @@ class DexAdapter implements ExchangeAdapter {
   constructor() {
     // DEX adapter is always paper mode — no real API keys needed
     // In the future, could check for wallet connection + RPC URL
+  }
+
+  /** Get the current chain config for display purposes */
+  getChainConfig(): WalletChainConfig {
+    return getWalletChainConfig();
+  }
+
+  /** Get the Uniswap V3 router address for the current chain */
+  getRouterAddress(): string {
+    return getCurrentRouterAddress();
+  }
+
+  /** Check if the current chain is a testnet */
+  get isTestnet(): boolean {
+    return isWalletTestnet();
   }
 
   setEnabled(enabled: boolean): void {

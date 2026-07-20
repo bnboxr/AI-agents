@@ -328,10 +328,30 @@ export async function runMigrations(): Promise<void> {
       )
     `);
 
-    console.log("[DB] ✓ All 14 tables created/verified successfully.");
+    // ── Table 15: airdrop_interactions (Airdrop Farmer) ──────────────
+    await sql.query(`
+      CREATE TABLE IF NOT EXISTS airdrop_interactions (
+        id              BIGSERIAL PRIMARY KEY,
+        wallet_address  TEXT NOT NULL,
+        protocol_name   TEXT NOT NULL,
+        chain_id        INTEGER NOT NULL,
+        interaction_type TEXT NOT NULL CHECK (interaction_type IN ('swap', 'stake', 'bridge', 'mint')),
+        contract_address TEXT NOT NULL,
+        tx_hash         TEXT NOT NULL,
+        amount_eth      TEXT NOT NULL,
+        status          TEXT NOT NULL DEFAULT 'confirmed'
+                          CHECK (status IN ('pending', 'confirmed', 'failed')),
+        created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `);
+    await sql.query(`CREATE INDEX IF NOT EXISTS idx_airdrop_interactions_wallet ON airdrop_interactions (wallet_address, created_at DESC)`);
+    await sql.query(`CREATE INDEX IF NOT EXISTS idx_airdrop_interactions_chain ON airdrop_interactions (chain_id, created_at DESC)`);
+
+    console.log("[DB] ✓ All 15 tables created/verified successfully.");
   } catch (err) {
     console.error("[DB] Migration failed:", err);
     throw err;
   }
 }
+/home/agent-lead/.profile: line 28: /home/agent-lead/.cargo/env: No such file or directory
 /home/agent-lead/.profile: line 28: /home/agent-lead/.cargo/env: No such file or directory

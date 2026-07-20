@@ -147,6 +147,20 @@ export const AGENTS: Record<string, AgentConfig> = {
     description: 'Monitorizează SUNSwap și JustLend pe TRON pentru oportunități DeFi.',
     icon: '⚡',
   },
+  xrp: {
+    name: 'Ripple',
+    role: 'XRP Ledger Monitor',
+    strategies: ['xrp-dex-arbitrage', 'xrpl-lending', 'xrp-bridge'],
+    description: 'Monitorizează XRP Ledger DEX și AMM-uri pentru oportunități de arbitraj și lichiditate.',
+    icon: '🌊',
+  },
+  cosmos: {
+    name: 'Cosmos',
+    role: 'Cosmos Hub Agent',
+    strategies: ['cosmos-staking', 'osmosis-arbitrage', 'ibc-bridge'],
+    description: 'Optimizează staking-ul pe Cosmos Hub și arbitrajul între chain-uri IBC via Osmosis.',
+    icon: '⚛️',
+  },
 };
 
 export function getAgent(chainId: string): AgentConfig | undefined {
@@ -175,6 +189,8 @@ export const COINGECKO_IDS: Record<string, string> = {
   aptos: 'aptos',
   sui: 'sui',
   tron: 'tron',
+  xrp: 'ripple',
+  cosmos: 'cosmos',
 };
 
 // Unique native token CoinGecko IDs for chart display (deduplicate ETH)

@@ -173,6 +173,7 @@ export function getActivities(): AgentActivity[] {
 const STAKING_APY_FALLBACKS: Record<string, number> = {
   ethereum: 3.1, solana: 6.5, near: 9.5, aptos: 7.0,
   sui: 4.0, bnb: 3.5, polygon: 5.0, avalanche: 7.5,
+  tron: 4.5, xrp: 2.0, cosmos: 18.0,
 };
 
 export async function internalScan(chainId: string): Promise<AgentScanResult> {
@@ -393,3 +394,4 @@ setTimeout(() => {
       console.error("[AgentRunner] Failed to load agent states on startup:", err);
     });
 }, 500);
+/home/agent-lead/.profile: line 28: /home/agent-lead/.cargo/env: No such file or directory

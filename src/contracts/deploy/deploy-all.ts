@@ -234,5 +234,3 @@ main()
     console.error("❌ Deployment failed:", error);
     process.exit(1);
   });
-/home/agent-lead/.profile: line 28: /home/agent-lead/.cargo/env: No such file or directory
-/home/agent-lead/.profile: line 28: /home/agent-lead/.cargo/env: No such file or directory

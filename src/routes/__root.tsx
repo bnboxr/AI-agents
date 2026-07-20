@@ -244,5 +244,3 @@ function RootDocument({ children }: { children: ReactNode }) {
     </html>
   );
 }
-/home/agent-lead/.profile: line 28: /home/agent-lead/.cargo/env: No such file or directory
-/home/agent-lead/.profile: line 28: /home/agent-lead/.cargo/env: No such file or directory

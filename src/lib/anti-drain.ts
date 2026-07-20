@@ -394,5 +394,3 @@ export async function loadAntiDrainFromDb(): Promise<void> {
     console.warn("[AntiDrain] loadFromDb failed:", err);
   }
 }
-/home/agent-lead/.profile: line 28: /home/agent-lead/.cargo/env: No such file or directory
-/home/agent-lead/.profile: line 28: /home/agent-lead/.cargo/env: No such file or directory

@@ -194,7 +194,3 @@ export function setWalletChain(chainId: string): void {
 export function listWalletChainIds(): string[] {
   return Object.keys(SUPPORTED_CHAINS);
 }
-/home/agent-lead/.profile: line 28: /home/agent-lead/.cargo/env: No such file or directory
-/home/agent-lead/.profile: line 28: /home/agent-lead/.cargo/env: No such file or directory
-/home/agent-lead/.profile: line 28: /home/agent-lead/.cargo/env: No such file or directory
-/home/agent-lead/.profile: line 28: /home/agent-lead/.cargo/env: No such file or directory

@@ -165,4 +165,3 @@ const config: HardhatUserConfig = {
 };
 
 export default config;
-/home/agent-lead/.profile: line 28: /home/agent-lead/.cargo/env: No such file or directory

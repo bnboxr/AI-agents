@@ -136,7 +136,7 @@ export class ConfidenceAgent extends BaseAgent {
   constructor() {
     super({
       id: "confidence-agent",
-      role: "confidence" as any, // cast: "confidence" added to AgentRole union below
+      role: "confidence",
       systemPrompt: SYSTEM_PROMPT,
     });
   }

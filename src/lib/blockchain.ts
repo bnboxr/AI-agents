@@ -401,6 +401,21 @@ export interface MempoolTx {
   timestamp: number;
 }
 
+/** Etherscan API transaction shape (raw response). */
+interface EtherscanTx {
+  hash: string;
+  from: string;
+  to: string;
+  value: string;
+  timeStamp: string;
+}
+
+interface EtherscanResponse {
+  status: string;
+  message?: string;
+  result?: EtherscanTx[];
+}
+
 export const getMempoolTxs = createServerFn({ method: 'GET' }).handler(async (): Promise<MempoolTx[]> => {
   // Query public mempool data from Blocknative or similar
   // For now, we use Etherscan's public API for recent large txs as an approximation
@@ -412,10 +427,10 @@ export const getMempoolTxs = createServerFn({ method: 'GET' }).handler(async ():
     );
     // Etherscan requires API key for real data, so fall back gracefully
     if (!res.ok) throw new Error('Mempool API unavailable');
-    const data = await res.json();
+    const data = await res.json() as unknown as EtherscanResponse;
     if (data.status !== '1' || !data.result) throw new Error('No mempool data');
 
-    return (data.result as any[]).slice(0, 5).map((tx: any) => ({
+    return data.result.slice(0, 5).map((tx: EtherscanTx): MempoolTx => ({
       hash: tx.hash?.slice(0, 10) + '...' || '0x...',
       from: tx.from?.slice(0, 8) + '...' || '0x...',
       to: tx.to?.slice(0, 8) + '...' || '0x...',

@@ -551,7 +551,7 @@ export class DevilsAdvocateAgent extends BaseAgent {
   constructor() {
     super({
       id: "devils-advocate-agent",
-      role: "devils_advocate" as any,
+      role: "devils_advocate",
       systemPrompt: SYSTEM_PROMPT,
     });
   }

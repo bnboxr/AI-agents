@@ -128,7 +128,7 @@ Respond in JSON format only: {"direction":"LONG"|"SHORT"|"HOLD","confidence":0-1
     clearTimeout(timeout);
 
     if (!res.ok) return { direction: null, confidence: 0, reasoning: "AI API error" };
-    const data = await res.json() as any;
+    const data = await res.json() as unknown as { choices?: Array<{ message?: { content?: string } }> };
     const text = data.choices?.[0]?.message?.content || "";
     const json = JSON.parse(text.replace(/```json|```/g, "").trim());
     return {

@@ -113,7 +113,7 @@ const CHAIN_DEXES: Record<string, DexInfo[]> = {
   ],
 };
 
-// ── Known PaunAI contracts ──
+// ── Known HSMC contracts ──
 const PAUNAI_CONTRACTS: Record<string, { address: string; name: string }[]> = {
   ethereum: [],
   bnb: [],
@@ -411,11 +411,11 @@ function ChainDetailPage() {
             </div>
           </section>
 
-          {/* PăunAI Contracts */}
+          {/* HSMC Contracts */}
           <section className="animate-fade-in-up">
             <div className="glass-card p-6">
               <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-4 flex items-center gap-2">
-                <span className="text-accent-blue">▸</span> PăunAI Contracts
+                <span className="text-accent-blue">▸</span> HSMC Contracts
               </h2>
               {contracts.length === 0 ? (
                 <div className="py-4 text-center text-gray-400">

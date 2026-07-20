@@ -100,7 +100,7 @@ export const Route = createRootRoute({
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Păun AI — FinTech Terminal" },
+      { title: "HSMC — FinTech Terminal" },
       { name: "description", content: "Multi-chain DeFi platform. Swap, earn yield, and manage your portfolio across 20+ blockchains." },
       { name: "theme-color", content: "#080a0f" },
     ],

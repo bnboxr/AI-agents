@@ -19,12 +19,12 @@ interface DeployedContract {
   sourceFile: string;
 }
 
-// ── Păun AI proprietary smart contracts ──────────────────────────
+// ── HSMC proprietary smart contracts ──────────────────────────
 // These are our own production-grade contracts for autonomous DeFi operations.
 // Addresses are empty until deployment. Deployment requires ETH for gas.
 const DEPLOYED_CONTRACTS: DeployedContract[] = [
   {
-    name: "PăunAI FlashLoanArbitrage",
+    name: "HSMC FlashLoanArbitrage",
     address: "",
     chain: "ethereum",
     type: "Flash Loan Arbitrage",
@@ -35,7 +35,7 @@ const DEPLOYED_CONTRACTS: DeployedContract[] = [
     sourceFile: "FlashLoanArbitrage.sol",
   },
   {
-    name: "PăunAI CrossChainArbitrage",
+    name: "HSMC CrossChainArbitrage",
     address: "",
     chain: "ethereum",
     type: "Cross-Chain Arbitrage",
@@ -46,7 +46,7 @@ const DEPLOYED_CONTRACTS: DeployedContract[] = [
     sourceFile: "CrossChainArbitrage.sol",
   },
   {
-    name: "PăunAI YieldOptimizer",
+    name: "HSMC YieldOptimizer",
     address: "",
     chain: "ethereum",
     type: "Yield Aggregator",
@@ -87,7 +87,7 @@ function ContractsPage() {
             </h1>
           </div>
           <p className="text-gray-400 max-w-2xl text-sm">
-            Production-grade smart contracts powering Păun AI's autonomous DeFi
+            Production-grade smart contracts powering HSMC's autonomous DeFi
             operations. Each contract is auditable, verified on Etherscan, and
             deployed with security-first architecture.
           </p>
@@ -317,7 +317,7 @@ function ContractsPage() {
               Security & Auditing
             </h3>
             <p className="text-xs text-gray-400 mb-4">
-              All Păun AI contracts follow strict security practices:
+              All HSMC contracts follow strict security practices:
               OpenZeppelin battle-tested libraries, reentrancy guards on all
               state-mutating functions, checks-effects-interactions pattern,
               slippage protection, and owner-controlled circuit breakers. Source

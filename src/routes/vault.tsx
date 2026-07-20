@@ -113,7 +113,7 @@ function VaultPage() {
         {/* ── Header ─────────────────────────────────────────── */}
         <section className="animate-fade-in">
           <h1 className="text-2xl sm:text-3xl font-bold text-white flex items-center gap-2">
-            <span>🏦</span> PaunVault
+            <span>🏦</span> HSMCVault
           </h1>
           <p className="text-gray-400 text-sm mt-1">
             Depune orice token și crește automat cu compound și rebalansare automată
@@ -316,12 +316,12 @@ function VaultPage() {
         <section className="animate-fade-in-up">
           <div className="glass-card p-4">
             <h3 className="text-sm font-semibold text-white mb-2 flex items-center gap-2">
-              <span>📜</span> PaunVault Contract
+              <span>📜</span> HSMCVault Contract
             </h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
               <div>
                 <span className="text-gray-400">Contract:</span>
-                <p className="text-mono-sm text-gray-200 mt-0.5">src/contracts/PaunVault.sol</p>
+                <p className="text-mono-sm text-gray-200 mt-0.5">src/contracts/HSMCVault.sol</p>
               </div>
               <div>
                 <span className="text-gray-400">Performance Fee:</span>

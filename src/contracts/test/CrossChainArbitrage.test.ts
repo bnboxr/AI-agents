@@ -1,5 +1,5 @@
 /**
- * Păun AI — CrossChainArbitrage Tests
+ * HSMC — CrossChainArbitrage Tests
  *
  * Run with:
  *   npx hardhat test test/CrossChainArbitrage.test.ts

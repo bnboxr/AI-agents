@@ -33,7 +33,7 @@ export const config = createConfig({
       projectId: WALLETCONNECT_PROJECT_ID,
       showQrModal: true,
     }),
-    coinbaseWallet({ appName: "Păun AI" }),
+    coinbaseWallet({ appName: "HSMC" }),
     safe(),               // Safe multi-sig
   ],
   transports: {

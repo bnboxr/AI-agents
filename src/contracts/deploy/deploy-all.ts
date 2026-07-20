@@ -1,5 +1,5 @@
 /**
- * Păun AI — Deploy All Contracts
+ * HSMC — Deploy All Contracts
  *
  * Usage:
  *   npx hardhat run deploy/deploy-all.ts --network <name>
@@ -112,7 +112,7 @@ async function main(): Promise<DeploymentResult> {
   const [deployer] = await ethers.getSigners();
   const balance = await ethers.provider.getBalance(deployer.address);
 
-  console.log("\n🦚  Păun AI — Contract Deployment");
+  console.log("\n🦚  HSMC — Contract Deployment");
   console.log("═══════════════════════════════════════");
   console.log(`  Network:     ${network.name} (chainId: ${network.config.chainId})`);
   console.log(`  Deployer:    ${deployer.address}`);

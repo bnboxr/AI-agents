@@ -7,7 +7,7 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 
-/// @title PăunAI CrossChainArbitrage
+/// @title HSMC CrossChainArbitrage
 /// @notice Orchestrates cross-chain arbitrage via LayerZero V2 messaging
 /// @dev Detect price discrepancies across chains; buy on chain A, instruct chain B to sell
 contract CrossChainArbitrage is ReentrancyGuard, Ownable, Pausable {

@@ -6,7 +6,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
-/// @title PăunAI FlashLoanArbitrage
+/// @title HSMC FlashLoanArbitrage
 /// @notice Executes atomic arbitrage across DEXs using AAVE V3 flash loans
 /// @dev Uses AAVE V3 `flashLoanSimple` and supports Uniswap V2 + V3 swaps
 contract FlashLoanArbitrage is ReentrancyGuard, Ownable {

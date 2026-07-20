@@ -8,7 +8,7 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 
-/// @title PăunAI YieldOptimizer
+/// @title HSMC YieldOptimizer
 /// @notice Auto-compounds and rebalances yield across AAVE V3, Compound V3, and Lido
 /// @dev Uses TWAP-based slippage protection and performance fees
 contract YieldOptimizer is ReentrancyGuard, Ownable, Pausable {

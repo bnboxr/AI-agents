@@ -107,7 +107,7 @@ export function ConnectButton() {
 
 // ── EIP-6963 helper ─────────────────────────────────────────────
 
-const CHAIN_STORAGE_KEY = "paun-ai:preferred-chain";
+const CHAIN_STORAGE_KEY = "hsmc:preferred-chain";
 
 const CHAIN_LABELS: Record<number, string> = {
   1: "Ethereum",

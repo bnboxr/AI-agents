@@ -1,5 +1,5 @@
 /**
- * Păun AI — YieldOptimizer Tests
+ * HSMC — YieldOptimizer Tests
  *
  * Run with:
  *   npx hardhat test test/YieldOptimizer.test.ts

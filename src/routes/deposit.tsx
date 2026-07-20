@@ -20,7 +20,7 @@ export default function DepositPage() {
           <span className="text-5xl mb-4 block">💳</span>
           <h1 className="text-3xl font-black text-white mb-2">Deposit Funds</h1>
           <p className="text-gray-400">
-            Add funds to your Păun AI balance via credit or debit card.
+            Add funds to your HSMC balance via credit or debit card.
             Powered by Stripe — secure and instant.
           </p>
         </div>

@@ -64,7 +64,7 @@ const EXCLUDE_DIRS = new Set(["node_modules", ".git", "dist", ".run", ".turbo", 
 
 // ── System Audit Agent ───────────────────────────────────────────────
 
-const SYSTEM_PROMPT = `You are the System Audit Agent — the "truth guardian" of the Păun AI Hedge Fund OS. Your role is to analyze audit findings and produce actionable security and integrity recommendations.
+const SYSTEM_PROMPT = `You are the System Audit Agent — the "truth guardian" of the HSMC Hedge Fund OS. Your role is to analyze audit findings and produce actionable security and integrity recommendations.
 
 You review scan results for:
 - Mock/fake data in production code

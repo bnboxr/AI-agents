@@ -1,6 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, lazy, Suspense } from "react";
 import { processChat, type ChatStreamResponse } from "~/lib/chat-server";
+
+const Terminal = lazy(() => import("~/components/Terminal"));
 
 // ── Types ─────────────────────────────────────────────────────────
 
@@ -35,7 +37,10 @@ const welcomeText = [
 
 // ── Component ─────────────────────────────────────────────────────
 
+type TabId = "chat" | "terminal";
+
 function ChatPage() {
+  const [activeTab, setActiveTab] = useState<TabId>("chat");
   const [messages, setMessages] = useState<Message[]>([
     { id: "welcome", role: "system", content: welcomeText, timestamp: Date.now() },
   ]);
@@ -170,83 +175,139 @@ function ChatPage() {
 
   return (
     <div className="min-h-dvh pt-16 pb-24 flex flex-col">
-      <div className="glass-card mx-4 mt-4 sm:mx-auto sm:max-w-2xl lg:max-w-3xl p-4 flex items-center gap-3">
+      {/* ── Header with tab switcher ───────────────────────────── */}
+      <div className="glass-card mx-4 mt-4 sm:mx-auto sm:max-w-2xl lg:max-w-3xl p-3 flex items-center gap-3">
         <span className="text-2xl">🦚</span>
-        <div>
+        <div className="flex-1">
           <h1 className="text-lg font-bold text-white">HSMC Chat</h1>
-          <p className="text-xs text-gray-400">
-            {isStreaming ? currentTool ? `Running ${currentTool}...` : "Thinking..." : "Ask about chains, prices, agents, portfolio, or swaps"}
-          </p>
+          {activeTab === "chat" && (
+            <p className="text-xs text-gray-400">
+              {isStreaming ? currentTool ? `Running ${currentTool}...` : "Thinking..." : "Ask about chains, prices, agents, portfolio, or swaps"}
+            </p>
+          )}
+          {activeTab === "terminal" && (
+            <p className="text-xs text-gray-400">Real shell — /home/team/shared/site</p>
+          )}
         </div>
-        <div className="ml-auto">{isStreaming && (
-          <span className="flex gap-1">
+        {/* Tab switcher */}
+        <div className="flex gap-0.5 bg-dark-hover rounded-lg p-0.5">
+          <button
+            onClick={() => setActiveTab("chat")}
+            className={`px-3 py-1.5 text-xs font-mono font-semibold rounded-md transition-all ${
+              activeTab === "chat"
+                ? "bg-accent-cyan/20 text-accent-cyan shadow-sm"
+                : "text-gray-400 hover:text-gray-200"
+            }`}
+          >
+            Chat
+          </button>
+          <button
+            onClick={() => setActiveTab("terminal")}
+            className={`px-3 py-1.5 text-xs font-mono font-semibold rounded-md transition-all ${
+              activeTab === "terminal"
+                ? "bg-accent-cyan/20 text-accent-cyan shadow-sm"
+                : "text-gray-400 hover:text-gray-200"
+            }`}
+          >
+            Terminal
+          </button>
+        </div>
+        {activeTab === "chat" && isStreaming && (
+          <span className="flex gap-1 shrink-0">
             <span className="w-1.5 h-1.5 rounded-full bg-accent-cyan animate-pulse" />
             <span className="w-1.5 h-1.5 rounded-full bg-accent-cyan animate-pulse" style={{ animationDelay: "0.15s" }} />
             <span className="w-1.5 h-1.5 rounded-full bg-accent-cyan animate-pulse" style={{ animationDelay: "0.3s" }} />
           </span>
-        )}</div>
+        )}
       </div>
 
-      <div className="flex-1 overflow-y-auto mt-4 space-y-1">
-        {messages.map(renderMsg)}
+      {/* ── Chat tab content ───────────────────────────────────── */}
+      {activeTab === "chat" && (
+        <>
+          <div className="flex-1 overflow-y-auto mt-4 space-y-1">
+            {messages.map(renderMsg)}
 
-        {isStreaming && streamingText && (
-          <div className="flex mb-4 px-4 justify-start">
-            <div className="max-w-[75%] sm:max-w-[65%] rounded-2xl px-4 py-3 text-sm leading-relaxed glass-card text-gray-200 rounded-bl-md animate-fade-in-up">
-              <div className="whitespace-pre-wrap">{renderMD(streamingText)}</div>
-              <span className="inline-block w-1.5 h-4 bg-accent-cyan ml-0.5 animate-pulse align-text-bottom" />
+            {isStreaming && streamingText && (
+              <div className="flex mb-4 px-4 justify-start">
+                <div className="max-w-[75%] sm:max-w-[65%] rounded-2xl px-4 py-3 text-sm leading-relaxed glass-card text-gray-200 rounded-bl-md animate-fade-in-up">
+                  <div className="whitespace-pre-wrap">{renderMD(streamingText)}</div>
+                  <span className="inline-block w-1.5 h-4 bg-accent-cyan ml-0.5 animate-pulse align-text-bottom" />
+                </div>
+              </div>
+            )}
+
+            {isStreaming && !streamingText && (
+              <div className="flex mb-4 px-4 justify-start">
+                <div className="glass-card rounded-2xl px-4 py-3 rounded-bl-md animate-fade-in">
+                  <span className="flex gap-1">
+                    <span className="w-2 h-2 rounded-full bg-accent-cyan/60 animate-bounce" />
+                    <span className="w-2 h-2 rounded-full bg-accent-cyan/60 animate-bounce" style={{ animationDelay: "0.1s" }} />
+                    <span className="w-2 h-2 rounded-full bg-accent-cyan/60 animate-bounce" style={{ animationDelay: "0.2s" }} />
+                  </span>
+                </div>
+              </div>
+            )}
+
+            <div ref={messagesEndRef} />
+          </div>
+
+          <div className="fixed bottom-0 left-0 right-0 z-40 bg-gradient-to-t from-darker via-darker/95 to-transparent pt-6 pb-4 px-4">
+            <div className="mx-auto max-w-2xl lg:max-w-3xl">
+              <div className="glass-card p-1.5 flex items-center gap-2">
+                <input ref={inputRef} type="text" value={input}
+                  onChange={e => setInput(e.target.value)} onKeyDown={handleKeyDown}
+                  placeholder="Ask about networks, prices, agents, or portfolio..."
+                  disabled={isStreaming}
+                  className="flex-1 bg-transparent text-white placeholder-gray-500 px-3 py-2 text-sm outline-none disabled:opacity-40" />
+                <button onClick={sendMessage} disabled={isStreaming || !input.trim()}
+                  className="glass-button px-4 py-2 text-sm rounded-xl flex items-center gap-1.5 shrink-0">
+                  <span>Send</span>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                  </svg>
+                </button>
+              </div>
+              <div className="flex gap-1.5 mt-2 overflow-x-auto scrollbar-hide pb-1">
+                {[
+                  { l: "Network Status", q: "Show network status" },
+                  { l: "Prices", q: "What are current prices?" },
+                  { l: "Scan", q: "Scan for opportunities" },
+                  { l: "Agents", q: "Show agent status" },
+                  { l: "Portfolio", q: "What's my portfolio worth?" },
+                  { l: "Swap Quote", q: "Quote swap 1 ETH to USDC" },
+                ].map(c => (
+                  <button key={c.l} onClick={() => setInput(c.q)} disabled={isStreaming}
+                    className="text-xs text-gray-400 hover:text-accent-cyan bg-dark-hover hover:bg-dark-border px-2.5 py-1 rounded-full border border-dark-border hover:border-accent-cyan/20 transition-all whitespace-nowrap disabled:opacity-30">
+                    {c.l}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
-        )}
+        </>
+      )}
 
-        {isStreaming && !streamingText && (
-          <div className="flex mb-4 px-4 justify-start">
-            <div className="glass-card rounded-2xl px-4 py-3 rounded-bl-md animate-fade-in">
-              <span className="flex gap-1">
-                <span className="w-2 h-2 rounded-full bg-accent-cyan/60 animate-bounce" />
-                <span className="w-2 h-2 rounded-full bg-accent-cyan/60 animate-bounce" style={{ animationDelay: "0.1s" }} />
-                <span className="w-2 h-2 rounded-full bg-accent-cyan/60 animate-bounce" style={{ animationDelay: "0.2s" }} />
-              </span>
-            </div>
-          </div>
-        )}
-
-        <div ref={messagesEndRef} />
-      </div>
-
-      <div className="fixed bottom-0 left-0 right-0 z-40 bg-gradient-to-t from-darker via-darker/95 to-transparent pt-6 pb-4 px-4">
-        <div className="mx-auto max-w-2xl lg:max-w-3xl">
-          <div className="glass-card p-1.5 flex items-center gap-2">
-            <input ref={inputRef} type="text" value={input}
-              onChange={e => setInput(e.target.value)} onKeyDown={handleKeyDown}
-              placeholder="Ask about networks, prices, agents, or portfolio..."
-              disabled={isStreaming}
-              className="flex-1 bg-transparent text-white placeholder-gray-500 px-3 py-2 text-sm outline-none disabled:opacity-40" />
-            <button onClick={sendMessage} disabled={isStreaming || !input.trim()}
-              className="glass-button px-4 py-2 text-sm rounded-xl flex items-center gap-1.5 shrink-0">
-              <span>Send</span>
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-              </svg>
-            </button>
-          </div>
-          <div className="flex gap-1.5 mt-2 overflow-x-auto scrollbar-hide pb-1">
-            {[
-              { l: "Network Status", q: "Show network status" },
-              { l: "Prices", q: "What are current prices?" },
-              { l: "Scan", q: "Scan for opportunities" },
-              { l: "Agents", q: "Show agent status" },
-              { l: "Portfolio", q: "What's my portfolio worth?" },
-              { l: "Swap Quote", q: "Quote swap 1 ETH to USDC" },
-            ].map(c => (
-              <button key={c.l} onClick={() => setInput(c.q)} disabled={isStreaming}
-                className="text-xs text-gray-400 hover:text-accent-cyan bg-dark-hover hover:bg-dark-border px-2.5 py-1 rounded-full border border-dark-border hover:border-accent-cyan/20 transition-all whitespace-nowrap disabled:opacity-30">
-                {c.l}
-              </button>
-            ))}
-          </div>
+      {/* ── Terminal tab content ───────────────────────────────── */}
+      {activeTab === "terminal" && (
+        <div className="flex-1 flex flex-col mx-4 mt-4 sm:mx-auto sm:max-w-2xl lg:max-w-3xl w-full min-h-0">
+          <Suspense
+            fallback={
+              <div className="flex-1 flex items-center justify-center glass-card">
+                <div className="flex flex-col items-center gap-3">
+                  <span className="flex gap-1">
+                    <span className="w-2 h-2 rounded-full bg-accent-cyan/60 animate-bounce" />
+                    <span className="w-2 h-2 rounded-full bg-accent-cyan/60 animate-bounce" style={{ animationDelay: "0.1s" }} />
+                    <span className="w-2 h-2 rounded-full bg-accent-cyan/60 animate-bounce" style={{ animationDelay: "0.2s" }} />
+                  </span>
+                  <span className="text-xs text-mono text-gray-500">Loading terminal...</span>
+                </div>
+              </div>
+            }
+          >
+            <Terminal className="flex-1 min-h-0" />
+          </Suspense>
         </div>
-      </div>
+      )}
     </div>
   );
 }

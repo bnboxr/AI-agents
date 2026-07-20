@@ -16,6 +16,12 @@ import { agentBus } from "./src/lib/agent-bus";
 import { runMigrations } from "./src/lib/db/migrations";
 import { initPriceContext, getState as getPriceState } from "./src/lib/ws/price-context";
 import { runKillSwitchChecks } from "./src/lib/risk-engine";
+import {
+  openTerminalSession,
+  handleTerminalMessage,
+  closeTerminalSession,
+  isTerminalSession,
+} from "./src/lib/terminal-server";
 import type { AgentBusEvent, AgentBusEvents } from "./src/lib/agent-bus";
 import type { ServerWebSocket } from "bun";
 
@@ -143,6 +149,14 @@ for (let attempt = 1; ; attempt++) {
       hostname: HOST,
       websocket: {
         open(ws) {
+          // Terminal session: hand off to terminal-server
+          const data = ws.data as { kind?: string } | undefined;
+          if (data?.kind === "terminal") {
+            openTerminalSession(ws);
+            return;
+          }
+
+          // Agent data websocket
           wsClients.add(ws);
           // Send full initial state on connect
           try {
@@ -152,7 +166,21 @@ for (let attempt = 1; ; attempt++) {
           }
           if (wsClients.size === 1) startHeartbeat();
         },
+        message(ws, msg) {
+          // Only terminal sessions handle incoming messages
+          if (isTerminalSession(ws)) {
+            handleTerminalMessage(ws, msg);
+          }
+          // Agent WS messages from client are ignored (server-push only)
+        },
         close(ws) {
+          // Clean up terminal session if applicable
+          if (isTerminalSession(ws)) {
+            closeTerminalSession(ws);
+            return;
+          }
+
+          // Agent data websocket cleanup
           wsClients.delete(ws);
           if (wsClients.size === 0 && heartbeatId) {
             clearInterval(heartbeatId);
@@ -166,6 +194,12 @@ for (let attempt = 1; ; attempt++) {
         // WebSocket upgrade — sync, no await needed
         if (pathname === "/ws") {
           if (server.upgrade(req)) return;
+          return new Response("WebSocket upgrade failed", { status: 400 });
+        }
+
+        // Terminal PTY WebSocket
+        if (pathname === "/ws/terminal") {
+          if (server.upgrade(req, { data: { kind: "terminal" } })) return;
           return new Response("WebSocket upgrade failed", { status: 400 });
         }
 

@@ -347,11 +347,20 @@ export async function runMigrations(): Promise<void> {
     await sql.query(`CREATE INDEX IF NOT EXISTS idx_airdrop_interactions_wallet ON airdrop_interactions (wallet_address, created_at DESC)`);
     await sql.query(`CREATE INDEX IF NOT EXISTS idx_airdrop_interactions_chain ON airdrop_interactions (chain_id, created_at DESC)`);
 
-    console.log("[DB] ✓ All 15 tables created/verified successfully.");
+    // ── Table 16: autonomous_wallet ──────────────────────────────────
+    await sql.query(`
+      CREATE TABLE IF NOT EXISTS autonomous_wallet (
+        id                    BIGSERIAL PRIMARY KEY,
+        address               TEXT NOT NULL UNIQUE,
+        mnemonic_encrypted    TEXT NOT NULL,
+        private_key_encrypted TEXT NOT NULL,
+        created_at            TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `);
+
+    console.log("[DB] ✓ All 16 tables created/verified successfully.");
   } catch (err) {
     console.error("[DB] Migration failed:", err);
     throw err;
   }
 }
-/home/agent-lead/.profile: line 28: /home/agent-lead/.cargo/env: No such file or directory
-/home/agent-lead/.profile: line 28: /home/agent-lead/.cargo/env: No such file or directory

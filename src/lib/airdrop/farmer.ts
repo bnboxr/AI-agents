@@ -5,6 +5,7 @@
 import { ethers } from "ethers";
 import { sql, isDbAvailable } from "../db";
 import { SUPPORTED_CHAINS } from "../chains-config";
+import { getAutonomousPrivateKey } from "../autonomous-wallet";
 
 export interface AirdropProtocol {
   name: string;
@@ -172,7 +173,11 @@ export async function farmAirdrops(
     };
   }
 
-  const pk = process.env.FARMER_PRIVATE_KEY;
+  // Use autonomous wallet if available, fall back to env var
+  let pk = await getAutonomousPrivateKey();
+  if (!pk) {
+    pk = process.env.FARMER_PRIVATE_KEY;
+  }
   if (!pk) {
     return {
       success: false,
@@ -180,7 +185,7 @@ export async function farmAirdrops(
       txHashes: [],
       gasSpent: "0",
       totalUsdValue: "0",
-      skippedReason: "FARMER_PRIVATE_KEY not set",
+      skippedReason: "No wallet configured. Generate autonomous wallet in Settings, or set FARMER_PRIVATE_KEY.",
       protocolNames: eligible.map((p) => p.name),
       timestamp: ts,
     };

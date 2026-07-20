@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { createServerFn } from "@tanstack/react-start";
 import { useState, useCallback, useEffect } from "react";
 import {
   getSettings,
@@ -39,6 +40,12 @@ import {
 import { getDexSlippageSetting, getPreferredDex, getGasPreference } from "~/lib/exchange/dex";
 import { getFaucetsForCurrentChain, requestSepoliaFaucet, fundWallet, getFaucetSummary } from "~/lib/faucet";
 import type { FaucetResult } from "~/lib/faucet";
+import {
+  getAutonomousWalletPublic,
+  revealSeedPhrase,
+  revealPrivateKey,
+} from "~/lib/autonomous-wallet";
+import type { AutonomousWalletPublic } from "~/lib/autonomous-wallet";
 
 // ── Service definitions ────────────────────────────────────────────
 
@@ -97,13 +104,40 @@ const SERVICES: ServiceDef[] = [
 
 // ── Route ──────────────────────────────────────────────────────────
 
+// Server functions for autonomous wallet
+const getWalletInfo = createServerFn({ method: "GET" }).handler(
+  async (): Promise<AutonomousWalletPublic> => {
+    return getAutonomousWalletPublic();
+  },
+);
+
+const getSeedPhrase = createServerFn({ method: "POST" }).handler(
+  async (): Promise<{ mnemonic: string }> => {
+    const mnemonic = await revealSeedPhrase();
+    return { mnemonic };
+  },
+);
+
+const getPrivateKeyFn = createServerFn({ method: "POST" }).handler(
+  async (): Promise<{ privateKey: string }> => {
+    const privateKey = await revealPrivateKey();
+    return { privateKey };
+  },
+);
+
 export const Route = createFileRoute("/settings")({
   loader: async () => {
-    const [settings, destinations, exchangeConfigs, llmProvider] = await Promise.all([
+    const [settings, destinations, exchangeConfigs, llmProvider, walletInfo] = await Promise.all([
       getSettings(),
       listDestinations(),
       getExchangeConfigs(),
       getLLMProvider(),
+      getAutonomousWalletPublic().catch(() => ({
+        address: "",
+        publicKey: "",
+        chain: "Ethereum",
+        balance: "0",
+      })),
     ]);
     // Try to detect Ollama on the server side
     let ollamaStatus = { running: false, models: [] as OllamaModel[] };
@@ -112,7 +146,7 @@ export const Route = createFileRoute("/settings")({
     } catch {
       // Ollama not available
     }
-    return { ...settings, destinations, exchangeConfigs, llmProvider, ollamaStatus };
+    return { ...settings, destinations, exchangeConfigs, llmProvider, ollamaStatus, walletInfo };
   },
   component: SettingsPage,
 });
@@ -154,6 +188,15 @@ function SettingsPage() {
   const [dexSlippage, setDexSlippage] = useState<number>(() => getDexSlippageSetting() * 100);
   const [preferredDex, setPreferredDex] = useState<string>(() => getPreferredDex());
   const [gasPreference, setGasPreferenceState] = useState<"fast" | "medium" | "slow">(() => getGasPreference());
+
+  // ── Autonomous wallet state ─────────────────────────────────────
+  const [walletData, setWalletData] = useState<AutonomousWalletPublic>(initial.walletInfo);
+  const [showSeedConfirm, setShowSeedConfirm] = useState(false);
+  const [seedPhrase, setSeedPhrase] = useState<string | null>(null);
+  const [privateKey, setPrivateKey] = useState<string | null>(null);
+  const [revealingSeed, setRevealingSeed] = useState(false);
+  const [revealingKey, setRevealingKey] = useState(false);
+  const [copiedField, setCopiedField] = useState<string | null>(null);
 
   // ── RPC form state ─────────────────────────────────────────────
   const [newRpcLabel, setNewRpcLabel] = useState("");
@@ -419,6 +462,60 @@ function SettingsPage() {
     if (typeof window !== "undefined" && window.localStorage) {
       window.localStorage.setItem("hsmc_gas_preference", pref);
     }
+  }, []);
+
+  // ── Autonomous wallet handlers ──────────────────────────────────
+
+  const handleRevealSeed = useCallback(async () => {
+    setShowSeedConfirm(true);
+  }, []);
+
+  const handleConfirmRevealSeed = useCallback(async () => {
+    setShowSeedConfirm(false);
+    setRevealingSeed(true);
+    try {
+      const result = await getSeedPhrase({ data: {} });
+      setSeedPhrase(result.mnemonic);
+    } catch {
+      setSeedPhrase("Error: could not retrieve seed phrase");
+    } finally {
+      setRevealingSeed(false);
+    }
+  }, []);
+
+  const handleRevealKey = useCallback(async () => {
+    setRevealingKey(true);
+    try {
+      const result = await getPrivateKeyFn({ data: {} });
+      setPrivateKey(result.privateKey);
+    } catch {
+      setPrivateKey("Error: could not retrieve private key");
+    } finally {
+      setRevealingKey(false);
+    }
+  }, []);
+
+  const handleCopy = useCallback(async (text: string, field: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedField(field);
+      setTimeout(() => setCopiedField(null), 2000);
+    } catch {
+      // Clipboard not available
+    }
+  }, []);
+
+  // Auto-refresh wallet info every 30s
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      try {
+        const info = await getWalletInfo();
+        setWalletData(info);
+      } catch {
+        // keep current data
+      }
+    }, 30000);
+    return () => clearInterval(interval);
   }, []);
 
   return (
@@ -1524,12 +1621,182 @@ function SettingsPage() {
             </div>
           )}
         </div>
+
+        {/* Autonomous Wallet section */}
+        <div className="mt-10 animate-fade-in-up" style={{ animationDelay: "0.45s" }}>
+          <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+            <span>🔐</span> Autonomous Wallet
+          </h2>
+          <p className="text-gray-400 text-sm mb-4">
+            This platform-generated wallet executes ALL agent trades on-chain.
+            Fund it with native tokens (ETH on Ethereum, etc.) and the agents will use it automatically.
+          </p>
+
+          <div className="glass-card p-5 space-y-4 border-l-2 border-accent-purple/40">
+            {/* Wallet address */}
+            <div>
+              <label className="text-xs text-gray-500 uppercase tracking-wider font-mono mb-1 block">
+                Wallet Address
+              </label>
+              <div className="flex items-center gap-2">
+                <code className="text-sm text-white font-mono break-all flex-1">
+                  {walletData.address || "Generating..."}
+                </code>
+                {walletData.address && (
+                  <button
+                    onClick={() => handleCopy(walletData.address, "address")}
+                    className="text-xs px-2 py-1 rounded-md text-gray-500 hover:text-accent-cyan hover:bg-accent-cyan/10 transition-colors shrink-0"
+                    title="Copy address"
+                  >
+                    {copiedField === "address" ? "✓ Copied" : "📋"}
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Wallet info grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+              <div>
+                <label className="text-xs text-gray-500 uppercase tracking-wider font-mono mb-1 block">
+                  Chain
+                </label>
+                <p className="text-sm text-white font-medium">{walletData.chain}</p>
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 uppercase tracking-wider font-mono mb-1 block">
+                  Balance
+                </label>
+                <p className="text-sm text-white font-mono">
+                  {walletData.balance} ETH
+                </p>
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 uppercase tracking-wider font-mono mb-1 block">
+                  Status
+                </label>
+                <div className="flex items-center gap-1.5">
+                  <span className={walletData.address ? "status-dot-online" : "status-dot-offline"} />
+                  <span className="text-sm text-gray-400">
+                    {walletData.address ? "Active" : "Pending"}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Warning */}
+            <div className="bg-accent-yellow/5 border border-accent-yellow/20 rounded-lg p-3 flex items-start gap-2">
+              <span className="text-accent-yellow text-sm shrink-0 mt-0.5">⚠️</span>
+              <p className="text-xs text-accent-yellow/80">
+                Store this safely. Never share. This wallet executes ALL agent trades.
+                Anyone with access to the seed phrase or private key controls all agent funds.
+              </p>
+            </div>
+
+            {/* Seed phrase section */}
+            <div className="pt-2 border-t border-dark-border">
+              <label className="text-sm font-medium text-white mb-2 block">
+                Seed Phrase (12 words)
+              </label>
+              {seedPhrase ? (
+                <div className="space-y-2">
+                  <div className="bg-dark-hover border border-dark-border rounded-lg p-3">
+                    <p className="text-sm text-white font-mono leading-relaxed break-words">
+                      {seedPhrase}
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleCopy(seedPhrase, "seed")}
+                      className="text-xs px-3 py-1.5 rounded-lg border border-dark-border text-gray-400 hover:text-white hover:border-accent-blue/40 hover:bg-dark-hover transition-all duration-200"
+                    >
+                      {copiedField === "seed" ? "✓ Copied" : "📋 Copy"}
+                    </button>
+                    <button
+                      onClick={() => { setSeedPhrase(null); setShowSeedConfirm(false); }}
+                      className="text-xs px-3 py-1.5 rounded-lg border border-dark-border text-gray-400 hover:text-accent-red hover:border-accent-red/40 transition-all duration-200"
+                    >
+                      Hide
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  {showSeedConfirm ? (
+                    <div className="bg-accent-red/5 border border-accent-red/20 rounded-lg p-4 space-y-3">
+                      <p className="text-sm text-accent-red font-medium">
+                        ⚠️ Anyone with this seed phrase can access ALL agent funds.
+                      </p>
+                      <p className="text-xs text-gray-400">
+                        Make sure nobody is watching your screen. Never share the seed phrase.
+                      </p>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={handleConfirmRevealSeed}
+                          disabled={revealingSeed}
+                          className="text-sm px-4 py-2 rounded-lg bg-accent-red/20 border border-accent-red/40 text-accent-red hover:bg-accent-red/30 transition-all duration-200 disabled:opacity-40 font-semibold"
+                        >
+                          {revealingSeed ? "Revealing…" : "Yes, Reveal Seed Phrase"}
+                        </button>
+                        <button
+                          onClick={() => setShowSeedConfirm(false)}
+                          className="text-sm px-4 py-2 rounded-lg border border-dark-border text-gray-400 hover:text-white hover:bg-dark-hover transition-all duration-200"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={handleRevealSeed}
+                      className="text-sm px-4 py-2 rounded-lg border border-accent-yellow/40 text-accent-yellow hover:bg-accent-yellow/10 transition-all duration-200 font-medium"
+                    >
+                      🔓 Reveal Seed Phrase
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Private key section */}
+            <div className="pt-2 border-t border-dark-border">
+              <label className="text-sm font-medium text-white mb-2 block">
+                Private Key
+              </label>
+              {privateKey ? (
+                <div className="space-y-2">
+                  <div className="bg-dark-hover border border-dark-border rounded-lg p-3">
+                    <code className="text-xs text-white font-mono break-all">
+                      {privateKey}
+                    </code>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleCopy(privateKey, "key")}
+                      className="text-xs px-3 py-1.5 rounded-lg border border-dark-border text-gray-400 hover:text-white hover:border-accent-blue/40 hover:bg-dark-hover transition-all duration-200"
+                    >
+                      {copiedField === "key" ? "✓ Copied" : "📋 Copy"}
+                    </button>
+                    <button
+                      onClick={() => setPrivateKey(null)}
+                      className="text-xs px-3 py-1.5 rounded-lg border border-dark-border text-gray-400 hover:text-accent-red hover:border-accent-red/40 transition-all duration-200"
+                    >
+                      Hide
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  onClick={handleRevealKey}
+                  disabled={revealingKey}
+                  className="text-sm px-4 py-2 rounded-lg border border-accent-red/40 text-accent-red hover:bg-accent-red/10 transition-all duration-200 font-medium disabled:opacity-40"
+                >
+                  {revealingKey ? "Revealing…" : "🔓 Reveal Private Key"}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
 }
-/home/agent-lead/.profile: line 28: /home/agent-lead/.cargo/env: No such file or directory
-/home/agent-lead/.profile: line 28: /home/agent-lead/.cargo/env: No such file or directory
-/home/agent-lead/.profile: line 28: /home/agent-lead/.cargo/env: No such file or directory
-/home/agent-lead/.profile: line 28: /home/agent-lead/.cargo/env: No such file or directory
-/home/agent-lead/.profile: line 28: /home/agent-lead/.cargo/env: No such file or directory

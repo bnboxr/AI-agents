@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { COINGECKO_IDS, UNIQUE_NATIVE_IDS, type AgentConfig } from "./agents";
 import { CHAINS } from "./chains";
+import { sql, isDbAvailable } from "./db";
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -131,6 +132,17 @@ export const logAgentActivity = createServerFn({ method: 'POST' }).handler(async
   if (activityLog.length > 200) {
     activityLog.length = 200;
   }
+  
+  // DB write-through — non-blocking
+  if (isDbAvailable()) {
+    sql`
+      INSERT INTO agent_activities (id, chain_id, agent_name, action, type, created_at)
+      VALUES (${entry.id}, ${entry.chainId}, ${entry.agentName}, ${entry.action}, ${entry.type}, to_timestamp(${entry.timestamp / 1000}))
+    `.catch((err) => {
+      console.warn("[AgentActivity] DB write failed for activity:", err);
+    });
+  }
+
   return entry;
 });
 

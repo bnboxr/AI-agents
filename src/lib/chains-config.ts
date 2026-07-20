@@ -135,6 +135,26 @@ export const SUPPORTED_CHAINS: Record<string, WalletChainConfig> = {
       "https://sepolia.scroll.io",
     ],
   },
+  // ── Solana ──────────────────────────────────────────────────────────
+  solana: {
+    chainId: 101,
+    name: "Solana",
+    rpc: "https://api.mainnet-beta.solana.com",
+    explorer: "https://solscan.io",
+    nativeToken: "SOL",
+  },
+  "solana-devnet": {
+    chainId: 102,
+    name: "Solana Devnet",
+    rpc: "https://api.devnet.solana.com",
+    explorer: "https://solscan.io?cluster=devnet",
+    testnet: true,
+    nativeToken: "SOL",
+    faucets: [
+      "https://solfaucet.com",
+      "https://faucet.solana.com",
+    ],
+  },
 };
 
 /** Wallet chain storage key */

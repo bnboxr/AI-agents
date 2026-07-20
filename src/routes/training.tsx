@@ -284,6 +284,13 @@ function TrainingPage() {
     ([, cfg]) => cfg.testnet,
   );
 
+  // Also include Solana mainnet for display
+  const solanaChains = Object.entries(SUPPORTED_CHAINS).filter(
+    ([id, cfg]) => id === "solana" && !cfg.testnet,
+  );
+
+  const allDisplayChains = [...testnetChains, ...solanaChains];
+
   return (
     <div className="min-h-dvh pt-20 pb-12 px-4 sm:px-6">
       <div className="mx-auto max-w-5xl space-y-6">
@@ -319,7 +326,7 @@ function TrainingPage() {
             </span>
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {testnetChains.map(([chainId, cfg]) => {
+            {allDisplayChains.map(([chainId, cfg]) => {
               const bal = balances.find((b) => b.chainId === chainId) ?? {
                 chainId,
                 chainName: cfg.name,

@@ -164,6 +164,7 @@ function NavBar() {
             <NavLink to="/withdraw">SEND</NavLink>
             <NavLink to="/arbitrage">ARB</NavLink>
             <NavLink to="/chains">CHAINS</NavLink>
+            <NavLink to="/chains/solana">SOL</NavLink>
             <NavLink to="/contracts">CTRCT</NavLink>
             <NavLink to="/settings">CFG</NavLink>
             <NavLink to="/deposit">DEPO</NavLink>

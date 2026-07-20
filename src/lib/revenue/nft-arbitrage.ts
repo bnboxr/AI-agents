@@ -62,70 +62,9 @@ export interface PaperNFTTrade {
   status: "completed" | "pending" | "failed";
 }
 
-// ── Simulated trending collections ─────────────────────────────
+// TODO: Fetch real NFT floor prices from Reservoir API (reservoir.tools)
 
-const TOP_COLLECTIONS: NFTCollection[] = [
-  {
-    slug: "cryptopunks", name: "CryptoPunks", floorPrice: 42.5,
-    volume24h: 89.3, volume7d: 612.4, marketCap: 425_000,
-    owners: 3620, totalSupply: 10_000, percentChange24h: -2.1,
-    trend: "down", category: "pfp",
-  },
-  {
-    slug: "bored-ape-yacht-club", name: "Bored Ape Yacht Club", floorPrice: 12.8,
-    volume24h: 145.2, volume7d: 1023.8, marketCap: 128_000,
-    owners: 6421, totalSupply: 10_000, percentChange24h: 1.5,
-    trend: "up", category: "pfp",
-  },
-  {
-    slug: "mutant-ape-yacht-club", name: "Mutant Ape Yacht Club", floorPrice: 2.4,
-    volume24h: 52.1, volume7d: 389.5, marketCap: 46_800,
-    owners: 12850, totalSupply: 20_000, percentChange24h: 0.3,
-    trend: "flat", category: "pfp",
-  },
-  {
-    slug: "azuki", name: "Azuki", floorPrice: 4.2,
-    volume24h: 78.6, volume7d: 547.2, marketCap: 42_000,
-    owners: 5340, totalSupply: 10_000, percentChange24h: 3.2,
-    trend: "up", category: "pfp",
-  },
-  {
-    slug: "pudgy-penguins", name: "Pudgy Penguins", floorPrice: 8.9,
-    volume24h: 112.4, volume7d: 782.1, marketCap: 79_210,
-    owners: 4780, totalSupply: 8_888, percentChange24h: 5.7,
-    trend: "up", category: "pfp",
-  },
-  {
-    slug: "degods", name: "DeGods", floorPrice: 1.8,
-    volume24h: 23.5, volume7d: 167.3, marketCap: 16_000,
-    owners: 3210, totalSupply: 10_000, percentChange24h: -0.8,
-    trend: "down", category: "pfp",
-  },
-  {
-    slug: "clonex", name: "CloneX", floorPrice: 1.2,
-    volume24h: 18.9, volume7d: 132.4, marketCap: 23_400,
-    owners: 8900, totalSupply: 20_000, percentChange24h: -1.4,
-    trend: "down", category: "metaverse",
-  },
-  {
-    slug: "milady-maker", name: "Milady Maker", floorPrice: 3.6,
-    volume24h: 45.2, volume7d: 312.8, marketCap: 35_280,
-    owners: 4120, totalSupply: 9_800, percentChange24h: 2.8,
-    trend: "up", category: "pfp",
-  },
-  {
-    slug: "art-blocks", name: "Art Blocks Curated", floorPrice: 0.85,
-    volume24h: 12.3, volume7d: 89.7, marketCap: 8_500,
-    owners: 6540, totalSupply: 10_000, percentChange24h: 0.1,
-    trend: "flat", category: "art",
-  },
-  {
-    slug: "parallel-alpha", name: "Parallel Alpha", floorPrice: 0.42,
-    volume24h: 8.7, volume7d: 62.3, marketCap: 4_200,
-    owners: 7230, totalSupply: 10_000, percentChange24h: 1.1,
-    trend: "up", category: "gaming",
-  },
-];
+const TOP_COLLECTIONS: NFTCollection[] = [];
 
 const MARKETPLACES = ["opensea", "blur", "looksrare"] as const;
 
@@ -205,6 +144,12 @@ export function scanArbitrage(collectionSlug?: string): NFTArbitrageOpportunity[
   const targets = collectionSlug
     ? _state.collections.filter((c) => c.slug === collectionSlug)
     : _state.collections;
+
+  // Return early if no collections are configured
+  if (targets.length === 0) {
+    _state.lastUpdate = now;
+    return [];
+  }
 
   _state.totalScanned++;
 

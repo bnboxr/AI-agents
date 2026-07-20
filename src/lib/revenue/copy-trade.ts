@@ -51,53 +51,32 @@ export interface CopyTradeState {
 
 // ── Simulated whale wallets ───────────────────────────────────
 
-const SEED_WALLETS: Omit<TrackedWallet, "addedAt" | "lastTradeAt">[] = [
-  {
-    address: "0x7a16fF8270133F063aAb6C9977183D9e72835428",
-    label: "Wintermute",
-    totalTrades: 2847,
-    profitableTrades: 2135,
-    winRate: 0.75,
-    totalPnL: 4_200_000,
-    status: "tracking",
-  },
-  {
-    address: "0x3fC91A3afd70395Cd496C647d5a6CC9D4B2b7FAD",
-    label: "Jump Trading",
-    totalTrades: 5102,
-    profitableTrades: 3826,
-    winRate: 0.75,
-    totalPnL: 8_900_000,
-    status: "tracking",
-  },
-  {
-    address: "0x2B6eD29A95753C3Ad948348e3e7b1A251080FfB9",
-    label: "DeFi Whale #1",
-    totalTrades: 1423,
-    profitableTrades: 996,
-    winRate: 0.70,
-    totalPnL: 1_800_000,
-    status: "tracking",
-  },
-  {
-    address: "0x56178a0d5F301bAf6CF3e1Cd53d9863437345Bf9",
-    label: "Smart Money #1",
-    totalTrades: 892,
-    profitableTrades: 624,
-    winRate: 0.70,
-    totalPnL: 620_000,
-    status: "tracking",
-  },
-  {
-    address: "0xE8c060F8052E07423f71D445277c61AC5138A2e5",
-    label: "Insider Alpha",
-    totalTrades: 456,
-    profitableTrades: 365,
-    winRate: 0.80,
-    totalPnL: 340_000,
-    status: "tracking",
-  },
-];
+// Seed wallets can be populated at runtime or via COPY_TRADE_WALLETS env var
+// (JSON array of {address, label}). Structure preserved for runtime additions.
+function loadSeedWallets(): Omit<TrackedWallet, "addedAt" | "lastTradeAt">[] {
+  try {
+    const raw = typeof process !== "undefined" && process.env?.COPY_TRADE_WALLETS;
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return parsed.map((w: { address: string; label: string }) => ({
+          address: w.address,
+          label: w.label,
+          totalTrades: 0,
+          profitableTrades: 0,
+          winRate: 0,
+          totalPnL: 0,
+          status: "tracking" as const,
+        }));
+      }
+    }
+  } catch {
+    // Ignore parse errors — fall through to empty array
+  }
+  return [];
+}
+
+const SEED_WALLETS: Omit<TrackedWallet, "addedAt" | "lastTradeAt">[] = loadSeedWallets();
 
 const SIMULATED_SYMBOLS = [
   "ETH/USDC", "BTC/USDC", "SOL/USDC", "ARB/USDC", "OP/USDC",

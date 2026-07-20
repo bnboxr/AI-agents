@@ -111,8 +111,8 @@ function ensureAgentState(chainId: string): AgentRiskState {
   if (!agentRisk[chainId]) {
     const agent = AGENTS[chainId];
     const chain = CHAINS.find((c) => c.id === chainId);
-    // Use deterministic initial values — no Math.random() in production
-    const initialValue = 25_000;
+    // Fallback initial portfolio value — set STARTING_CAPITAL env var
+    const initialValue = Number(process.env.STARTING_CAPITAL) || 10_000;
     agentRisk[chainId] = {
       chainId,
       agentName: agent?.name ?? "Unknown",

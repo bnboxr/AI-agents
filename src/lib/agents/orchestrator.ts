@@ -29,6 +29,7 @@ import { DevilsAdvocateAgent } from "./devils-advocate";
 import { PositionManagerAgent, getPositionManager } from "./position-manager";
 import type { PositionManagerOutput } from "./position-manager";
 import { isKillSwitchActive, getKillSwitchReason, markApiHealthy, recordLastPrice } from "../risk-engine";
+import { getCapitalState } from "~/lib/capital-manager";
 import type {
   AgentReport,
   AgentRole,
@@ -111,9 +112,11 @@ let lastDecisionReports: AgentReport[] = [];
 
 // ── Default Trading State ─────────────────────────────────────────
 
+const capitalState = getCapitalState();
+
 let tradingState: TradingState = {
-  capital: 10000,
-  initialCapital: 10000,
+  capital: capitalState.trading,
+  initialCapital: capitalState.initial,
   openPosition: false,
   pnl: 0,
   pnlPct: 0,
@@ -690,6 +693,7 @@ async function gatherReports(ctx: PriceContext): Promise<AgentReport[]> {
 
     // Run probability pipeline
     const probResult = probabilityAgent.computeProbability({
+      symbol: ctx.token,
       currentPrice: ctx.currentPrice,
       atr,
       trendScore,
@@ -1676,9 +1680,10 @@ export const updateTradingStateFn = createServerFn({ method: "POST" }).handler(
 
 export const resetTradingState = createServerFn({ method: "POST" }).handler(
   async (): Promise<TradingState> => {
+    const capState = getCapitalState();
     tradingState = {
-      capital: 10000,
-      initialCapital: 10000,
+      capital: capState.trading,
+      initialCapital: capState.initial,
       openPosition: false,
       pnl: 0,
       pnlPct: 0,

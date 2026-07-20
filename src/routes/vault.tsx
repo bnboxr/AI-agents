@@ -64,7 +64,7 @@ function VaultPage() {
     const amount = parseFloat(depositAmount);
     const now = Date.now();
     const deposit: VaultDeposit = {
-      id: `dep-${now}-${Math.random().toString(36).slice(2, 6)}`,
+      id: `dep_demo_${now.toString(36)}`,
       token: selectedToken,
       amount,
       tier: selectedTier,
@@ -85,7 +85,7 @@ function VaultPage() {
     setWithdrawingId(null);
   };
 
-  // Simulate real-time reward accumulation
+  // Demo: simulated yield accrual — real-time reward accumulation
   useEffect(() => {
     const interval = setInterval(() => {
       setDeposits(prev => prev.map(d => {
@@ -110,6 +110,16 @@ function VaultPage() {
   return (
     <div className="pt-14 pb-12 px-4 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-7xl space-y-6">
+        {/* ── Demo Mode Banner ────────────────────────────────── */}
+        <section className="animate-fade-in">
+          <div className="glass-card p-4 border-accent-yellow/40 bg-accent-yellow/5">
+            <p className="text-sm text-accent-yellow flex items-center gap-2">
+              <span className="text-lg">⚠️</span>
+              <strong>Demo Mode</strong> — No real funds are deposited. Smart contract deployment pending.
+            </p>
+          </div>
+        </section>
+
         {/* ── Header ─────────────────────────────────────────── */}
         <section className="animate-fade-in">
           <h1 className="text-2xl sm:text-3xl font-bold text-white flex items-center gap-2">

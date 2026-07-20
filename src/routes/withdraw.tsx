@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useEffect, useMemo } from "react";
-import { useAccount, useChainId, useBalance, useWriteContract, useReadContract } from "wagmi";
+import { useAccount, useChainId, useBalance, useWriteContract, useSendTransaction } from "wagmi";
 import { parseUnits, isAddress, type Address } from "viem";
 import { getChainTokens, type TokenInfo } from "~/lib/web3";
 
@@ -74,6 +74,9 @@ function WithdrawPage() {
 
   // Write
   const { writeContract: sendERC20, isPending: erc20Pending } = useWriteContract();
+  const { sendTransaction: sendNative, isPending: nativePending } = useSendTransaction();
+
+  const isPending = erc20Pending || nativePending;
 
   // Validate destination
   const validDest = destAddress.length === 0 || isAddress(destAddress);
@@ -82,8 +85,12 @@ function WithdrawPage() {
     if (!selectedToken || !destAddress || !amount || !isConnected) return;
 
     if (isNative) {
-      // Native transfer via wagmi sendTransaction
-      // We handle this differently - for now just use ERC-20 path
+      // Native token transfer via wagmi sendTransaction
+      const parsed = parseUnits(amount, selectedToken.decimals);
+      sendNative({
+        to: destAddress as Address,
+        value: parsed,
+      });
       return;
     }
 
@@ -224,11 +231,11 @@ function WithdrawPage() {
             <button
               onClick={handleSend}
               disabled={
-                !selectedToken || !destAddress || !validDest || !amount || parseFloat(amount) <= 0 || erc20Pending
+                !selectedToken || !destAddress || !validDest || !amount || parseFloat(amount) <= 0 || isPending
               }
               className="w-full py-3 rounded-xl bg-accent-blue text-white font-semibold hover:bg-accent-blue/80 transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed shadow-lg shadow-accent-blue/20"
             >
-              {erc20Pending ? "Confirming..." : isNative ? "Send (use wallet)" : `Send ${selectedToken?.symbol || ""}`}
+              {isPending ? "Confirming..." : isNative ? "Send (use wallet)" : `Send ${selectedToken?.symbol || ""}`}
             </button>
           </div>
         )}

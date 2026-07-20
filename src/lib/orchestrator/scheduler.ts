@@ -6,6 +6,7 @@ import type { ScanTask, TaskPriority } from './types';
 const SCAN_INTERVAL_MS = 15_000; // 15s between scheduler ticks
 const MIN_SCAN_GAP_MS = 60_000;   // Don't scan the same chain more than once per 60s
 const STAGGER_OFFSET_MS = 3_000;  // 3s offset per chain for initial scans
+let _scanTaskIdCounter = 0;
 
 let intervalId: ReturnType<typeof setInterval> | null = null;
 let initialStaggerTimers: ReturnType<typeof setTimeout>[] = [];
@@ -38,7 +39,7 @@ function tick(): void {
 
     if (timeSinceLastScan >= MIN_SCAN_GAP_MS) {
       const task: ScanTask = {
-        id: `scan-${chain.id}-${now}-${Math.random().toString(36).slice(2, 6)}`,
+        id: `scan_${chain.id}_${now.toString(36)}_${(_scanTaskIdCounter++).toString(36)}`,
         chainId: chain.id,
         priority: determinePriority(chain.id),
         type: 'scan',

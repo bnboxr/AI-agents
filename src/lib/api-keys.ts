@@ -52,6 +52,7 @@ for (const svc of ALL_SERVICES) {
 // ── In-memory RPC store ────────────────────────────────────────────
 
 const rpcStore: RpcEntry[] = [];
+let _rpcIdCounter = 0;
 
 function maskKey(key: string): string {
   if (key.length <= 4) return "****";
@@ -285,7 +286,7 @@ export const addRpcEndpoint = createServerFn({ method: "POST" }).handler(
     data: { label: string; url: string };
   }): Promise<RpcEntry> => {
     const entry: RpcEntry = {
-      id: `rpc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      id: `rpc_${Date.now().toString(36)}_${(_rpcIdCounter++).toString(36)}`,
       label: data.label,
       url: data.url,
       enabled: true,

@@ -57,26 +57,38 @@ function TradePage() {
   const [price, setPrice] = useState<number | null>(null);
   const [showConfig, setShowConfig] = useState(false);
 
-  // Fetch real price
+  const [priceData, setPriceData] = useState<{price: number; change24h: number; high24h: number; low24h: number; volume24h: number} | null>(null);
+  const [priceError, setPriceError] = useState(false);
+
+  // Fetch real price + 24h metrics
   useEffect(() => {
     const token = TOP_TOKENS.find(t => t.symbol === selectedToken);
     if (!token) return;
-    fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${token.coingeckoId}&vs_currencies=usd&include_24hr_change=true&include_24hr_vol=true&include_24hr_high_low=true`)
-      .then(r => r.json())
-      .then(data => {
-        const d = data[token.coingeckoId];
-        if (d) setPrice(d.usd);
-      })
-      .catch(() => {});
-    const interval = setInterval(() => {
-      fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${token.coingeckoId}&vs_currencies=usd&include_24hr_change=true`)
-        .then(r => r.json())
+    setPriceError(false);
+    const fetchPrice = () => {
+      fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${token.coingeckoId}&vs_currencies=usd&include_24hr_change=true&include_24hr_vol=true&include_24hr_high_low=true`)
+        .then(r => {
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          return r.json();
+        })
         .then(data => {
           const d = data[token.coingeckoId];
-          if (d) setPrice(d.usd);
+          if (d) {
+            setPrice(d.usd);
+            setPriceData({
+              price: d.usd,
+              change24h: d.usd_24h_change ?? 0,
+              high24h: d.usd_24h_high ?? d.usd * 1.02,
+              low24h: d.usd_24h_low ?? d.usd * 0.98,
+              volume24h: d.usd_24h_vol ?? 0,
+            });
+            setPriceError(false);
+          }
         })
-        .catch(() => {});
-    }, 30000);
+        .catch(() => { setPriceError(true); });
+    };
+    fetchPrice();
+    const interval = setInterval(fetchPrice, 30000);
     return () => clearInterval(interval);
   }, [selectedToken]);
 
@@ -89,11 +101,11 @@ function TradePage() {
         data: {
           chainId: selectedChain,
           token: selectedToken,
-          price,
-          change24h: 0,
-          volume24h: 0,
-          high24h: price * 1.02,
-          low24h: price * 0.98,
+          price: priceData?.price ?? price,
+          change24h: priceData?.change24h ?? 0,
+          volume24h: priceData?.volume24h ?? 0,
+          high24h: priceData?.high24h ?? price * 1.02,
+          low24h: priceData?.low24h ?? price * 0.98,
         },
       });
       setAnalysis(result);
@@ -188,10 +200,23 @@ function TradePage() {
                   ))}
                 </select>
               </div>
-              {price && (
+              {price ? (
                 <div className="text-center py-3">
                   <span className="text-3xl font-black text-white">${price.toFixed(2)}</span>
+                  {priceData?.change24h !== undefined && (
+                    <span className={`text-sm ml-2 ${priceData.change24h >= 0 ? "text-green-400" : "text-red-400"}`}>
+                      {priceData.change24h >= 0 ? "+" : ""}{priceData.change24h.toFixed(2)}%
+                    </span>
+                  )}
                   <span className="text-gray-500 text-sm ml-2">{selectedToken}/USD</span>
+                </div>
+              ) : priceError ? (
+                <div className="text-center py-3">
+                  <span className="text-red-400 text-sm">Price data unavailable — retrying...</span>
+                </div>
+              ) : (
+                <div className="text-center py-3">
+                  <span className="text-gray-500 text-sm">Loading price...</span>
                 </div>
               )}
             </div>

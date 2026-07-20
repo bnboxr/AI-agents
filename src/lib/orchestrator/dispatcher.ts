@@ -2,6 +2,8 @@ import { internalScan, addActivity, getAgentState } from '../agent-runner';
 import { dequeue, enqueue } from './queue';
 import type { ScanTask, TaskResult } from './types';
 import { agentBus } from '../agent-bus';
+import { buildPriceContext } from './price-context';
+import { runAgentAnalysis } from '../agents/orchestrator';
 
 const POLL_INTERVAL_MS = 2_000;   // 2s between dispatch polls
 const MAX_CONCURRENT = 3;
@@ -39,6 +41,44 @@ async function executeTask(task: ScanTask): Promise<TaskResult> {
     const result = await internalScan(task.chainId);
 
     const durationMs = Date.now() - startTime;
+
+    // ── Agent Analysis Pipeline ──────────────────────────────────
+    // After each scan, build price context and run the full agent pipeline.
+    // This runs in the dispatcher (server context) — catches errors so
+    // a single chain's analysis failure doesn't crash the dispatch loop.
+    try {
+      console.log(`[Dispatcher] ScanTask for chain ${task.chainId} — building price context...`);
+      const priceCtx = await buildPriceContext(task.chainId);
+
+      if (priceCtx) {
+        console.log(
+          `[Orchestrator] runAgentAnalysis starting for chain ${task.chainId} ` +
+          `(${priceCtx.token} @ ${priceCtx.currentPrice})`,
+        );
+        const analysisResult = await runAgentAnalysis({ data: priceCtx });
+        const { decision, reports } = analysisResult;
+
+        console.log(
+          `[Orchestrator] gatherReports: ${reports.length} agents responded for chain ${task.chainId}`,
+        );
+        console.log(
+          `[Orchestrator] decision: ${decision.action} — confidence ${decision.confidence}% ` +
+          `for ${task.chainId}`,
+        );
+
+        if (decision.action === 'BUY' || decision.action === 'SELL') {
+          console.log(
+            `[Execution] paper trade placed — ${decision.action} ${decision.positionSize} ${priceCtx.token} @ ${priceCtx.currentPrice}`,
+          );
+        }
+      }
+    } catch (analysisErr) {
+      const analysisMsg = analysisErr instanceof Error ? analysisErr.message : String(analysisErr);
+      console.error(
+        `[Dispatcher] Agent analysis failed for chain ${task.chainId}: ${analysisMsg}`,
+      );
+      // Analysis failure is non-fatal — scan results still valid
+    }
 
     // Emit opportunity_found for each opportunity
     for (const opp of result.opportunities) {

@@ -77,6 +77,34 @@ function getSolanaRpcUrl(): string {
   }
 }
 
+// ── SOL Price Cache ────────────────────────────────────────────
+
+let cachedSolPrice = 150;
+let lastSolPriceFetch = 0;
+
+export async function fetchSolPrice(): Promise<number> {
+  const now = Date.now();
+  if (now - lastSolPriceFetch < 60_000) return cachedSolPrice;
+  try {
+    const resp = await fetch(
+      "https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd",
+    );
+    const json = await resp.json();
+    const price = json?.solana?.usd;
+    if (typeof price === "number" && price > 0) {
+      cachedSolPrice = price;
+      lastSolPriceFetch = now;
+    }
+  } catch {
+    // Keep cached value on error
+  }
+  return cachedSolPrice;
+}
+
+export function getSolPrice(): number {
+  return cachedSolPrice;
+}
+
 // ── State ──────────────────────────────────────────────────────────
 
 const isLive = detectLiveMode();
@@ -98,7 +126,7 @@ const state: PSolStakingState = {
       ? "[pSOL] Initialized in LIVE mode. Marinade program: " + MARINADE_PROGRAM_ID
       : "[pSOL] Initialized in simulated mode. Set SOLANA_RPC_URL for live staking.",
   ],
-  solPrice: 150, // approximate, updated from API periodically
+  solPrice: cachedSolPrice, // live price from CoinGecko, cached 60s
 };
 
 // ── Private helpers ────────────────────────────────────────────────
@@ -424,6 +452,14 @@ export async function triggerAutoStake(payoutAmount: number): Promise<PSolStakin
 }
 
 // ── Initialization ─────────────────────────────────────────────────
+
+// Fetch SOL price on module load (fire-and-forget, non-blocking)
+fetchSolPrice().then((price) => {
+  state.solPrice = price;
+  logAction(`Initial SOL price fetch: ${price}`);
+}).catch(() => {
+  logAction(`Initial SOL price fetch failed, using cached: ${cachedSolPrice}`);
+});
 
 // Fetch the real APY on module load
 fetchMarinadeAPY()

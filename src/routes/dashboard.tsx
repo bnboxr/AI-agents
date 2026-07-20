@@ -9,6 +9,7 @@ import { AGENTS } from "~/lib/agents";
 import { CHAINS } from "~/lib/chains";
 import { getCapitalState, getCapitalAndStakingState } from "~/lib/capital-manager";
 import { getLPState, getCopyTradeState, getNFTArbitrageState, type LPYieldState, type CopyTradeState, type NFTArbitrageState } from "~/lib/revenue";
+import { getSolPrice, fetchSolPrice } from "~/lib/staking/psol";
 
 // ── Live Mode Detection ────────────────────────────────────────────
 
@@ -169,6 +170,9 @@ function DashboardPage() {
       // silent fail on poll — keep last known state
     }
   }, []);
+
+  // Fetch live SOL price on mount
+  useEffect(() => { fetchSolPrice(); }, []);
 
   useEffect(() => {
     const id = setInterval(poll, 5000);
@@ -848,7 +852,7 @@ function PSolStakingCard() {
             {stakedDisplay} SOL
           </p>
           <p className="text-xs text-gray-500 mt-1">
-            ~${(staking.stakedSOL * 150).toFixed(2)} USD
+            ~${(staking.stakedSOL * getSolPrice()).toFixed(2)} USD
           </p>
         </div>
 
@@ -872,7 +876,7 @@ function PSolStakingCard() {
             {earnedDisplay} SOL
           </p>
           <p className="text-xs text-gray-500 mt-1">
-            ~${(staking.earnedSOL * 150).toFixed(4)} USD
+            ~${(staking.earnedSOL * getSolPrice()).toFixed(4)} USD
           </p>
         </div>
 

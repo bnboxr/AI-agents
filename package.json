@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",
-    "start": "bun run serve.ts",
+    "start": "bun --preload ./preload.ts serve.ts",
     "publish": "bash ./publish.sh",
     "go-live": "bash ./go-live.sh",
     "format": "prettier --write ."
@@ -51,3 +51,5 @@
     "vite-tsconfig-paths": "^6.0.5"
   }
 }
+/home/agent-lead/.profile: line 28: /home/agent-lead/.cargo/env: No such file or directory
+/home/agent-lead/.profile: line 28: /home/agent-lead/.cargo/env: No such file or directory

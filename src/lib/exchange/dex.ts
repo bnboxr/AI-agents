@@ -40,6 +40,9 @@ const DEX_PAIRS: Record<string, { baseId: string; quoteId: string; baseDecimals:
   "LINK/ETH":  { baseId: "chainlink",      quoteId: "ethereum",      baseDecimals: 18 },
   "AAVE/ETH":  { baseId: "aave",           quoteId: "ethereum",      baseDecimals: 18 },
   "MATIC/USDC":{ baseId: "matic-network",  quoteId: "usd-coin",      baseDecimals: 18 },
+  // Solana DEX pairs
+  "SOL/USDC":  { baseId: "solana",         quoteId: "usd-coin",      baseDecimals: 9  },
+  "SOL/USDT":  { baseId: "solana",         quoteId: "tether",        baseDecimals: 9  },
 };
 
 /** CoinGecko IDs we query for pricing */

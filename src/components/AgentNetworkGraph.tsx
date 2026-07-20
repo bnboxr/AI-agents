@@ -1,9 +1,28 @@
-// ── Agent Network Graph — Circular Visualization ─────────────────────
-// SVG-based interactive graph showing all 29 HSMC agents and their
-// communication topology. No external library dependency — pure SVG + CSS.
-import { useState, useMemo, useCallback } from "react";
+// ── Agent Network Graph — React Flow + Framer Motion ────────────────
+// Interactive draggable graph showing all 29 HSMC agents.
+// React Flow v12 (@xyflow/react) with custom nodes, animated edges,
+// glassmorphism detail cards, dark grid background.
+import { useCallback, useState, useMemo } from "react";
+import {
+  ReactFlow,
+  Background,
+  Controls,
+  Handle,
+  Position,
+  useNodesState,
+  useEdgesState,
+  type Node,
+  type Edge,
+  type NodeProps,
+  type EdgeProps,
+  BaseEdge,
+  getBezierPath,
+  EdgeLabelRenderer,
+} from "@xyflow/react";
+import "@xyflow/react/dist/style.css";
+import { motion, AnimatePresence } from "framer-motion";
 
-// ── Agent Data ──────────────────────────────────────────────────────
+// ── Agent Data (same as before) ─────────────────────────────────────
 
 type Ring = "center" | "inner" | "outer";
 
@@ -108,7 +127,7 @@ const AGENT_NODES: AgentNode[] = [
     description:
       "Stores and retrieves past decisions. Finds similar historical trades to inform current decisions.",
   },
-  // ── OUTER RING — 23 Specialized Agents ──────────────────────
+  // ── OUTER RING — 22 Specialized Agents ──────────────────────
   {
     id: "market",
     name: "Market Analysis",
@@ -334,13 +353,11 @@ interface GraphEdge {
   to: string;
 }
 
-// All outer agents talk to inner agents; inner agents talk to orchestrator
 const EDGES: GraphEdge[] = [];
 
 // Build edges: all outer → inner, all inner → center
 for (const n of AGENT_NODES) {
   if (n.ring === "outer") {
-    // Connect to relevant inner agents
     if (
       ["market", "technical", "sentiment", "news", "macro", "pattern", "smart-money", "liquidity", "regime", "multi-timeframe"].includes(n.id)
     ) {
@@ -364,43 +381,9 @@ for (const n of AGENT_NODES) {
   }
 }
 
-// ── Layout Constants ──────────────────────────────────────────────
-
-const CENTER_X = 460;
-const CENTER_Y = 360;
-const INNER_RADIUS = 110;
-const OUTER_RADIUS = 260;
-const NODE_RADIUS_SM = 20;
-const NODE_RADIUS_MD = 28;
-const NODE_RADIUS_LG = 42;
-
-// ── Position Computation ──────────────────────────────────────────
-
-function getNodePosition(node: AgentNode, index: number, total: number) {
-  if (node.ring === "center") {
-    return { x: CENTER_X, y: CENTER_Y, r: NODE_RADIUS_LG };
-  }
-
-  const innerNodes = AGENT_NODES.filter((n) => n.ring === "inner");
-  const outerNodes = AGENT_NODES.filter((n) => n.ring === "outer");
-
-  const ringNodes = node.ring === "inner" ? innerNodes : outerNodes;
-  const radius = node.ring === "inner" ? INNER_RADIUS : OUTER_RADIUS;
-  const r = node.ring === "inner" ? NODE_RADIUS_MD : NODE_RADIUS_SM;
-  const idx = ringNodes.findIndex((n) => n.id === node.id);
-  const angle = (idx / ringNodes.length) * 2 * Math.PI - Math.PI / 2;
-
-  return {
-    x: CENTER_X + radius * Math.cos(angle),
-    y: CENTER_Y + radius * Math.sin(angle),
-    r,
-  };
-}
-
-// ── Status Simulation ─────────────────────────────────────────────
+// ── Status Simulation (deterministic) ──────────────────────────────
 
 function getSimulatedStatus(agentId: string): "active" | "idle" | "error" {
-  // Deterministic pseudo-random based on agent ID
   let hash = 0;
   for (let i = 0; i < agentId.length; i++) {
     hash = (hash * 31 + agentId.charCodeAt(i)) & 0xffffffff;
@@ -417,30 +400,406 @@ function getStatusColor(status: "active" | "idle" | "error") {
   return "#ff3d00";
 }
 
-// ── SVG Path for Edge ─────────────────────────────────────────────
+// ── Layout computation ─────────────────────────────────────────────
+// Canvas: 1200 x 900 (React Flow coordinates)
+// Level 0: Orchestrator at center top
+// Level 1: Intelligence (10 agents) in arc
+// Level 2: Analysis (8 agents) in arc
+// Level 3: Decision/Execution/Monitoring in arc
 
-function edgePath(
-  x1: number,
-  y1: number,
-  x2: number,
-  y2: number,
-  r1: number,
-  r2: number
-): string {
-  const dx = x2 - x1;
-  const dy = y2 - y1;
-  const dist = Math.sqrt(dx * dx + dy * dy);
-  if (dist < 0.01) return "";
-  const ux = dx / dist;
-  const uy = dy / dist;
-  const sx = x1 + ux * (r1 + 3);
-  const sy = y1 + uy * (r1 + 3);
-  const ex = x2 - ux * (r2 + 3);
-  const ey = y2 - uy * (r2 + 3);
-  // Quadratic bezier for a slight curve
-  const mx = (sx + ex) / 2;
-  const my = (sy + ey) / 2 - 15;
-  return `M${sx},${sy} Q${mx},${my} ${ex},${ey}`;
+function computeLayout(): Map<string, { x: number; y: number; size: number }> {
+  const map = new Map<string, { x: number; y: number; size: number }>();
+  const CX = 600;
+  const ORCH_Y = 100;
+
+  // Orchestrator
+  map.set("orchestrator", { x: CX, y: ORCH_Y, size: 56 });
+
+  // Group agents by role level
+  const intelligenceAgents = AGENT_NODES.filter(
+    (n) => n.role === "Intelligence" && n.ring !== "inner"
+  );
+  const analysisAgents = AGENT_NODES.filter(
+    (n) => n.role === "Analysis" && n.ring !== "inner"
+  );
+  const restOuterAgents = AGENT_NODES.filter(
+    (n) =>
+      n.ring === "outer" &&
+      n.role !== "Intelligence" &&
+      n.role !== "Analysis"
+  );
+  const innerAgents = AGENT_NODES.filter(
+    (n) => n.ring === "inner"
+  );
+
+  // Arc positioning helper
+  function placeArc(
+    agents: AgentNode[],
+    centerX: number,
+    centerY: number,
+    radius: number,
+    startAngle: number,
+    endAngle: number,
+    size: number
+  ) {
+    const count = agents.length;
+    agents.forEach((agent, i) => {
+      const angle =
+        count === 1
+          ? (startAngle + endAngle) / 2
+          : startAngle + (i / (count - 1)) * (endAngle - startAngle);
+      map.set(agent.id, {
+        x: centerX + radius * Math.cos(angle),
+        y: centerY + radius * Math.sin(angle),
+        size,
+      });
+    });
+  }
+
+  // Inner core agents in tight arc below orchestrator
+  placeArc(innerAgents, CX, ORCH_Y + 100, 140, Math.PI * 0.25, Math.PI * 0.75, 34);
+
+  // Level 1: Intelligence (10)
+  placeArc(
+    intelligenceAgents,
+    CX,
+    ORCH_Y + 200,
+    340,
+    Math.PI * 0.12,
+    Math.PI * 0.88,
+    28
+  );
+
+  // Level 2: Analysis (8 — includes risk from inner? No, outer only)
+  placeArc(
+    analysisAgents,
+    CX,
+    ORCH_Y + 350,
+    420,
+    Math.PI * 0.12,
+    Math.PI * 0.88,
+    28
+  );
+
+  // Level 3: rest (exit, system-audit, plus...
+  // Actually let's also include the inner agents in this arc if they're not already placed.
+  // The inner agents are already placed. This arc gets remaining outer agents.
+  const remainingOuter = AGENT_NODES.filter(
+    (n) => n.ring === "outer" && !map.has(n.id)
+  );
+  if (remainingOuter.length > 0) {
+    placeArc(
+      remainingOuter,
+      CX,
+      ORCH_Y + 500,
+      500,
+      Math.PI * 0.12,
+      Math.PI * 0.88,
+      28
+    );
+  }
+
+  return map;
+}
+
+const layoutMap = computeLayout();
+
+// ── React Flow Node Data ───────────────────────────────────────────
+
+interface AgentFlowData {
+  agent: AgentNode;
+  status: "active" | "idle" | "error";
+  isSelected: boolean;
+  isHighlighted: boolean;
+  onClick: (id: string) => void;
+}
+
+// ── Custom Node Component ──────────────────────────────────────────
+
+function AgentFlowNode({ data, selected }: NodeProps) {
+  const { agent, status, isHighlighted } = data as AgentFlowData;
+  const statusColor = getStatusColor(status);
+  const nodeSize = agent.ring === "center" ? 56 : agent.ring === "inner" ? 34 : 28;
+  const fontSize = agent.ring === "center" ? 20 : agent.ring === "inner" ? 10 : 8;
+
+  const isOrchestrator = agent.ring === "center";
+
+  return (
+    <div
+      className="agent-flow-node"
+      style={{
+        position: "relative",
+        width: nodeSize * 2 + 16,
+        height: nodeSize * 2 + 28,
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        cursor: "pointer",
+        filter: isHighlighted
+          ? `drop-shadow(0 0 14px ${agent.glowColor})`
+          : `drop-shadow(0 0 4px ${agent.glowColor})`,
+        transition: "filter 0.3s ease, transform 0.3s ease",
+        transform: selected ? "scale(1.08)" : "scale(1)",
+      }}
+    >
+      {/* Invisible handles for edge connections */}
+      <Handle
+        type="target"
+        position={Position.Top}
+        style={{ opacity: 0, width: 1, height: 1 }}
+      />
+      <Handle
+        type="source"
+        position={Position.Bottom}
+        style={{ opacity: 0, width: 1, height: 1 }}
+      />
+
+      {/* Glow ring */}
+      <div
+        className={isOrchestrator ? "orchestrator-glow" : ""}
+        style={{
+          position: "absolute",
+          width: nodeSize * 2 + 16,
+          height: nodeSize * 2 + 16,
+          borderRadius: "50%",
+          border: `2px solid ${agent.glowColor}`,
+          opacity: selected ? 0.7 : 0.2,
+          animation:
+            status === "active"
+              ? `agentPulse ${isOrchestrator ? 2 : 3}s ease-in-out infinite`
+              : "none",
+          transition: "opacity 0.3s",
+        }}
+      />
+
+      {/* Status ring */}
+      <div
+        style={{
+          position: "absolute",
+          width: nodeSize * 2 + 6,
+          height: nodeSize * 2 + 6,
+          borderRadius: "50%",
+          border: `2px solid ${statusColor}`,
+          opacity: 0.7,
+          animation:
+            status === "active"
+              ? "none"
+              : "none",
+        }}
+      />
+
+      {/* Main node circle with gradient */}
+      <div
+        style={{
+          width: nodeSize * 2,
+          height: nodeSize * 2,
+          borderRadius: "50%",
+          background: `radial-gradient(circle at 35% 35%, ${agent.color}88, ${agent.color}22 60%, ${agent.color}11 100%)`,
+          border: `1.5px solid ${agent.color}66`,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          position: "relative",
+          overflow: "hidden",
+        }}
+      >
+        {/* Inner highlight */}
+        <div
+          style={{
+            position: "absolute",
+            top: "15%",
+            left: "25%",
+            width: "30%",
+            height: "25%",
+            borderRadius: "50%",
+            background: `radial-gradient(ellipse, ${agent.color}44, transparent)`,
+            opacity: 0.6,
+          }}
+        />
+
+        {/* Icon */}
+        <span
+          style={{
+            fontSize: `${fontSize}px`,
+            lineHeight: 1,
+            zIndex: 1,
+            filter: "drop-shadow(0 0 3px rgba(0,0,0,0.5))",
+          }}
+        >
+          {agent.icon}
+        </span>
+      </div>
+
+      {/* Label */}
+      <span
+        style={{
+          fontSize: isOrchestrator ? "11px" : "8px",
+          fontWeight: isOrchestrator ? 800 : 600,
+          fontFamily: "'JetBrains Mono', monospace",
+          color: isOrchestrator ? "#ffab00" : "#b0bec5",
+          marginTop: 4,
+          textAlign: "center",
+          letterSpacing: "0.5px",
+          whiteSpace: "nowrap",
+          maxWidth: nodeSize * 2 + 20,
+        }}
+      >
+        {agent.displayName}
+      </span>
+    </div>
+  );
+}
+
+// ── Custom Edge with Animated Particles ────────────────────────────
+
+function AnimatedFlowEdge({
+  id,
+  sourceX,
+  sourceY,
+  targetX,
+  targetY,
+  sourcePosition,
+  targetPosition,
+  selected,
+}: EdgeProps) {
+  const [edgePath, labelX, labelY] = getBezierPath({
+    sourceX,
+    sourceY,
+    sourcePosition,
+    targetX,
+    targetY,
+    targetPosition,
+  });
+
+  // Deterministic animation delay based on edge id
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) {
+    hash = (hash * 31 + id.charCodeAt(i)) & 0xffff;
+  }
+  const animDelay = (hash % 3000) / 1000;
+  const animDuration = 2.5 + (hash % 1500) / 1000;
+
+  return (
+    <>
+      <BaseEdge
+        id={id}
+        path={edgePath}
+        style={{
+          stroke: selected ? "rgba(0,230,118,0.5)" : "rgba(255,255,255,0.06)",
+          strokeWidth: selected ? 1.5 : 0.5,
+          strokeDasharray: selected ? "5 4" : "3 8",
+          transition: "all 0.3s ease",
+        }}
+      />
+      {/* Animated particles along edge */}
+      <EdgeLabelRenderer>
+        <div
+          style={{
+            position: "absolute",
+            transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
+            pointerEvents: "none",
+          }}
+        >
+          {[0, 0.33, 0.66].map((offset) => (
+            <div
+              key={offset}
+              style={{
+                position: "absolute",
+                width: 4,
+                height: 4,
+                borderRadius: "50%",
+                background: selected
+                  ? "rgba(0,230,118,0.8)"
+                  : "rgba(0,188,212,0.3)",
+                boxShadow: selected
+                  ? "0 0 6px rgba(0,230,118,0.6)"
+                  : "0 0 3px rgba(0,188,212,0.2)",
+                animation: `particleFlow ${animDuration}s linear infinite`,
+                animationDelay: `${animDelay + offset * (animDuration / 3)}s`,
+                opacity: 0,
+              }}
+            />
+          ))}
+        </div>
+      </EdgeLabelRenderer>
+    </>
+  );
+}
+
+// ── Node Types Registration ────────────────────────────────────────
+
+const nodeTypes = {
+  agentNode: AgentFlowNode,
+};
+
+const edgeTypes = {
+  animatedEdge: AnimatedFlowEdge,
+};
+
+// ── Build React Flow Nodes & Edges from Data ───────────────────────
+
+function buildFlowNodes(
+  highlightedId: string | null,
+  selectedId: string | null,
+  onClick: (id: string) => void
+): Node<AgentFlowData>[] {
+  return AGENT_NODES.map((agent) => {
+    const pos = layoutMap.get(agent.id) ?? { x: 0, y: 0, size: 28 };
+    const isHighlighted =
+      (highlightedId || selectedId) != null &&
+      agent.id !== highlightedId &&
+      agent.id !== selectedId
+        ? false
+        : true;
+    const isDimmed =
+      (highlightedId || selectedId) != null &&
+      agent.id !== highlightedId &&
+      agent.id !== selectedId;
+
+    return {
+      id: agent.id,
+      type: "agentNode",
+      position: {
+        x: pos.x - pos.size,
+        y: pos.y - pos.size,
+      },
+      data: {
+        agent,
+        status: getSimulatedStatus(agent.id),
+        isSelected: selectedId === agent.id,
+        isHighlighted,
+        onClick,
+      },
+      style: {
+        opacity: isDimmed ? 0.3 : 1,
+        transition: "opacity 0.3s ease",
+      },
+      draggable: true,
+      selectable: true,
+    };
+  });
+}
+
+function buildFlowEdges(highlightedId: string | null, selectedId: string | null): Edge[] {
+  const focusId = highlightedId ?? selectedId;
+  return EDGES.map((edge, i) => {
+    const isSelected =
+      focusId != null && (edge.from === focusId || edge.to === focusId);
+    return {
+      id: `${edge.from}->${edge.to}-${i}`,
+      source: edge.from,
+      target: edge.to,
+      type: "animatedEdge",
+      animated: true,
+      selected: isSelected,
+      style: {
+        stroke: isSelected ? "rgba(0,230,118,0.5)" : "rgba(255,255,255,0.06)",
+        strokeWidth: isSelected ? 1.5 : 0.5,
+        transition: "all 0.3s ease",
+      },
+    };
+  });
 }
 
 // ── Main Component ──────────────────────────────────────────────────
@@ -449,27 +808,61 @@ export function AgentNetworkGraph() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
 
-  // Precompute positions
-  const posMap = useMemo(() => {
-    const map = new Map<string, { x: number; y: number; r: number }>();
-    for (const node of AGENT_NODES) {
-      map.set(node.id, getNodePosition(node, 0, AGENT_NODES.length));
-    }
-    return map;
+  const onNodeClick = useCallback(
+    (_event: React.MouseEvent, node: Node) => {
+      setSelectedId((prev) => (prev === node.id ? null : node.id));
+    },
+    []
+  );
+
+  const onNodeMouseEnter = useCallback(
+    (_event: React.MouseEvent, node: Node) => {
+      setHoveredId(node.id);
+    },
+    []
+  );
+
+  const onNodeMouseLeave = useCallback(() => {
+    setHoveredId(null);
   }, []);
 
-  // Which edges to highlight
-  const highlightedEdges = useMemo(() => {
-    if (!hoveredId && !selectedId) return new Set<string>();
-    const focusId = hoveredId ?? selectedId!;
-    const connected = new Set<string>();
-    for (const e of EDGES) {
-      if (e.from === focusId || e.to === focusId) {
-        connected.add(`${e.from}->${e.to}`);
+  const onPaneClick = useCallback(() => {
+    setSelectedId(null);
+  }, []);
+
+  // Build nodes and edges reactively
+  const initialNodes = useMemo(
+    () => buildFlowNodes(hoveredId, selectedId, setSelectedId),
+    [hoveredId, selectedId]
+  );
+  const initialEdges = useMemo(
+    () => buildFlowEdges(hoveredId, selectedId),
+    [hoveredId, selectedId]
+  );
+
+  const [nodes, _setNodes, onNodesChange] = useNodesState(initialNodes);
+  const [edges, _setEdges, onEdgesChange] = useEdgesState(initialEdges);
+
+  // Keep nodes/edges in sync when selection changes
+  const syncedNodes = useMemo(() => {
+    return nodes.map((n) => {
+      const fresh = initialNodes.find((fn) => fn.id === n.id);
+      if (fresh) {
+        return { ...n, data: fresh.data, style: fresh.style, selected: fresh.data.isSelected };
       }
-    }
-    return connected;
-  }, [hoveredId, selectedId]);
+      return n;
+    });
+  }, [nodes, initialNodes]);
+
+  const syncedEdges = useMemo(() => {
+    return edges.map((e) => {
+      const fresh = initialEdges.find((fe) => fe.id === e.id);
+      if (fresh) {
+        return { ...e, selected: fresh.selected, style: fresh.style };
+      }
+      return e;
+    });
+  }, [edges, initialEdges]);
 
   const selectedNode = useMemo(
     () => AGENT_NODES.find((n) => n.id === selectedId) ?? null,
@@ -477,243 +870,172 @@ export function AgentNetworkGraph() {
   );
 
   return (
-    <div className="relative w-full">
-      {/* ── SVG Canvas ─────────────────────────────────────── */}
-      <svg
-        viewBox="0 0 920 720"
-        className="w-full h-auto max-h-[80vh]"
+    <div
+      className="relative w-full"
+      style={{ height: "min(80vh, 800px)", minHeight: "600px" }}
+    >
+      {/* ── React Flow Graph ────────────────────────────────── */}
+      <ReactFlow
+        nodes={syncedNodes}
+        edges={syncedEdges}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
+        onNodeClick={onNodeClick}
+        onNodeMouseEnter={onNodeMouseEnter}
+        onNodeMouseLeave={onNodeMouseLeave}
+        onPaneClick={onPaneClick}
+        nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
+        fitView
+        fitViewOptions={{ padding: 0.3 }}
+        minZoom={0.3}
+        maxZoom={1.8}
+        defaultViewport={{ x: 0, y: 0, zoom: 0.85 }}
+        attributionPosition="bottom-right"
+        nodesDraggable
+        nodesConnectable={false}
+        elementsSelectable
+        proOptions={{ hideAttribution: true }}
         style={{ background: "transparent" }}
       >
-        {/* Background glow rings */}
-        <circle
-          cx={CENTER_X}
-          cy={CENTER_Y}
-          r={INNER_RADIUS}
-          fill="none"
-          stroke="rgba(255,171,0,0.06)"
-          strokeWidth={1}
-          strokeDasharray="6 4"
+        {/* Dark grid background */}
+        <Background
+          color="rgba(0, 188, 212, 0.05)"
+          gap={24}
+          size={1.5}
+          style={{ backgroundColor: "#080a0f" }}
         />
-        <circle
-          cx={CENTER_X}
-          cy={CENTER_Y}
-          r={OUTER_RADIUS}
-          fill="none"
-          stroke="rgba(0,188,212,0.04)"
-          strokeWidth={1}
-          strokeDasharray="4 6"
+        <Controls
+          style={{
+            background: "#0d1117",
+            border: "1px solid #1a1f2e",
+            borderRadius: "8px",
+          }}
         />
+      </ReactFlow>
 
-        {/* ── Edges ─────────────────────────────────────── */}
-        {EDGES.map((edge, i) => {
-          const fromPos = posMap.get(edge.from);
-          const toPos = posMap.get(edge.to);
-          if (!fromPos || !toPos) return null;
-          const key = `${edge.from}->${edge.to}`;
-          const isHighlighted = highlightedEdges.has(key);
-          return (
-            <g key={i}>
-              <path
-                d={edgePath(fromPos.x, fromPos.y, toPos.x, toPos.y, fromPos.r, toPos.r)}
-                fill="none"
-                stroke={isHighlighted ? "rgba(0,230,118,0.5)" : "rgba(255,255,255,0.06)"}
-                strokeWidth={isHighlighted ? 1.5 : 0.5}
-                strokeDasharray={isHighlighted ? "4 3" : "3 6"}
-                className={isHighlighted ? "edge-glow" : ""}
-              />
-              {/* Animated dot along path for highlighted edges */}
-              {isHighlighted && (
-                <circle r={3} fill="#00e676" opacity={0.8}>
-                  <animateMotion
-                    dur="2s"
-                    repeatCount="indefinite"
-                    path={edgePath(fromPos.x, fromPos.y, toPos.x, toPos.y, fromPos.r, toPos.r)}
-                  />
-                </circle>
-              )}
-            </g>
-          );
-        })}
-
-        {/* ── Nodes ─────────────────────────────────────── */}
-        {AGENT_NODES.map((node) => {
-          const pos = posMap.get(node.id)!;
-          const status = node.ring === "center" ? "active" : getSimulatedStatus(node.id);
-          const statusColor = getStatusColor(status);
-          const isSelected = selectedId === node.id;
-          const isHovered = hoveredId === node.id;
-          const isDimmed =
-            (hoveredId || selectedId) && !isHovered && !isSelected;
-
-          return (
-            <g
-              key={node.id}
-              transform={`translate(${pos.x},${pos.y})`}
-              className="cursor-pointer"
-              style={{ opacity: isDimmed ? 0.35 : 1, transition: "opacity 0.3s" }}
-              onMouseEnter={() => setHoveredId(node.id)}
-              onMouseLeave={() => setHoveredId(null)}
-              onClick={() =>
-                setSelectedId(selectedId === node.id ? null : node.id)
-              }
-            >
-              {/* Glow ring */}
-              <circle
-                r={pos.r + 8}
-                fill="none"
-                stroke={node.glowColor}
-                strokeWidth={isSelected || isHovered ? 3 : 1}
-                className={node.ring === "center" ? "animate-glow-pulse" : ""}
-                style={{
-                  opacity: isSelected || isHovered ? 0.6 : 0.15,
-                  transition: "all 0.3s",
-                }}
-              />
-              {/* Outer ring (status indicator) */}
-              <circle
-                r={pos.r + 3}
-                fill="none"
-                stroke={statusColor}
-                strokeWidth={2}
-                opacity={0.8}
-                className={
-                  status === "active" ? "animate-pulse-slow" : ""
-                }
-              />
-              {/* Main circle */}
-              <circle
-                r={pos.r}
-                fill={node.color}
-                opacity={0.25}
-                stroke={node.color}
-                strokeWidth={1.5}
-              />
-              {/* Inner filled circle */}
-              <circle r={pos.r - 3} fill={node.color} opacity={0.15} />
-              {/* Icon / text */}
-              <text
-                textAnchor="middle"
-                dy={node.ring === "center" ? "0.35em" : "0.35em"}
-                style={{
-                  fontSize:
-                    node.ring === "center"
-                      ? "22px"
-                      : node.ring === "inner"
-                      ? "10px"
-                      : "8px",
-                  fill: "#e0e6ed",
-                  fontWeight: 700,
-                  fontFamily: "'JetBrains Mono', monospace",
-                  pointerEvents: "none",
-                }}
-              >
-                {node.ring === "center"
-                  ? node.icon
-                  : node.displayName.slice(0, 4)}
-              </text>
-              {/* Node label */}
-              <text
-                textAnchor="middle"
-                dy={pos.r + 16}
-                style={{
-                  fontSize: node.ring === "center" ? "11px" : "8px",
-                  fill: node.ring === "center" ? "#ffab00" : "#b0bec5",
-                  fontWeight: node.ring === "center" ? 800 : 500,
-                  fontFamily: "'JetBrains Mono', monospace",
-                  pointerEvents: "none",
-                  letterSpacing: "0.5px",
-                }}
-              >
-                {node.displayName}
-              </text>
-            </g>
-          );
-        })}
-      </svg>
-
-      {/* ── Detail Panel ─────────────────────────────────────── */}
-      {selectedNode && (
-        <div className="absolute bottom-4 left-4 right-4 md:left-auto md:right-4 md:w-80 glass-card p-5 animate-slide-in-right z-10 max-h-[320px] overflow-y-auto">
-          <button
-            onClick={() => setSelectedId(null)}
-            className="absolute top-2 right-3 text-gray-400 hover:text-white text-lg leading-none"
+      {/* ── Detail Card (Framer Motion) ──────────────────────── */}
+      <AnimatePresence>
+        {selectedNode && (
+          <motion.div
+            initial={{ opacity: 0, y: 16, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 16, scale: 0.96 }}
+            transition={{ duration: 0.25, ease: "easeOut" }}
+            className="absolute bottom-4 right-4 w-80 max-w-[calc(100%-2rem)] z-20"
+            style={{
+              background: "rgba(13, 17, 23, 0.92)",
+              backdropFilter: "blur(16px)",
+              WebkitBackdropFilter: "blur(16px)",
+              border: "1px solid #1a1f2e",
+              borderRadius: "12px",
+              padding: "20px",
+              boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
+              maxHeight: "360px",
+              overflowY: "auto",
+            }}
           >
-            ×
-          </button>
-          <div className="flex items-center gap-3 mb-3">
-            <span className="text-2xl">{selectedNode.icon}</span>
-            <div>
-              <h3 className="text-white font-bold text-sm">{selectedNode.name}</h3>
-              <span
-                className="text-xs font-mono px-2 py-0.5 rounded-full"
-                style={{
-                  background: `${selectedNode.color}20`,
-                  color: selectedNode.color,
-                  border: `1px solid ${selectedNode.color}40`,
-                }}
-              >
-                {selectedNode.role}
-              </span>
-            </div>
-            <div className="ml-auto flex items-center gap-1.5">
-              <span
-                className="inline-block w-2 h-2 rounded-full"
-                style={{
-                  backgroundColor: getStatusColor(
-                    getSimulatedStatus(selectedNode.id)
-                  ),
-                  boxShadow: `0 0 6px ${getStatusColor(getSimulatedStatus(selectedNode.id))}`,
-                }}
-              />
-              <span className="text-xs text-gray-400 font-mono">
-                {getSimulatedStatus(selectedNode.id).toUpperCase()}
-              </span>
-            </div>
-          </div>
-          <p className="text-gray-400 text-xs leading-relaxed mb-3">
-            {selectedNode.description}
-          </p>
-          <div className="space-y-2 text-xs">
-            <div className="flex justify-between py-1.5 border-b border-[#1a1f2e]">
-              <span className="text-gray-500">Ring</span>
-              <span className="text-white capitalize font-mono">
-                {selectedNode.ring === "center"
-                  ? "Master"
-                  : selectedNode.ring === "inner"
-                  ? "Core"
-                  : "Specialized"}
-              </span>
-            </div>
-            <div className="flex justify-between py-1.5 border-b border-[#1a1f2e]">
-              <span className="text-gray-500">Confidence</span>
-              <span className="text-accent-green font-mono">
-                {Math.round(50 + Math.random() * 45)}%
-              </span>
-            </div>
-            <div className="flex justify-between py-1.5 border-b border-[#1a1f2e]">
-              <span className="text-gray-500">Last Signal</span>
-              <span className="text-white font-mono">
-                {["LONG", "SHORT", "NEUTRAL"][
-                  Math.floor(Math.random() * 3)
-                ]}
-              </span>
-            </div>
-            <div className="flex justify-between py-1.5">
-              <span className="text-gray-500">Connections</span>
-              <span className="text-accent-cyan font-mono">
-                {
-                  EDGES.filter(
-                    (e) => e.from === selectedNode.id || e.to === selectedNode.id
-                  ).length
-                }
-              </span>
-            </div>
-          </div>
-        </div>
-      )}
+            {/* Close button */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setSelectedId(null);
+              }}
+              className="absolute top-3 right-3 text-gray-400 hover:text-white text-lg leading-none transition-colors"
+            >
+              ×
+            </button>
 
-      {/* ── Legend ──────────────────────────────────────────── */}
-      <div className="absolute top-4 right-4 glass-card p-3 space-y-1.5 hidden md:block">
+            <div className="flex items-center gap-3 mb-3">
+              <span className="text-2xl">{selectedNode.icon}</span>
+              <div>
+                <h3 className="text-white font-bold text-sm">
+                  {selectedNode.name}
+                </h3>
+                <span
+                  className="text-xs font-mono px-2 py-0.5 rounded-full inline-block mt-0.5"
+                  style={{
+                    background: `${selectedNode.color}18`,
+                    color: selectedNode.color,
+                    border: `1px solid ${selectedNode.color}33`,
+                  }}
+                >
+                  {selectedNode.role}
+                </span>
+              </div>
+              <div className="ml-auto flex items-center gap-1.5">
+                <span
+                  className="inline-block w-2 h-2 rounded-full"
+                  style={{
+                    backgroundColor: getStatusColor(
+                      getSimulatedStatus(selectedNode.id)
+                    ),
+                    boxShadow: `0 0 6px ${getStatusColor(getSimulatedStatus(selectedNode.id))}`,
+                  }}
+                />
+                <span className="text-xs text-gray-400 font-mono uppercase">
+                  {getSimulatedStatus(selectedNode.id)}
+                </span>
+              </div>
+            </div>
+
+            <p className="text-gray-400 text-xs leading-relaxed mb-3">
+              {selectedNode.description}
+            </p>
+
+            <div className="space-y-2 text-xs">
+              <div className="flex justify-between py-1.5 border-b border-[#1a1f2e]">
+                <span className="text-gray-500">Ring</span>
+                <span className="text-white capitalize font-mono">
+                  {selectedNode.ring === "center"
+                    ? "Master"
+                    : selectedNode.ring === "inner"
+                    ? "Core"
+                    : "Specialized"}
+                </span>
+              </div>
+              <div className="flex justify-between py-1.5 border-b border-[#1a1f2e]">
+                <span className="text-gray-500">Connections</span>
+                <span className="text-[#00bcd4] font-mono">
+                  {
+                    EDGES.filter(
+                      (e) =>
+                        e.from === selectedNode.id || e.to === selectedNode.id
+                    ).length
+                  }
+                </span>
+              </div>
+              <div className="flex justify-between py-1.5">
+                <span className="text-gray-500">Level</span>
+                <span className="text-[#00e676] font-mono">
+                  {selectedNode.ring === "center"
+                    ? "Orchestrator"
+                    : selectedNode.ring === "inner"
+                    ? "Core Decision"
+                    : selectedNode.role === "Intelligence"
+                    ? "Level 1 · Intelligence"
+                    : selectedNode.role === "Analysis"
+                    ? "Level 2 · Analysis"
+                    : "Level 3 · Execution"}
+                </span>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Legend ────────────────────────────────────────────── */}
+      <div
+        className="absolute top-4 right-4 z-10 hidden md:block"
+        style={{
+          background: "rgba(13, 17, 23, 0.85)",
+          backdropFilter: "blur(12px)",
+          WebkitBackdropFilter: "blur(12px)",
+          border: "1px solid #1a1f2e",
+          borderRadius: "10px",
+          padding: "12px 14px",
+        }}
+      >
         <h4 className="text-xs font-semibold text-gray-400 mb-2 font-mono tracking-wider">
           LEGEND
         </h4>
@@ -724,15 +1046,39 @@ export function AgentNetworkGraph() {
           { label: "Execution", color: "#ff3d00" },
           { label: "Monitoring", color: "#7c4dff" },
         ].map((item) => (
-          <div key={item.label} className="flex items-center gap-2 text-xs">
+          <div key={item.label} className="flex items-center gap-2 text-xs mb-1.5">
             <span
-              className="inline-block w-3 h-3 rounded-full"
-              style={{ backgroundColor: item.color }}
+              className="inline-block w-3 h-3 rounded-full flex-shrink-0"
+              style={{
+                backgroundColor: item.color,
+                boxShadow: `0 0 6px ${item.color}66`,
+              }}
             />
             <span className="text-gray-300">{item.label}</span>
           </div>
         ))}
       </div>
+
+      {/* ── Particle Flow Keyframes (injected via style tag) ── */}
+      <style>{`
+        @keyframes agentPulse {
+          0%, 100% { transform: scale(1); opacity: 0.2; }
+          50% { transform: scale(1.08); opacity: 0.5; }
+        }
+        @keyframes particleFlow {
+          0% { opacity: 0; }
+          20% { opacity: 1; }
+          80% { opacity: 1; }
+          100% { opacity: 0; }
+        }
+        .orchestrator-glow {
+          animation: orchestratorGlow 2.5s ease-in-out infinite !important;
+        }
+        @keyframes orchestratorGlow {
+          0%, 100% { transform: scale(1); opacity: 0.3; }
+          50% { transform: scale(1.06); opacity: 0.6; }
+        }
+      `}</style>
     </div>
   );
 }

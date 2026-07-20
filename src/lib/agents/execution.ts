@@ -6,7 +6,7 @@
 // Paper trading mode (default): simulates fills with realistic slippage.
 // Live mode: placeholder for future exchange API integration.
 
-import { createHmac } from "crypto";
+// HMAC-SHA256: import { createHmac } from "crypto" when Binance live order code is added
 import { BaseAgent } from "./base";
 import type { AgentReport, OrchestratorDecision } from "./types";
 import { openTrade, closeTrade } from "~/lib/trading-engine";

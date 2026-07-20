@@ -5,7 +5,7 @@
 //
 // pSOL Auto-Staking: when payout > 0.01 SOL, auto-stake into Marinade.
 
-import { createHmac } from "crypto";
+// HMAC-SHA256: import { createHmac } from "crypto" when Binance API code is added
 import { triggerAutoStake, getPSolState, compoundYield, type PSolStakingState } from "./staking/psol";
 
 interface CapitalState {

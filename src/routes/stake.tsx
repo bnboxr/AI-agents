@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState, useEffect, useMemo } from "react";
-import { useAccount, useBalance } from "wagmi";
+import { useState, useEffect, useMemo, useCallback } from "react";
+import { useAccount, useChainId, useReadContract, useWriteContract, useBalance, useWaitForTransactionReceipt } from "wagmi";
+import { parseUnits, formatUnits, parseEther, type Address } from "viem";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import {
   getStakingProtocols,
@@ -24,20 +25,340 @@ export const Route = createFileRoute("/stake")({
   component: StakePage,
 });
 
+// ── Lido stETH ABI ────────────────────────────────────────────────
+const LIDO_STETH_ABI = [
+  {
+    inputs: [{ name: "_referral", type: "address" }],
+    name: "submit",
+    outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "payable",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "getTotalPooledEther",
+    outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "getTotalShares",
+    outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "view",
+    type: "function",
+  },
+] as const;
+
+// ── AAVE V3 Pool ABI ──────────────────────────────────────────────
+const AAVE_POOL_ABI = [
+  {
+    inputs: [
+      { name: "asset", type: "address" },
+      { name: "amount", type: "uint256" },
+      { name: "onBehalfOf", type: "address" },
+      { name: "referralCode", type: "uint16" },
+    ],
+    name: "supply",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [
+      { name: "asset", type: "address" },
+      { name: "amount", type: "uint256" },
+      { name: "to", type: "address" },
+    ],
+    name: "withdraw",
+    outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [{ name: "asset", type: "address" }],
+    name: "getReserveData",
+    outputs: [
+      { name: "configuration", type: "uint256" },
+      { name: "liquidityIndex", type: "uint128" },
+      { name: "currentLiquidityRate", type: "uint128" },
+      { name: "variableBorrowIndex", type: "uint128" },
+      { name: "currentVariableBorrowRate", type: "uint128" },
+      { name: "currentStableBorrowRate", type: "uint128" },
+      { name: "lastUpdateTimestamp", type: "uint40" },
+      { name: "id", type: "uint16" },
+      { name: "aTokenAddress", type: "address" },
+      { name: "stableDebtTokenAddress", type: "address" },
+      { name: "variableDebtTokenAddress", type: "address" },
+      { name: "interestRateStrategyAddress", type: "address" },
+      { name: "accruedToTreasury", type: "uint128" },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+] as const;
+
+// ── ERC-20 ABI (approve) ──────────────────────────────────────────
+const ERC20_ABI = [
+  {
+    inputs: [
+      { name: "spender", type: "address" },
+      { name: "amount", type: "uint256" },
+    ],
+    name: "approve",
+    outputs: [{ name: "", type: "bool" }],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [
+      { name: "owner", type: "address" },
+      { name: "spender", type: "address" },
+    ],
+    name: "allowance",
+    outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "view",
+    type: "function",
+  },
+] as const;
+
+// ── Known contract addresses ──────────────────────────────────────
+const LIDO_STETH_ADDRESS: Record<number, `0x${string}`> = {
+  1: "0xae7ab96520DE3A18E5e111B5EaAb0953127DfE84", // Ethereum
+};
+
+const AAVE_POOL_ADDRESSES: Record<number, `0x${string}`> = {
+  1: "0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2",       // Ethereum
+  42161: "0x794a61358D6845594F94dc1DB02A252b5b4814aD",
+  10: "0x794a61358D6845594F94dc1DB02A252b5b4814aD",
+  137: "0x794a61358D6845594F94dc1DB02A252b5b4814aD",
+  8453: "0xA238Dd80C259a72e81d7e4664a9801593F98d1c5",
+  43114: "0x794a61358D6845594F94dc1DB02A252b5b4814aD",
+};
+
+const SUPPORTED_ASSETS: Record<number, { address: `0x${string}`; symbol: string; decimals: number }[]> = {
+  1: [
+    { address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", symbol: "USDC", decimals: 6 },
+    { address: "0xdAC17F958D2ee523a2206206994597C13D831ec7", symbol: "USDT", decimals: 6 },
+    { address: "0x6B175474E89094C44Da98b954EedeAC495271d0F", symbol: "DAI", decimals: 18 },
+    { address: "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE", symbol: "ETH", decimals: 18 },
+  ],
+  42161: [
+    { address: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831", symbol: "USDC", decimals: 6 },
+  ],
+};
+
+// ── Types for execution state ─────────────────────────────────────
+interface StakeExecutionState {
+  protocol: StakingProtocol;
+  amount: string;
+  txHash: `0x${string}` | null;
+  status: 'idle' | 'approving' | 'approve-confirming' | 'staking' | 'staking-confirming' | 'confirmed' | 'unstaking' | 'unstaking-confirming';
+}
+
 function StakePage() {
   const initial = Route.useLoaderData();
-  const { isConnected } = useAccount();
+  const { address, isConnected } = useAccount();
+  const chainId = useChainId();
   const [protocols, setProtocols] = useState(initial.protocols);
-  const [byChain] = useState(initial.byChain);
-  const [bestAPY] = useState(initial.bestAPY);
+  const [byChain, setByChain] = useState(initial.byChain);
+  const [bestAPY, setBestAPY] = useState(initial.bestAPY);
   const [apyHistory] = useState(initial.apyHistory);
   const [selectedChain, setSelectedChain] = useState<string>("all");
-  const [stakeAmount, setStakeAmount] = useState("");
   const [selectedProtocol, setSelectedProtocol] = useState<StakingProtocol | null>(null);
-  const [staking, setStaking] = useState(false);
-  const [staked, setStaked] = useState(false);
-  const [stakeTx, setStakeTx] = useState("");
+  const [stakeAmount, setStakeAmount] = useState("");
+  const [execState, setExecState] = useState<StakeExecutionState | null>(null);
 
+  // ── Determine if the selected protocol supports direct staking ──
+  const canStakeDirectly = useMemo(() => {
+    if (!selectedProtocol || !chainId) return false;
+    // Lido stETH on Ethereum mainnet
+    if (selectedProtocol.id === 'lido-steth' && chainId === 1) return true;
+    // AAVE lending protocols on supported chains
+    if (selectedProtocol.type === 'lending' && AAVE_POOL_ADDRESSES[chainId]) return true;
+    return false;
+  }, [selectedProtocol, chainId]);
+
+  const isLidoProtocol = selectedProtocol?.id === 'lido-steth';
+  const isAaveLending = selectedProtocol?.type === 'lending';
+
+  const poolAddress = chainId ? AAVE_POOL_ADDRESSES[chainId] : undefined;
+  const stethAddress = chainId ? LIDO_STETH_ADDRESS[chainId] : undefined;
+
+  // ── Get the asset address for AAVE supply ───────────────────────
+  const assetInfo = useMemo(() => {
+    if (!isAaveLending || !chainId) return null;
+    const assets = SUPPORTED_ASSETS[chainId] || [];
+    return assets.find(a => a.symbol === selectedProtocol?.asset) ?? assets[0];
+  }, [isAaveLending, chainId, selectedProtocol]);
+
+  // ── Read: AAVE reserve data ────────────────────────────────────
+  const { data: reserveData } = useReadContract({
+    address: poolAddress,
+    abi: AAVE_POOL_ABI,
+    functionName: "getReserveData",
+    args: isAaveLending && assetInfo ? [assetInfo.address] : undefined,
+    query: { enabled: !!poolAddress && isAaveLending && !!assetInfo },
+  });
+
+  const liveSupplyAPY = reserveData
+    ? (Number(reserveData[2]) / 1e27) * 100
+    : null;
+
+  // ── Read: Lido pool stats ──────────────────────────────────────
+  const { data: lidoPooledEth } = useReadContract({
+    address: stethAddress,
+    abi: LIDO_STETH_ABI,
+    functionName: "getTotalPooledEther",
+    query: { enabled: !!stethAddress && isLidoProtocol },
+  });
+
+  // ── Read: allowance for AAVE ────────────────────────────────────
+  const { data: tokenAllowance } = useReadContract({
+    address: assetInfo?.address,
+    abi: ERC20_ABI,
+    functionName: "allowance",
+    args: address && poolAddress && assetInfo ? [address, poolAddress] : undefined,
+    query: { enabled: !!assetInfo && !!address && !!poolAddress && isAaveLending },
+  });
+
+  // ── Wallet balance ──────────────────────────────────────────────
+  const { data: ethBalance } = useBalance({
+    address,
+    query: { enabled: !!address && isLidoProtocol },
+  });
+
+  const { data: tokenBalance } = useBalance({
+    address,
+    token: isAaveLending ? assetInfo?.address : undefined,
+    query: { enabled: !!address && isAaveLending && !!assetInfo },
+  });
+
+  // ── Write contracts ─────────────────────────────────────────────
+  const { writeContract: writeContractRaw, data: txData, isPending: txPending } = useWriteContract();
+
+  // Track tx hash from writeContract return
+  useEffect(() => {
+    if (txData && execState && !execState.txHash) {
+      setExecState(prev => prev ? { ...prev, txHash: txData } : null);
+    }
+  }, [txData]);
+
+  const { isLoading: txConfirming, isSuccess: txConfirmed } = useWaitForTransactionReceipt({
+    hash: execState?.txHash ?? undefined,
+  });
+
+  // ── Update execState based on tx status ─────────────────────────
+  useEffect(() => {
+    if (!execState) return;
+    if (txConfirming && execState.status === 'staking') {
+      setExecState(prev => prev ? { ...prev, status: 'staking-confirming' } : null);
+    }
+    if (txConfirming && execState.status === 'approving') {
+      setExecState(prev => prev ? { ...prev, status: 'approve-confirming' } : null);
+    }
+    if (txConfirmed && (execState.status === 'staking-confirming' || execState.status === 'approve-confirming')) {
+      // If we just approved, now do the actual stake
+      if (execState.status === 'approve-confirming' && execState.protocol) {
+        executeStake(execState.protocol, execState.amount);
+      } else {
+        setExecState(prev => prev ? { ...prev, status: 'confirmed' } : null);
+      }
+    }
+    if (txConfirmed && execState.status === 'unstaking-confirming') {
+      setExecState(prev => prev ? { ...prev, status: 'confirmed' } : null);
+    }
+  }, [txConfirming, txConfirmed]);
+
+  // ── Poll protocols every 5 minutes ──────────────────────────────
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      try {
+        const [freshProtocols, freshByChain, freshBestAPY] = await Promise.all([
+          getStakingProtocols(),
+          getStakingByChain(),
+          getBestAPYPerAsset(),
+        ]);
+        setProtocols(freshProtocols);
+        setByChain(freshByChain);
+        setBestAPY(freshBestAPY);
+      } catch {
+        // keep stale data on error
+      }
+    }, 300_000); // 5 minutes
+    return () => clearInterval(interval);
+  }, []);
+
+  // ── Execute real staking ────────────────────────────────────────
+  const executeStake = useCallback(async (protocol: StakingProtocol, amount: string) => {
+    if (!address || !amount) return;
+
+    if (protocol.id === 'lido-steth' && stethAddress) {
+      // Lido: submit ETH to receive stETH
+      const wei = parseEther(amount);
+      setExecState({ protocol, amount, txHash: null, status: 'staking' });
+      writeContractRaw({
+        address: stethAddress,
+        abi: LIDO_STETH_ABI,
+        functionName: "submit",
+        args: [address], // _referral = self
+        value: wei,
+      });
+    } else if (protocol.type === 'lending' && poolAddress && assetInfo) {
+      // AAVE: first approve, then supply
+      if (tokenAllowance) {
+        try {
+          const parsed = parseUnits(amount, assetInfo.decimals);
+          if (tokenAllowance < parsed) {
+            // Need approval first
+            setExecState({ protocol, amount, txHash: null, status: 'approving' });
+            writeContractRaw({
+              address: assetInfo.address,
+              abi: ERC20_ABI,
+              functionName: "approve",
+              args: [poolAddress, parseUnits("999999999", assetInfo.decimals)],
+            });
+            return;
+          }
+        } catch {
+          // fall through to direct supply
+        }
+      }
+      // Supply directly
+      const parsed = parseUnits(amount, assetInfo.decimals);
+      setExecState({ protocol, amount, txHash: null, status: 'staking' });
+      writeContractRaw({
+        address: poolAddress,
+        abi: AAVE_POOL_ABI,
+        functionName: "supply",
+        args: [assetInfo.address, parsed, address, 0],
+      });
+    }
+  }, [address, stethAddress, poolAddress, assetInfo, tokenAllowance, writeContractRaw]);
+
+  const handleStake = async () => {
+    if (!selectedProtocol || !stakeAmount) return;
+    executeStake(selectedProtocol, stakeAmount);
+  };
+
+  const handleUnstake = () => {
+    if (!selectedProtocol || !stakeAmount || !address || !poolAddress || !assetInfo) return;
+    const parsed = parseUnits(stakeAmount, assetInfo.decimals);
+    setExecState({ protocol: selectedProtocol, amount: stakeAmount, txHash: null, status: 'unstaking' });
+    writeContractRaw({
+      address: poolAddress,
+      abi: AAVE_POOL_ABI,
+      functionName: "withdraw",
+      args: [assetInfo.address, parsed, address],
+    });
+  };
+
+  const handleReset = () => {
+    setExecState(null);
+    setStakeAmount("");
+  };
+
+  // ── Derived data ────────────────────────────────────────────────
   const chains = useMemo(() => {
     const unique = new Map<string, string>();
     protocols.forEach(p => unique.set(p.chain, p.chain.charAt(0).toUpperCase() + p.chain.slice(1)));
@@ -54,46 +375,48 @@ function StakePage() {
     return apyHistory.find(h => h.protocolId === selectedProtocol.id);
   }, [selectedProtocol, apyHistory]);
 
-  const bestProtocol = protocols[0];
   const allAssets = useMemo(() => Object.keys(bestAPY), [bestAPY]);
 
-  const handleStake = async () => {
-    if (!selectedProtocol || !stakeAmount) return;
-    setStaking(true);
-    
-    // Simulate staking transaction - in production this would call the actual contract
-    await new Promise(r => setTimeout(r, 2000));
-    const txHash = `0x${Array.from({length: 64}, () => Math.floor(Math.random() * 16).toString(16)).join('')}`;
-    setStakeTx(txHash);
-    setStaked(true);
-    setStaking(false);
+  // Display APY: prefer live on-chain APY for selected protocol
+  const displayAPY = useMemo(() => {
+    if (!selectedProtocol) return null;
+    if (isAaveLending && liveSupplyAPY !== null) return liveSupplyAPY;
+    if (isLidoProtocol && selectedProtocol.apy > 0) return selectedProtocol.apy;
+    return selectedProtocol.apy;
+  }, [selectedProtocol, isAaveLending, isLidoProtocol, liveSupplyAPY]);
 
-    // Send notification
-    try {
-      await addNotification({
-        data: {
-          title: "Staking executat",
-          message: `${stakeAmount} ${selectedProtocol.asset} staked pe ${selectedProtocol.name} @ ${selectedProtocol.apy}% APY`,
-          type: "success",
-          chainId: selectedProtocol.chain,
-        },
-      });
-    } catch { /* notification best-effort */ }
+  const fmtUSD = (n: number) => {
+    if (n >= 1e9) return `$${(n / 1e9).toFixed(2)}B`;
+    if (n >= 1e6) return `$${(n / 1e6).toFixed(2)}M`;
+    return n.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 });
   };
-
-  const handleUnstake = async () => {
-    setStaking(true);
-    await new Promise(r => setTimeout(r, 2000));
-    const txHash = `0x${Array.from({length: 64}, () => Math.floor(Math.random() * 16).toString(16)).join('')}`;
-    setStakeTx("");
-    setStaked(false);
-    setStaking(false);
-    setStakeAmount("");
-  };
-
-  const fmtUSD = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 });
   const fmtAPY = (n: number) => `${n.toFixed(2)}%`;
   const fmtDate = (ts: number) => new Date(ts).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+
+  // ── Determine button state labels ───────────────────────────────
+  const getStakeButtonLabel = () => {
+    if (!isConnected) return "Connect wallet";
+    if (!execState) return `Stake ${selectedProtocol?.asset || ""}`;
+    switch (execState.status) {
+      case 'approving': return "Approving token...";
+      case 'approve-confirming': return "Confirming approval...";
+      case 'staking': return "Staking...";
+      case 'staking-confirming': return "Confirming stake...";
+      case 'confirmed': return "✓ Staked!";
+      case 'unstaking': return "Unstaking...";
+      case 'unstaking-confirming': return "Confirming unstake...";
+      default: return `Stake ${selectedProtocol?.asset || ""}`;
+    }
+  };
+
+  const isStakeButtonDisabled = () => {
+    if (!stakeAmount || !isConnected) return true;
+    if (execState) {
+      if (execState.status === 'confirmed') return false; // allow re-stake
+      if (execState.status !== 'idle') return true;
+    }
+    return false;
+  };
 
   return (
     <div className="pt-14 pb-12 px-4 sm:px-6 lg:px-8">
@@ -106,12 +429,15 @@ function StakePage() {
                 <span>⚡</span> Staking Automat
               </h1>
               <p className="text-gray-400 text-sm mt-1">
-                Detectează cele mai bune APY-uri și stake-uiește automat pe orice chain
+                Real APY data from DeFiLlama + protocol APIs — stake directly on-chain
               </p>
             </div>
             <div className="flex items-center gap-2">
               <span className="text-xs text-gray-400">
                 {protocols.length} protocoale • {chains.length} chain-uri
+              </span>
+              <span className="text-xs text-accent-green">
+                ● Live
               </span>
             </div>
           </div>
@@ -129,7 +455,7 @@ function StakePage() {
               return (
                 <button
                   key={asset}
-                  onClick={() => setSelectedProtocol(proto)}
+                  onClick={() => { setSelectedProtocol(proto); setExecState(null); setStakeAmount(""); }}
                   className={`card p-4 text-left transition-all duration-200 ${
                     selectedProtocol?.id === proto.id ? 'border-accent-blue bg-dark-hover' : ''
                   }`}
@@ -151,14 +477,14 @@ function StakePage() {
         <section className="animate-fade-in-up">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
             <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wider flex items-center gap-2">
-              <span className="text-accent-blue">▸</span> APY Scanner — Toate Protocoalele
+              <span className="text-accent-blue">▸</span> APY Scanner — All Protocols
             </h2>
             <select
               value={selectedChain}
               onChange={(e) => setSelectedChain(e.target.value)}
               className="glass-input py-1.5 px-3 text-sm text-gray-200 rounded-lg"
             >
-              <option value="all">🌐 Toate chain-urile</option>
+              <option value="all">🌐 All chains</option>
               {chains.map(c => (
                 <option key={c.id} value={c.id}>{c.name}</option>
               ))}
@@ -174,7 +500,7 @@ function StakePage() {
                     <th className="text-left py-3 px-4 font-medium">Chain</th>
                     <th className="text-left py-3 px-4 font-medium">Asset</th>
                     <th className="text-right py-3 px-4 font-medium">APY</th>
-                    <th className="text-right py-3 px-4 font-medium hidden sm:table-cell">Type</th>
+                    <th className="text-right py-3 px-4 font-medium hidden sm:table-cell">TVL</th>
                     <th className="text-right py-3 px-4 font-medium hidden md:table-cell">Contract</th>
                     <th className="text-center py-3 px-4 font-medium">Action</th>
                   </tr>
@@ -186,7 +512,7 @@ function StakePage() {
                       className={`border-b border-dark-border hover:bg-dark-hover transition-colors cursor-pointer ${
                         selectedProtocol?.id === proto.id ? 'bg-dark-hover' : ''
                       }`}
-                      onClick={() => setSelectedProtocol(proto)}
+                      onClick={() => { setSelectedProtocol(proto); setExecState(null); setStakeAmount(""); }}
                     >
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-2">
@@ -207,8 +533,8 @@ function StakePage() {
                           {fmtAPY(proto.apy)}
                         </span>
                       </td>
-                      <td className="py-3 px-4 text-right text-gray-400 hidden sm:table-cell capitalize">
-                        {proto.type.replace('-', ' ')}
+                      <td className="py-3 px-4 text-right text-gray-400 hidden sm:table-cell">
+                        {proto.tvl > 0 ? fmtUSD(proto.tvl) : "—"}
                       </td>
                       <td className="py-3 px-4 text-right text-mono-sm text-gray-400 hidden md:table-cell">
                         {proto.contractAddress === 'native' ? 'Native' : `${proto.contractAddress.slice(0, 6)}...${proto.contractAddress.slice(-4)}`}
@@ -239,32 +565,88 @@ function StakePage() {
               <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
                 <span>{selectedProtocol.name}</span>
                 <span className="text-sm text-gray-400">
-                  — {fmtAPY(selectedProtocol.apy)} APY
+                  — {displayAPY !== null ? fmtAPY(displayAPY) : "Loading..."} APY
                 </span>
               </h3>
 
-              {staked ? (
-                <div className="space-y-4">
-                  <div className="glass-card p-4 bg-accent-green/5 border-accent-green/20">
-                    <p className="text-accent-green text-sm font-medium">✓ Staked cu succes!</p>
-                    <p className="text-xs text-gray-400 mt-1">
-                      {stakeAmount} {selectedProtocol.asset} pe {selectedProtocol.name}
-                    </p>
-                    {stakeTx && (
-                      <p className="text-mono-sm text-gray-400 mt-1 text-[0.6rem] truncate">
-                        Tx: {stakeTx}
-                      </p>
-                    )}
+              {/* Live APY indicator */}
+              {isAaveLending && (
+                <div className="bg-dark-hover/50 rounded-xl p-3 border border-dark-border mb-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-gray-400">AAVE V3 Supply APY (on-chain)</span>
+                    <span className={`text-lg font-bold text-mono ${liveSupplyAPY !== null ? 'text-accent-green' : 'text-gray-400'}`}>
+                      {liveSupplyAPY !== null ? `${liveSupplyAPY.toFixed(2)}%` : "Reading..."}
+                    </span>
                   </div>
-                  <button
-                    onClick={handleUnstake}
-                    disabled={staking}
-                    className="w-full glass-button bg-gradient-to-r from-red-500/80 to-orange-500/80"
-                  >
-                    {staking ? "Procesare..." : `Unstake ${selectedProtocol.asset}`}
-                  </button>
                 </div>
-              ) : (
+              )}
+
+              {/* Lido TVL */}
+              {isLidoProtocol && lidoPooledEth != null && (
+                <div className="bg-dark-hover/50 rounded-xl p-3 border border-dark-border mb-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-gray-400">Total Pooled ETH (on-chain)</span>
+                    <span className="text-lg font-bold text-mono text-accent-blue">
+                      {parseFloat(formatUnits(lidoPooledEth, 18)).toLocaleString()} ETH
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Wallet Balance */}
+              <div className="flex items-center justify-between text-xs mb-4">
+                <span className="text-gray-400">
+                  Wallet: {
+                    isLidoProtocol
+                      ? (ethBalance ? `${parseFloat(ethBalance.formatted).toFixed(4)} ETH` : "...")
+                      : (tokenBalance ? `${parseFloat(tokenBalance.formatted).toFixed(4)} ${selectedProtocol.asset}` : "...")
+                  }
+                </span>
+                <button
+                  onClick={() => {
+                    if (isLidoProtocol && ethBalance) setStakeAmount(ethBalance.formatted);
+                    else if (tokenBalance) setStakeAmount(tokenBalance.formatted);
+                  }}
+                  className="text-accent-blue hover:text-accent-cyan transition-colors"
+                >
+                  MAX
+                </button>
+              </div>
+
+              {/* Transaction status display */}
+              {execState?.txHash && (
+                <div className={`glass-card p-3 mb-4 ${
+                  execState.status === 'confirmed' ? 'bg-accent-green/5 border-accent-green/20' :
+                  execState.status.includes('confirming') ? 'bg-accent-yellow/5 border-accent-yellow/20' :
+                  'bg-accent-blue/5 border-accent-blue/20'
+                }`}>
+                  <p className={`text-xs font-medium ${
+                    execState.status === 'confirmed' ? 'text-accent-green' :
+                    execState.status.includes('confirming') ? 'text-accent-yellow' :
+                    'text-accent-blue'
+                  }`}>
+                    {execState.status === 'confirmed'
+                      ? '✅ Transaction confirmed!'
+                      : execState.status.includes('confirming')
+                      ? '⏳ Waiting for confirmation...'
+                      : '📝 Transaction submitted'}
+                  </p>
+                  <p className="text-mono-sm text-gray-400 mt-1 text-[0.6rem] truncate">
+                    Tx: {execState.txHash}
+                  </p>
+                  {execState.status === 'confirmed' && (
+                    <button
+                      onClick={handleReset}
+                      className="mt-2 text-xs text-accent-blue hover:text-accent-cyan transition-colors"
+                    >
+                      Stake again →
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* Stake input (not yet confirmed) */}
+              {(!execState || execState.status === 'confirmed') && (
                 <div className="space-y-4">
                   <div>
                     <label className="text-xs text-gray-400 block mb-1.5">
@@ -278,37 +660,65 @@ function StakePage() {
                         placeholder={`0.0 ${selectedProtocol.asset}`}
                         className="glass-input flex-1 text-mono"
                       />
-                      <button
-                        onClick={() => setStakeAmount("1")}
-                        className="px-3 py-2 text-xs text-gray-400 hover:text-white card"
-                      >
-                        MAX
-                      </button>
                     </div>
-                    {stakeAmount && (
+                    {stakeAmount && (displayAPY ?? selectedProtocol.apy) > 0 && (
                       <p className="text-xs text-gray-400 mt-1">
                         Estimated yearly reward: <span className="text-accent-green">
-                          {(parseFloat(stakeAmount) * selectedProtocol.apy / 100).toFixed(4)} {selectedProtocol.asset}
+                          {(parseFloat(stakeAmount) * (displayAPY ?? selectedProtocol.apy) / 100).toFixed(4)} {selectedProtocol.asset}
                         </span>
                       </p>
                     )}
                   </div>
-                  <button
-                    onClick={handleStake}
-                    disabled={!stakeAmount || !isConnected || staking}
-                    className="w-full glass-button disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    {!isConnected
-                      ? "Conectează wallet-ul"
-                      : staking
-                      ? "Staking în curs..."
-                      : `Stake ${selectedProtocol.asset}`}
-                  </button>
-                  {!isConnected && (
-                    <p className="text-xs text-gray-400 text-center">
-                      Conectează wallet-ul pentru a executa staking real
-                    </p>
+
+                  {/* Can stake directly */}
+                  {canStakeDirectly ? (
+                    <div>
+                      <button
+                        onClick={handleStake}
+                        disabled={isStakeButtonDisabled()}
+                        className="w-full glass-button bg-gradient-to-r from-green-500/80 to-emerald-500/80 disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        {getStakeButtonLabel()}
+                      </button>
+                      {isAaveLending && (
+                        <button
+                          onClick={handleUnstake}
+                          disabled={!stakeAmount || !isConnected}
+                          className="w-full mt-2 glass-button bg-gradient-to-r from-red-500/80 to-orange-500/80 disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          Unstake {selectedProtocol.asset}
+                        </button>
+                      )}
+                      {!isConnected && (
+                        <p className="text-xs text-gray-400 text-center mt-2">
+                          Connect your wallet to execute real on-chain staking
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <div>
+                      <a
+                        href={selectedProtocol.website}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-full glass-button bg-gradient-to-r from-blue-500/80 to-cyan-500/80 text-center block"
+                      >
+                        Stake via {selectedProtocol.name} ↗
+                      </a>
+                      <p className="text-xs text-gray-400 text-center mt-2">
+                        Direct on-chain staking via HSMC is available for Lido (ETH) and AAVE V3 pools.
+                        For other protocols, you'll be redirected to their native interface.
+                      </p>
+                    </div>
                   )}
+                </div>
+              )}
+
+              {/* Pending state */}
+              {execState && execState.status !== 'confirmed' && execState.status !== 'idle' && (
+                <div className="text-center py-4">
+                  <div className="animate-spin inline-block w-6 h-6 border-2 border-accent-blue border-t-transparent rounded-full mb-2" />
+                  <p className="text-sm text-gray-400">{getStakeButtonLabel()}</p>
                 </div>
               )}
             </div>
@@ -368,7 +778,7 @@ function StakePage() {
         {/* ── Per Chain Groups ──────────────────────────────── */}
         <section className="animate-fade-in-up">
           <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3 flex items-center gap-2">
-            <span className="text-accent-blue">▸</span> Pe Chain-uri
+            <span className="text-accent-blue">▸</span> By Chain
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {byChain.map((group) => (
@@ -380,7 +790,7 @@ function StakePage() {
                   {group.protocols.slice(0, 4).map((proto) => (
                     <div
                       key={proto.id}
-                      onClick={() => setSelectedProtocol(proto)}
+                      onClick={() => { setSelectedProtocol(proto); setExecState(null); setStakeAmount(""); }}
                       className="flex items-center justify-between py-1.5 px-2 rounded hover:bg-dark-hover cursor-pointer transition-colors"
                     >
                       <div className="flex items-center gap-2">

@@ -163,7 +163,7 @@ export const initializeAgentScanning = createServerFn({ method: 'POST' }).handle
         chainId: chain.id,
         agentName: AGENTS[chain.id]?.name ?? 'Unknown',
         action: `Initializare monitorizare ${chain.name} — agentul e pregătit`,
-        timestamp: now - Math.floor(Math.random() * 60000),
+        timestamp: now - Math.floor(Date.now() % 60000),
         type: 'info',
       });
     }

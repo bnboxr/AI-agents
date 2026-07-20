@@ -25,7 +25,7 @@ import { SentimentAgent, getSentimentAgent } from "./sentiment";
 import { getVolumeAgent } from "./volume";
 import { ProbabilityAgent } from "./probability";
 import { ConfidenceAgent } from "./confidence";
-import { DevilsAdvocateAgent } from "./devils-advocate";
+import { DevilsAdvocateAgent, type DevilsAdvocateContext } from "./devils-advocate";
 import { PositionManagerAgent, getPositionManager } from "./position-manager";
 import type { PositionManagerOutput } from "./position-manager";
 import { isKillSwitchActive, getKillSwitchReason, markApiHealthy, recordLastPrice } from "../risk-engine";
@@ -680,8 +680,8 @@ async function gatherReports(ctx: PriceContext): Promise<AgentReport[]> {
     const riskData = riskReport.data as unknown as RiskAssessment | undefined;
 
     // Feed trade history from learning agent
-    const allTrades = (learningAgent as any).trades ?? [];
-    const conditionStats = (learningAgent as any).conditionStats ?? new Map();
+    const allTrades = learningAgent.getTrades();
+    const conditionStats = learningAgent.getConditionStats();
     probabilityAgent.feedTradeData(allTrades, conditionStats);
 
     // Derive trend score from existing reports
@@ -1090,39 +1090,45 @@ function makeDecision(
   // If VETO → override to WAIT/NEUTRAL immediately.
   let daLine = "";
   try {
-    const daContext = {
+    const daContext: DevilsAdvocateContext = {
       token: priceContext.token,
       currentPrice: priceContext.currentPrice,
       ohlcv: priceContext.ohlcv,
       reports,
-      // Optional: extract from liquidity agent report if available
+      fundingRate: undefined,
+      openInterestChange24h: undefined,
+      spread: undefined,
+      avgSpread: undefined,
     };
 
-    // Attempt to enrich with liquidity data from agent reports
+    // Enrich with liquidity data from agent reports
     const liqReport = reports.find((r) => r.role === "liquidity");
     if (liqReport?.data) {
-      const liqData = liqReport.data as Record<string, any>;
-      if (liqData.fundingRate !== undefined) {
-        (daContext as any).fundingRate = liqData.fundingRate;
+      const liqData = liqReport.data;
+      if (typeof liqData.fundingRate === 'number') {
+        daContext.fundingRate = liqData.fundingRate;
       }
-      if (liqData.openInterestChange24h !== undefined) {
-        (daContext as any).openInterestChange24h = liqData.openInterestChange24h;
+      if (typeof liqData.openInterestChange24h === 'number') {
+        daContext.openInterestChange24h = liqData.openInterestChange24h;
       }
-      if (liqData.spread !== undefined) {
-        (daContext as any).spread = liqData.spread;
+      if (typeof liqData.spread === 'number') {
+        daContext.spread = liqData.spread;
       }
-      if (liqData.avgSpread !== undefined) {
-        (daContext as any).avgSpread = liqData.avgSpread;
+      if (typeof liqData.avgSpread === 'number') {
+        daContext.avgSpread = liqData.avgSpread;
       }
     }
 
     // Also check for funding/oi directly in report data
-    const marketReport = reports.find((r) => r.role === "market");
-    if ((daContext as any).fundingRate === undefined && (marketReport?.data as any)?.fundingRate !== undefined) {
-      (daContext as any).fundingRate = (marketReport?.data as any).fundingRate;
+    if (daContext.fundingRate === undefined) {
+      const marketReport = reports.find((r) => r.role === "market");
+      const mrFundingRate = marketReport?.data as Record<string, unknown> | undefined;
+      if (typeof mrFundingRate?.fundingRate === 'number') {
+        daContext.fundingRate = mrFundingRate.fundingRate;
+      }
     }
 
-    const daResult = devilsAdvocateAgent.detectRedFlags(daContext as any);
+    const daResult = devilsAdvocateAgent.detectRedFlags(daContext);
 
     // ── VETO: Block trade immediately ──
     if (daResult.veto || daResult.severity === "VETO") {

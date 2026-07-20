@@ -7,7 +7,6 @@
 import { BaseAgent } from "./base";
 import { readdirSync, readFileSync, existsSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { getApiKey } from "~/lib/api-keys";
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -431,7 +430,7 @@ export class SystemAuditAgent extends BaseAgent {
     ];
 
     for (const { key, label, severity } of requiredVars) {
-      const val = getApiKey(key as any) || process.env[key];
+      const val = process.env[key];
       if (!val || val.trim().length === 0) {
         issues.push({
           severity,

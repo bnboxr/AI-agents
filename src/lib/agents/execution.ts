@@ -13,6 +13,18 @@ import type { AgentReport, OrchestratorDecision } from "./types";
 import { openTrade, closeTrade } from "~/lib/trading-engine";
 import { getOrderBook, type OrderBook, type OrderBookLevel } from "./liquidity";
 
+/** Result type for trade opening: either a successful position or an error. */
+interface TradeOpenResult {
+  id?: string;
+  error?: string;
+}
+
+/** Result type for trade closing: either a successful close or an error. */
+interface TradeCloseResult {
+  id?: string;
+  error?: string;
+}
+
 export type ExecutionMode = "paper" | "live";
 
 export interface ExecutionResult {
@@ -347,7 +359,7 @@ export class ExecutionAgent extends BaseAgent {
     );
 
     try {
-      const position = await openTrade({
+      const position: TradeOpenResult = await openTrade({
         data: {
           chainId,
           token,
@@ -358,7 +370,7 @@ export class ExecutionAgent extends BaseAgent {
         },
       });
 
-      if ("error" in (position as any)) {
+      if ('error' in position && position.error) {
         return {
           success: false,
           filledPrice,
@@ -369,17 +381,17 @@ export class ExecutionAgent extends BaseAgent {
           side,
           size: decision.positionSize,
           timestamp,
-          error: (position as any).error,
+          error: position.error,
         };
       }
 
-      if (position && "id" in position) {
+      if (position && 'id' in position && position.id) {
         this.activePositionIds.add(position.id);
       }
 
       return {
         success: true,
-        tradeId: (position as any).id,
+        tradeId: position.id,
         filledPrice,
         requestedPrice: currentPrice,
         slippage,
@@ -492,14 +504,14 @@ export class ExecutionAgent extends BaseAgent {
     );
 
     try {
-      const result = await closeTrade({
+      const result: TradeCloseResult = await closeTrade({
         data: {
           id: positionId,
           exitPrice: filledPrice,
         },
       });
 
-      if ("error" in (result as any)) {
+      if ('error' in result && result.error) {
         return {
           success: false,
           tradeId: positionId,
@@ -511,7 +523,7 @@ export class ExecutionAgent extends BaseAgent {
           side: "EXIT",
           size: 0,
           timestamp,
-          error: (result as any).error,
+          error: result.error,
         };
       }
 

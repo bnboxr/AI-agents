@@ -181,6 +181,16 @@ export class LearningAgent extends BaseAgent {
     return accuracies.sort((a, b) => b.accuracy - a.accuracy);
   }
 
+  /** Get all recorded trades (read-only reference for external consumers). */
+  getTrades(): readonly TradeRecord[] {
+    return this.trades;
+  }
+
+  /** Get per-condition performance statistics. */
+  getConditionStats(): ReadonlyMap<MarketCondition, ConditionStats> {
+    return this.conditionStats;
+  }
+
   /**
    * Auto-Weight Adjustment: recalculate agent weights based on actual accuracy.
    * Called after every 20 closed trades.

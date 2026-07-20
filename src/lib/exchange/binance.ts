@@ -25,14 +25,44 @@ const REQUEST_TIMEOUT = 8_000;
 
 // ── Paper Trading State ────────────────────────────────────────────
 
+/**
+ * Parse paper trading balances from PAPER_BALANCES environment variable.
+ *
+ * Format: JSON string, e.g. `{"USDT":5000,"BTC":0.1,"ETH":0,"SOL":0,"BNB":0}`
+ *
+ * If the env var is not set or fails to parse, modest defaults are used:
+ *   USDT: 1000 (realistic starting capital for a new account)
+ *   All other assets: 0 (must be acquired through paper trading)
+ */
+function parsePaperBalances(): AssetBalance[] {
+  const envBalances = process.env.PAPER_BALANCES;
+  if (envBalances) {
+    try {
+      const parsed = JSON.parse(envBalances) as Record<string, unknown>;
+      if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+        return Object.entries(parsed).map(([asset, amount]) => ({
+          asset,
+          free: typeof amount === 'number' ? amount : 0,
+          locked: 0,
+          usdValue: asset === 'USDT' ? (typeof amount === 'number' ? amount : 0) : 0,
+        }));
+      }
+    } catch {
+      console.warn('[Binance] PAPER_BALANCES parse failed — using defaults');
+    }
+  }
+  // Modest defaults for a new account
+  return [
+    { asset: "USDT", free: 1_000, locked: 0, usdValue: 1_000 },
+    { asset: "BTC", free: 0, locked: 0, usdValue: 0 },
+    { asset: "ETH", free: 0, locked: 0, usdValue: 0 },
+    { asset: "SOL", free: 0, locked: 0, usdValue: 0 },
+    { asset: "BNB", free: 0, locked: 0, usdValue: 0 },
+  ];
+}
+
 const paperOrders = new Map<string, Order>();
-const paperBalances: AssetBalance[] = [
-  { asset: "USDT", free: 100_000, locked: 0, usdValue: 100_000 },
-  { asset: "BTC", free: 1.5, locked: 0, usdValue: 0 },
-  { asset: "ETH", free: 15, locked: 0, usdValue: 0 },
-  { asset: "SOL", free: 200, locked: 0, usdValue: 0 },
-  { asset: "BNB", free: 50, locked: 0, usdValue: 0 },
-];
+const paperBalances: AssetBalance[] = parsePaperBalances();
 let paperOrderCounter = 0;
 
 // ── Helpers ────────────────────────────────────────────────────────

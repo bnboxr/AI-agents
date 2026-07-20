@@ -26,6 +26,7 @@ import type { PaymentDestination, DestType } from "~/lib/payment-destinations";
 import { CHAINS } from "~/lib/chains";
 import { getExchangeConfigs, toggleExchange } from "~/lib/exchange";
 import type { ExchangeConfig } from "~/lib/exchange";
+import { getVenuePreference, setVenuePreference, type TradingVenue } from "~/lib/venue-selector";
 
 // ── Service definitions ────────────────────────────────────────────
 
@@ -126,6 +127,7 @@ function SettingsPage() {
   const [testResults, setTestResults] = useState<Record<string, { ok: boolean; message: string } | null>>({});
   const [saving, setSaving] = useState<Record<string, boolean>>({});
   const [exchangeToggling, setExchangeToggling] = useState<Record<string, boolean>>({});
+  const [tradingVenue, setTradingVenue] = useState<TradingVenue>(getVenuePreference());
 
   // ── RPC form state ─────────────────────────────────────────────
   const [newRpcLabel, setNewRpcLabel] = useState("");
@@ -321,7 +323,12 @@ function SettingsPage() {
     }
   }, []);
 
-  // ── Render ─────────────────────────────────────────────────────
+  // ── Trading venue actions ──────────────────────────────────────
+  
+  const handleVenueChange = useCallback((venue: TradingVenue) => {
+    setTradingVenue(venue);
+    setVenuePreference(venue);
+  }, []);
 
   return (
     <div className="min-h-dvh bg-darker pt-20 pb-16">
@@ -935,6 +942,45 @@ function SettingsPage() {
             </button>
           )}
         </div>
+        {/* Trading Venue Selector */}
+        <div className="mt-10 animate-fade-in-up" style={{ animationDelay: "0.35s" }}>
+          <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+            <span>📍</span> Trading Venue
+          </h2>
+          <p className="text-gray-400 text-sm mb-4">
+            Select where paper trades are routed. Bitunix is the primary
+            perpetuals exchange. Wallet/DEX simulates on-chain execution.
+          </p>
+          <div className="glass-card p-5">
+            <div className="flex gap-3 flex-wrap">
+              {([
+                { value: "bitunix" as TradingVenue, label: "🔵 Bitunix", desc: "Perpetuals & spot trading" },
+                { value: "wallet" as TradingVenue, label: "🔗 Wallet/DEX", desc: "On-chain simulated execution" },
+                { value: "auto" as TradingVenue, label: "🔄 Auto", desc: "Bitunix → Wallet fallback" },
+              ]).map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => handleVenueChange(opt.value)}
+                  className={`text-sm px-4 py-3 rounded-lg border transition-all duration-200 text-left ${
+                    tradingVenue === opt.value
+                      ? "border-accent-blue bg-accent-blue/10 text-white"
+                      : "border-dark-border text-gray-500 hover:border-dark-border-light hover:text-gray-300"
+                  }`}
+                >
+                  <div className="font-semibold">{opt.label}</div>
+                  <div className="text-xs text-gray-500 mt-0.5">{opt.desc}</div>
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-gray-600 mt-3">
+              Current venue:{" "}
+              <span className="text-accent-blue font-semibold">
+                {tradingVenue === "bitunix" ? "Bitunix" : tradingVenue === "wallet" ? "Wallet/DEX" : "Auto (Bitunix → Wallet)"}
+              </span>
+            </p>
+          </div>
+        </div>
+
         {/* Exchange Toggles section */}
         <div className="mt-10 animate-fade-in-up" style={{ animationDelay: "0.4s" }}>
           <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">

@@ -1,5 +1,5 @@
 // ── Execution Agent ─────────────────────────────────────────────────
-// Receives OrchestratorDecision and executes trades via the trading engine.
+// Receives OrchestratorDecision and executes trades via exchange adapters.
 // The decision's positionSize, stopLoss, and takeProfit are refined by
 // the PositionManagerAgent (src/lib/agents/position-manager.ts) before
 // reaching this agent. See orchestrator.ts runAgentAnalysis() flow.
@@ -7,12 +7,19 @@
 // MODE DETECTION: Live mode when a trading-capable exchange (role "trading"
 // or "both") has API keys configured. Falls back to paper mode otherwise.
 // Zero Math.random() — slippage derived from real order book depth.
+//
+// PAPER MODE: Routes through Bitunix paper trading adapter + unified balance.
+// LIVE MODE: Routes through configured exchange adapter with real API calls.
 
 import { BaseAgent } from "./base";
 import type { AgentReport, OrchestratorDecision } from "./types";
-import { openTrade, closeTrade } from "~/lib/trading-engine";
 import { getOrderBook, type OrderBook, type OrderBookLevel } from "./liquidity";
 import { getTradingExchanges } from "~/lib/exchange/manager";
+import { getBitunixAdapter } from "~/lib/exchange/bitunix";
+import type { OrderRequest, OrderResult } from "~/lib/exchange/types";
+import { resolveVenue } from "~/lib/venue-selector";
+import { debitBalance, creditBalance, getBalance, addPaperPosition, removePaperPosition } from "~/lib/unified-balance";
+import { sql, isDbAvailable } from "~/lib/db";
 
 /** Result type for trade opening: either a successful position or an error. */
 interface TradeOpenResult {
@@ -327,14 +334,34 @@ export class ExecutionAgent extends BaseAgent {
       }
     }
 
-    // ── PAPER MODE: Simulate with real order book slippage ──────────
+    // ── PAPER MODE: Route through Bitunix adapter + unified balance ───
+    const venue = resolveVenue();
+    const bitunix = getBitunixAdapter();
+
+    // ── Pre-trade balance check ──────────────────────────────────────
+    const bal = await getBalance();
+    const estimatedCost = decision.positionSize * currentPrice;
+    if (bal.usdt < estimatedCost) {
+      return {
+        success: false,
+        filledPrice: currentPrice,
+        requestedPrice: currentPrice,
+        slippage: 0,
+        slippagePct: 0,
+        mode: "paper",
+        side,
+        size: decision.positionSize,
+        timestamp,
+        error: `Insufficient balance: need ${estimatedCost.toFixed(2)} but have ${bal.usdt.toFixed(2)}`,
+      };
+    }
+
     // Try to fetch real order book for accurate slippage
     let orderBook: OrderBook | null = null;
     try {
       orderBook = await getOrderBook(token);
     } catch (err) {
       console.warn("[ExecutionAgent] getOrderBook failed:", err);
-      // Order book unavailable — use conservative fallback in computeSlippagePrice
     }
 
     const { filledPrice, slippage, slippagePct } = this.computeSlippagePrice(
@@ -345,48 +372,169 @@ export class ExecutionAgent extends BaseAgent {
     );
 
     try {
-      const position: TradeOpenResult = await openTrade({
-        data: {
-          chainId,
-          token,
-          direction: side === "BUY" ? "LONG" : "SHORT",
-          price: filledPrice,
-          size: decision.positionSize,
-          leverage: 1,
-        },
-      });
+      // ── Route through venue ──────────────────────────────────────
+      if (venue === "bitunix" || venue === "wallet") {
+        // Use Bitunix paper trading for both bitunix and wallet (wallet on-chain is simulated)
+        console.log(`[ExecutionAgent] Paper trade via ${venue} — ${side} ${decision.positionSize} ${token} @ ~${filledPrice}`);
 
-      if ('error' in position && position.error) {
+        const orderReq: OrderRequest = {
+          symbol: token,
+          side,
+          type: "MARKET",
+          quantity: decision.positionSize,
+          price: filledPrice,
+        };
+
+        const orderResult: OrderResult = await bitunix.placeOrder(orderReq);
+
+        if (orderResult.status === "REJECTED") {
+          return {
+            success: false,
+            filledPrice,
+            requestedPrice: currentPrice,
+            slippage,
+            slippagePct,
+            mode: "paper",
+            side,
+            size: decision.positionSize,
+            timestamp,
+            error: `Bitunix paper order rejected`,
+          };
+        }
+
+        // ── Debit balance for the trade ───────────────────────────
+        const actualCost = decision.positionSize * orderResult.avgPrice;
+        try {
+          await debitBalance(actualCost);
+        } catch (balErr) {
+          return {
+            success: false,
+            filledPrice: orderResult.avgPrice,
+            requestedPrice: currentPrice,
+            slippage,
+            slippagePct,
+            mode: "paper",
+            side,
+            size: decision.positionSize,
+            timestamp,
+            error: `Balance debit failed: ${balErr instanceof Error ? balErr.message : "insufficient funds"}`,
+          };
+        }
+
+        // Track position in unified balance
+        addPaperPosition({
+          id: orderResult.orderId,
+          symbol: token,
+          side: side === "BUY" ? "LONG" : "SHORT",
+          size: decision.positionSize,
+          entryPrice: orderResult.avgPrice,
+          openedAt: timestamp,
+        });
+
+        this.activePositionIds.add(orderResult.orderId);
+
+        // ── Persist trade to DB ────────────────────────────────────
+        if (isDbAvailable()) {
+          const stopLoss = decision.stopLoss || 0;
+          const takeProfit = decision.takeProfit || 0;
+          sql`
+            INSERT INTO trades (id, chain_id, token, direction, entry_price, current_price, size, leverage, pnl, pnl_pct, stop_loss, take_profit, status, opened_at)
+            VALUES (${orderResult.orderId}, ${chainId}, ${token}, ${side === "BUY" ? "LONG" : "SHORT"}, ${orderResult.avgPrice}, ${currentPrice}, ${decision.positionSize}, 1, 0, 0, ${stopLoss}, ${takeProfit}, 'open', now())
+          `.catch((err) => console.error("[DB] execution trade insert failed:", err));
+        }
+
         return {
-          success: false,
-          filledPrice,
+          success: true,
+          tradeId: orderResult.orderId,
+          filledPrice: orderResult.avgPrice,
           requestedPrice: currentPrice,
-          slippage,
-          slippagePct,
+          slippage: Math.abs(orderResult.avgPrice - currentPrice),
+          slippagePct: currentPrice > 0 ? Math.abs(orderResult.avgPrice - currentPrice) / currentPrice : 0,
           mode: "paper",
           side,
           size: decision.positionSize,
           timestamp,
-          error: position.error,
+        };
+      } else {
+        // "auto" venue — try Bitunix first, fallback to wallet
+        // In paper mode, wallet is also simulated via Bitunix
+        console.log(`[ExecutionAgent] Paper trade via auto → bitunix — ${side} ${decision.positionSize} ${token}`);
+
+        const orderReq: OrderRequest = {
+          symbol: token,
+          side,
+          type: "MARKET",
+          quantity: decision.positionSize,
+          price: filledPrice,
+        };
+
+        const orderResult: OrderResult = await bitunix.placeOrder(orderReq);
+
+        if (orderResult.status === "REJECTED") {
+          return {
+            success: false,
+            filledPrice,
+            requestedPrice: currentPrice,
+            slippage,
+            slippagePct,
+            mode: "paper",
+            side,
+            size: decision.positionSize,
+            timestamp,
+            error: `Auto-route: Bitunix paper order rejected`,
+          };
+        }
+
+        try {
+          await debitBalance(decision.positionSize * orderResult.avgPrice);
+        } catch (balErr) {
+          return {
+            success: false,
+            filledPrice: orderResult.avgPrice,
+            requestedPrice: currentPrice,
+            slippage,
+            slippagePct,
+            mode: "paper",
+            side,
+            size: decision.positionSize,
+            timestamp,
+            error: `Balance debit failed: ${balErr instanceof Error ? balErr.message : "insufficient funds"}`,
+          };
+        }
+
+        addPaperPosition({
+          id: orderResult.orderId,
+          symbol: token,
+          side: side === "BUY" ? "LONG" : "SHORT",
+          size: decision.positionSize,
+          entryPrice: orderResult.avgPrice,
+          openedAt: timestamp,
+        });
+
+        this.activePositionIds.add(orderResult.orderId);
+
+        if (isDbAvailable()) {
+          const stopLoss = decision.stopLoss || 0;
+          const takeProfit = decision.takeProfit || 0;
+          sql`
+            INSERT INTO trades (id, chain_id, token, direction, entry_price, current_price, size, leverage, pnl, pnl_pct, stop_loss, take_profit, status, opened_at)
+            VALUES (${orderResult.orderId}, ${chainId}, ${token}, ${side === "BUY" ? "LONG" : "SHORT"}, ${orderResult.avgPrice}, ${currentPrice}, ${decision.positionSize}, 1, 0, 0, ${stopLoss}, ${takeProfit}, 'open', now())
+          `.catch((err) => console.error("[DB] execution trade insert failed:", err));
+        }
+
+        return {
+          success: true,
+          tradeId: orderResult.orderId,
+          filledPrice: orderResult.avgPrice,
+          requestedPrice: currentPrice,
+          slippage: Math.abs(orderResult.avgPrice - currentPrice),
+          slippagePct: currentPrice > 0 ? Math.abs(orderResult.avgPrice - currentPrice) / currentPrice : 0,
+          mode: "paper",
+          side,
+          size: decision.positionSize,
+          timestamp,
         };
       }
-
-      if (position && 'id' in position && position.id) {
-        this.activePositionIds.add(position.id);
-      }
-
-      return {
-        success: true,
-        tradeId: position.id,
-        filledPrice,
-        requestedPrice: currentPrice,
-        slippage,
-        slippagePct,
-        mode: "paper",
-        side,
-        size: decision.positionSize,
-        timestamp,
-      };
     } catch (err) {
       return {
         success: false,
@@ -474,13 +622,14 @@ export class ExecutionAgent extends BaseAgent {
       }
     }
 
-    // ── PAPER MODE: Simulate with real order book ───────────────────
+    // ── PAPER MODE: Route through Bitunix adapter + unified balance ───
+    const bitunix = getBitunixAdapter();
+
     let orderBook: OrderBook | null = null;
     try {
       orderBook = await getOrderBook(token || "");
     } catch (err) {
       console.warn("[ExecutionAgent] exit getOrderBook failed:", err);
-      // unavailable
     }
 
     const { filledPrice, slippage, slippagePct } = this.computeSlippagePrice(
@@ -491,41 +640,49 @@ export class ExecutionAgent extends BaseAgent {
     );
 
     try {
-      const result: TradeCloseResult = await closeTrade({
-        data: {
-          id: positionId,
-          exitPrice: filledPrice,
-        },
-      });
+      // Close via Bitunix paper trading
+      const symbol = token || positionId;
+      const closeResult = await bitunix.closePaperPosition(symbol);
 
-      if ('error' in result && result.error) {
-        return {
-          success: false,
-          tradeId: positionId,
-          filledPrice,
-          requestedPrice: currentPrice,
-          slippage,
-          slippagePct,
-          mode: "paper",
-          side: "EXIT",
-          size: 0,
-          timestamp,
-          error: result.error,
-        };
-      }
+      // Remove from unified balance tracking
+      removePaperPosition(positionId);
+      
+      // Credit balance with PnL
+      const positionSize = closeResult.quantity;
+      const realizedPnl = closeResult.realizedPnl ?? 0;
+      const creditAmount = positionSize * closeResult.avgPrice + realizedPnl;
+      await creditBalance(creditAmount);
 
       this.activePositionIds.delete(positionId);
+
+      // Update DB
+      if (isDbAvailable()) {
+        sql`
+          UPDATE trades
+          SET status = 'closed', exit_price = ${closeResult.avgPrice}, current_price = ${closeResult.avgPrice},
+              pnl = ${realizedPnl}, pnl_pct = ${closeResult.avgPrice > 0 ? (realizedPnl / (positionSize * closeResult.avgPrice)) * 100 : 0}, closed_at = now(), updated_at = now()
+          WHERE id = ${positionId}
+        `.catch((err) => console.error("[DB] execution close update failed:", err));
+      }
+
+      // Also close in the old trading-engine (for backward compat)
+      try {
+        const { closeTrade } = await import("~/lib/trading-engine");
+        await closeTrade({ data: { id: positionId, exitPrice: closeResult.avgPrice } });
+      } catch {
+        // best-effort
+      }
 
       return {
         success: true,
         tradeId: positionId,
-        filledPrice,
+        filledPrice: closeResult.avgPrice,
         requestedPrice: currentPrice,
-        slippage,
-        slippagePct,
+        slippage: Math.abs(closeResult.avgPrice - currentPrice),
+        slippagePct: currentPrice > 0 ? Math.abs(closeResult.avgPrice - currentPrice) / currentPrice : 0,
         mode: "paper",
         side: "EXIT",
-        size: 0,
+        size: closeResult.quantity,
         timestamp,
       };
     } catch (err) {

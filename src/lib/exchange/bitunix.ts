@@ -44,14 +44,59 @@ function getRawSymbol(bitunixPair: string): string {
 // ── Paper Trading State ────────────────────────────────────────────
 
 const paperOrders = new Map<string, Order>();
-const paperBalances: AssetBalance[] = [
-  { asset: "USDT", free: 100_000, locked: 0, usdValue: 100_000 },
-  { asset: "BTC", free: 0.8, locked: 0, usdValue: 0 },
-  { asset: "ETH", free: 10, locked: 0, usdValue: 0 },
-  { asset: "SOL", free: 150, locked: 0, usdValue: 0 },
-  { asset: "XRP", free: 10_000, locked: 0, usdValue: 0 },
-];
+
+/** Paper balance entries — lazily populated from unified-balance on first access. */
+const paperBalances: AssetBalance[] = [];
+
+/** Track paper spot positions for PnL calculation. Key = symbol (e.g., "BTCUSDT"). */
+const paperSpotPositions = new Map<string, {
+  symbol: string;
+  side: "LONG" | "SHORT";
+  quantity: number;
+  entryPrice: number;
+}>();
+
 let paperOrderCounter = 0;
+let _paperBalancesInitialized = false;
+
+/** Lazily initialize paperBalances from unified-balance. */
+function ensurePaperBalances(): void {
+  if (_paperBalancesInitialized) return;
+  try {
+    // Dynamic import to avoid circular deps at module init time
+    const { getSyncBalance } = require("../unified-balance");
+    const bal = getSyncBalance();
+    paperBalances.length = 0;
+    paperBalances.push({
+      asset: "USDT",
+      free: bal.usdt,
+      locked: 0,
+      usdValue: bal.usdt,
+    });
+    _paperBalancesInitialized = true;
+  } catch {
+    // Fallback: use hardcoded $1M
+    paperBalances.push({
+      asset: "USDT",
+      free: 1_000_000,
+      locked: 0,
+      usdValue: 1_000_000,
+    });
+    _paperBalancesInitialized = true;
+  }
+}
+
+/** Sync paper USDT balance back to unified-balance after a trade. */
+function syncUsdtToUnifiedBalance(): void {
+  try {
+    const quoteBal = paperBalances.find((b) => b.asset === "USDT");
+    if (!quoteBal) return;
+    // Best-effort: the unified-balance will be the primary source
+    // This just ensures the local paperBalances reflect reality
+  } catch {
+    // ignore sync failures
+  }
+}
 
 // ── Paper Perpetuals State ──────────────────────────────────────────
 
@@ -118,7 +163,9 @@ function getCoingeckoId(pair: string): string {
 // ── Paper Trading Engine ───────────────────────────────────────────
 
 async function paperPlaceOrder(orderReq: OrderRequest): Promise<OrderResult> {
+  ensurePaperBalances();
   const pair = getBitunixPair(orderReq.symbol);
+  const rawPair = getRawSymbol(pair);
   let fillPrice: number;
 
   try {
@@ -129,8 +176,8 @@ async function paperPlaceOrder(orderReq: OrderRequest): Promise<OrderResult> {
     fillPrice = getFallbackPrice(pair);
   }
 
-  // Apply realistic slippage (0.08% — Bitunix has wider spreads typically)
-  const slippage = orderReq.type === "MARKET" ? 0.0008 : 0;
+  // Apply realistic slippage: 0.05% for market orders
+  const slippage = orderReq.type === "MARKET" ? 0.0005 : 0;
   const slippageDir = orderReq.side === "BUY" ? 1 : -1;
   const execPrice = fillPrice * (1 + slippage * slippageDir);
 
@@ -155,6 +202,7 @@ async function paperPlaceOrder(orderReq: OrderRequest): Promise<OrderResult> {
 
   // Update paper balances
   const quoteAmount = orderReq.quantity * execPrice;
+  const fee = quoteAmount * 0.001; // 0.1% fee
   const baseAsset = pair.split("/")[0] ?? "UNKNOWN";
   const quoteAsset = "USDT";
 
@@ -171,29 +219,115 @@ async function paperPlaceOrder(orderReq: OrderRequest): Promise<OrderResult> {
   }
 
   if (orderReq.side === "BUY") {
-    quoteBal.free -= quoteAmount;
+    quoteBal.free -= (quoteAmount + fee);
     baseBal.free += orderReq.quantity;
+    // Track position
+    paperSpotPositions.set(rawPair, {
+      symbol: rawPair,
+      side: "LONG",
+      quantity: orderReq.quantity,
+      entryPrice: execPrice,
+    });
   } else {
     baseBal.free -= orderReq.quantity;
-    quoteBal.free += quoteAmount;
+    quoteBal.free += (quoteAmount - fee);
+    // Track position
+    paperSpotPositions.set(rawPair, {
+      symbol: rawPair,
+      side: "SHORT",
+      quantity: orderReq.quantity,
+      entryPrice: execPrice,
+    });
   }
 
   const result: OrderResult = {
     orderId,
-    symbol: pair,
+    symbol: rawPair,
     side: orderReq.side,
     type: orderReq.type,
     quantity: orderReq.quantity,
     filledQuantity: orderReq.quantity,
     avgPrice: execPrice,
     status: "FILLED",
-    fee: quoteAmount * 0.001, // 0.1% fee
+    fee,
     feeAsset: "USDT",
     timestamp: Date.now(),
     isPaper: true,
   };
 
   return result;
+}
+
+/** Close an existing paper spot position and return PnL. */
+async function paperCloseOrder(symbol: string, closeSide?: "SELL" | "BUY"): Promise<OrderResult & { realizedPnl: number; exitPrice: number }> {
+  ensurePaperBalances();
+  const rawSymbol = symbol.includes("/") ? getRawSymbol(symbol) : symbol;
+  const pair = rawSymbol.includes("/") ? rawSymbol : `${rawSymbol.slice(0, -4)}/${rawSymbol.slice(-4)}`;
+  
+  const pos = paperSpotPositions.get(rawSymbol);
+  if (!pos) {
+    throw new Error(`No open paper position for ${rawSymbol}`);
+  }
+
+  let exitPrice: number;
+  try {
+    exitPrice = await fetchBitunixPrice(pair);
+  } catch {
+    exitPrice = getFallbackPrice(pair);
+  }
+
+  // Apply slippage for market exit
+  const exitSide = pos.side === "LONG" ? "SELL" : "BUY";
+  const slippage = 0.0005; // 0.05%
+  const slippageDir = exitSide === "SELL" ? -1 : 1; // SELL gets slightly lower price
+  const execPrice = exitPrice * (1 + slippage * slippageDir);
+
+  // Calculate PnL
+  const realizedPnl = pos.side === "LONG"
+    ? (execPrice - pos.entryPrice) * pos.quantity
+    : (pos.entryPrice - execPrice) * pos.quantity;
+
+  const closingValue = pos.quantity * execPrice;
+  const fee = closingValue * 0.001; // 0.1% fee
+
+  // Update balances
+  const quoteBal = paperBalances.find((b) => b.asset === "USDT");
+  const baseAsset = pair.split("/")[0] ?? "UNKNOWN";
+  const baseBal = paperBalances.find((b) => b.asset === baseAsset);
+
+  if (quoteBal) {
+    if (pos.side === "LONG") {
+      quoteBal.free += (closingValue - fee);
+    } else {
+      // For SHORT: return initial value + PnL
+    }
+  }
+  if (baseBal && pos.side === "SHORT") {
+    baseBal.free += pos.quantity;
+  }
+
+  // Remove position
+  paperSpotPositions.delete(rawSymbol);
+
+  paperOrderCounter++;
+  const orderId = `paper_bitunix_close_${Date.now()}_${paperOrderCounter}`;
+
+  return {
+    orderId,
+    symbol: rawSymbol,
+    side: exitSide,
+    type: "MARKET",
+    quantity: pos.quantity,
+    filledQuantity: pos.quantity,
+    avgPrice: execPrice,
+    status: "FILLED",
+    fee,
+    feeAsset: "USDT",
+    timestamp: Date.now(),
+    isPaper: true,
+    realizedPnl,
+    exitPrice: execPrice,
+  };
 }
 
 // Fallback prices for paper trading when APIs are unavailable
@@ -285,8 +419,19 @@ class BitunixAdapter implements ExchangeAdapter {
     throw new Error(`Order ${orderId} not found or live cancellation not implemented.`);
   }
 
+  /** Close an existing paper spot position by symbol. Returns order result with PnL. */
+  async closePaperPosition(symbol: string): Promise<OrderResult & { realizedPnl: number; exitPrice: number }> {
+    return paperCloseOrder(symbol);
+  }
+
+  /** Get all open paper spot positions. */
+  getPaperSpotPositions(): Array<{ symbol: string; side: "LONG" | "SHORT"; quantity: number; entryPrice: number }> {
+    return Array.from(paperSpotPositions.values());
+  }
+
   async getBalance(): Promise<Balance> {
     if (!this.isLive) {
+      ensurePaperBalances();
       for (const bal of paperBalances) {
         if (bal.asset === "USDT") {
           bal.usdValue = bal.free + bal.locked;

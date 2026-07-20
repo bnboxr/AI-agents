@@ -117,8 +117,8 @@ export async function runMigrations(): Promise<void> {
     await sql.query(`
       CREATE TABLE IF NOT EXISTS trading_state (
         id                    INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
-        capital               DOUBLE PRECISION NOT NULL DEFAULT 10000,
-        initial_capital       DOUBLE PRECISION NOT NULL DEFAULT 10000,
+        capital               DOUBLE PRECISION NOT NULL DEFAULT 1000000,
+        initial_capital       DOUBLE PRECISION NOT NULL DEFAULT 1000000,
         open_position         BOOLEAN NOT NULL DEFAULT FALSE,
         position_direction    TEXT CHECK (position_direction IN ('LONG', 'SHORT')),
         entry_price           DOUBLE PRECISION,
@@ -137,7 +137,7 @@ export async function runMigrations(): Promise<void> {
 
     // Seed singleton row for trading_state
     await sql.query(`
-      INSERT INTO trading_state (id, capital, initial_capital) VALUES (1, 10000, 10000)
+      INSERT INTO trading_state (id, capital, initial_capital) VALUES (1, 1000000, 1000000)
       ON CONFLICT (id) DO NOTHING
     `);
 

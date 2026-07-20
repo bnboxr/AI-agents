@@ -84,7 +84,7 @@ let _state: NFTArbitrageState = {
   totalOpportunities: 0,
   paperTrades: [],
   lastUpdate: Date.now(),
-  paperMode: true,
+  paperMode: !(typeof process !== "undefined" && process.env?.RESERVOIR_API_KEY),
 };
 
 // ── Internal helpers ──────────────────────────────────────────
@@ -253,6 +253,6 @@ export function resetNFTState(): void {
     totalOpportunities: 0,
     paperTrades: [],
     lastUpdate: Date.now(),
-    paperMode: true,
+    paperMode: !(typeof process !== "undefined" && process.env?.RESERVOIR_API_KEY),
   };
 }

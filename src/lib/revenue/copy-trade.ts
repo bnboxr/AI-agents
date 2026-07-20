@@ -99,7 +99,7 @@ let _state: CopyTradeState = {
   totalTrades: 0,
   profitableTrades: 0,
   lastUpdate: Date.now(),
-  paperMode: true,
+  paperMode: !(typeof process !== "undefined" && process.env?.COPY_TRADE_WALLETS && process.env?.BINANCE_API_KEY),
 };
 
 // ── Internal helpers ──────────────────────────────────────────
@@ -337,6 +337,6 @@ export function resetCopyTradeState(): void {
     totalTrades: 0,
     profitableTrades: 0,
     lastUpdate: Date.now(),
-    paperMode: true,
+    paperMode: !(typeof process !== "undefined" && process.env?.COPY_TRADE_WALLETS && process.env?.BINANCE_API_KEY),
   };
 }

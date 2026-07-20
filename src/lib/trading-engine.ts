@@ -7,6 +7,7 @@ import { getRiskStateRaw } from "~/lib/risk-engine";
 import { agentBus } from "~/lib/agent-bus";
 import { sql, isDbAvailable } from "~/lib/db";
 import { getPrice } from "~/lib/ws/price-context";
+import { seededRandom } from "~/lib/deterministic-random";
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -249,7 +250,8 @@ export const openTrade = createServerFn({ method: "POST" }).handler(async ({ dat
   if (risk.circuitBreakerTripped) return { error: "Circuit breaker tripped" };
 
   dailyTradeCount++;
-  const id = `trade_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+  const seed = `${data.chainId}-${data.token}-${Date.now()}-${dailyTradeCount}`;
+  const id = `trade_${Date.now()}_${seededRandom(seed).toString(36).slice(2, 6)}`;
   const leverage = Math.min(data.leverage, tradeConfig.maxLeverage);
   const stopLoss = data.direction === "LONG"
     ? data.price * (1 - tradeConfig.stopLossPct / 100)

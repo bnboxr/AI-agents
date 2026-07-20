@@ -9,6 +9,7 @@ import type { AgentReport } from "./types";
 import type { OHLCVBar } from "./market";
 import type { TradeRecord, MarketCondition, ConditionStats } from "./learning";
 import type { RiskAssessment } from "./risk";
+import { seededRandom } from "~/lib/deterministic-random";
 
 // ── Types ─────────────────────────────────────────────────────────
 
@@ -200,6 +201,7 @@ export class ProbabilityAgent extends BaseAgent {
     trendScore: number;     // 0-100 (from regime agent or price action)
     direction: 1 | -1;      // 1 for LONG, -1 for SHORT
     volatility: number;     // ATR as % of price
+    symbol?: string;        // trading symbol for deterministic seeding
     daysBack?: number;      // use historical drift from last N days
     bars?: OHLCVBar[];      // for computing drift
   }): { probabilityOfProfit: number; results: number[] } {
@@ -209,6 +211,7 @@ export class ProbabilityAgent extends BaseAgent {
       trendScore,
       direction,
       volatility,
+      symbol = "UNKNOWN",
     } = params;
 
     const steps = MC_HORIZON_HOURS * MC_STEPS_PER_HOUR; // 96 steps
@@ -222,13 +225,16 @@ export class ProbabilityAgent extends BaseAgent {
       stepATR *
       0.5;
 
+    const timestamp = Date.now();
+
     for (let sim = 0; sim < MC_SIMULATIONS; sim++) {
       let price = currentPrice;
 
       for (let step = 0; step < steps; step++) {
-        // Random component: normal-ish using Box-Muller on 2 uniform randoms
-        const u1 = Math.random();
-        const u2 = Math.random();
+        // Deterministic Box-Muller using seededRandom
+        const seedBase = `${symbol}-${timestamp}-${sim}-${step}`;
+        const u1 = seededRandom(seedBase + "-u1");
+        const u2 = seededRandom(seedBase + "-u2");
         const randNormal =
           Math.sqrt(-2 * Math.log(u1 || 0.0001)) *
           Math.cos(2 * Math.PI * u2);
@@ -336,6 +342,7 @@ export class ProbabilityAgent extends BaseAgent {
    * Run the complete probability pipeline (synchronous, no API call).
    */
   computeProbability(params: {
+    symbol?: string;
     currentPrice: number;
     atr: number;
     trendScore: number;
@@ -352,6 +359,7 @@ export class ProbabilityAgent extends BaseAgent {
       marketCondition,
       riskData,
       bars,
+      symbol,
     } = params;
 
     // 1. Bayesian
@@ -369,6 +377,7 @@ export class ProbabilityAgent extends BaseAgent {
       trendScore,
       direction: mcDirection as 1 | -1,
       volatility,
+      symbol,
       bars,
     });
 

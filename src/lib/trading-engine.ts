@@ -243,7 +243,7 @@ export const analyzeToken = createServerFn({ method: "POST" }).handler(async ({ 
   return { blocked: false, direction: aiResult.direction, confidence: aiResult.confidence, reasoning: aiResult.reasoning };
 });
 
-export const openTrade = createServerFn({ method: "POST" }).handler(async ({ data }: { data: { chainId: string; token: string; direction: TradeDirection; price: number; size: number; leverage: number } }) => {
+export const openTrade = createServerFn({ method: "POST" }).handler(async ({ data }: { data: { chainId: string; token: string; direction: TradeDirection; price: number; size: number; leverage: number } }): Promise<TradePosition | { error: string }> => {
   resetDailyIfNeeded();
   const risk = getRiskStateRaw();
   if (risk.circuitBreakerTripped) return { error: "Circuit breaker tripped" };
@@ -288,7 +288,7 @@ export const openTrade = createServerFn({ method: "POST" }).handler(async ({ dat
   return position;
 });
 
-export const closeTrade = createServerFn({ method: "POST" }).handler(async ({ data }: { data: { id: string; exitPrice: number } }) => {
+export const closeTrade = createServerFn({ method: "POST" }).handler(async ({ data }: { data: { id: string; exitPrice: number } }): Promise<TradePosition | { error: string }> => {
   const pos = openPositions.get(data.id);
   if (!pos) return { error: "Position not found" };
 

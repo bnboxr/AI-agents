@@ -77,7 +77,7 @@ function tick(): void {
 
     if (timeSinceLastScan >= MIN_SCAN_GAP_MS) {
       const task: ScanTask = {
-        id: `scan-${chain.id}-${now}-${Math.random().toString(36).slice(2, 6)}`,
+        id: `scan-${chain.id}-${now}-${crypto.randomUUID().slice(0, 8)}`,
         chainId: chain.id,
         priority: determinePriority(chain.id),
         type: 'scan',

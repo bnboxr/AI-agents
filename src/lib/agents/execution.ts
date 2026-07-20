@@ -3,13 +3,15 @@
 // The decision's positionSize, stopLoss, and takeProfit are refined by
 // the PositionManagerAgent (src/lib/agents/position-manager.ts) before
 // reaching this agent. See orchestrator.ts runAgentAnalysis() flow.
-// Paper trading mode (default): simulates fills with realistic slippage.
-// Live mode: placeholder for future exchange API integration.
+// Paper trading mode (default): simulates fills with deterministic slippage.
+// Live mode: routes orders through the Binance exchange adapter.
 
 // HMAC-SHA256: import { createHmac } from "crypto" when Binance live order code is added
 import { BaseAgent } from "./base";
 import type { AgentReport, OrchestratorDecision } from "./types";
 import { openTrade, closeTrade } from "~/lib/trading-engine";
+import { seededRandom } from "~/lib/deterministic-random";
+import { getExchange } from "~/lib/exchange";
 
 export type ExecutionMode = "paper" | "live";
 
@@ -48,6 +50,9 @@ export class ExecutionAgent extends BaseAgent {
   /** Active position IDs managed by this agent (in-memory tracking). */
   private activePositionIds: Set<string> = new Set();
 
+  /** Maps internal position IDs to exchange order IDs for live mode. */
+  private liveOrderMap: Map<string, string> = new Map();
+
   constructor() {
     super({
       id: "execution-agent",
@@ -67,18 +72,20 @@ export class ExecutionAgent extends BaseAgent {
   }
 
   /**
-   * Compute simulated fill price with realistic slippage.
+   * Compute simulated fill price with deterministic slippage.
    * For BUY: price goes up (adverse slippage).
    * For SELL/EXIT: price goes down (adverse slippage).
+   * Uses seededRandom(seed) so identical inputs produce identical slippage.
    */
   private computeSlippagePrice(
     marketPrice: number,
     side: "BUY" | "SELL" | "EXIT",
+    seed: string,
   ): { filledPrice: number; slippage: number; slippagePct: number } {
-    // Random slippage between min and max
+    // Deterministic slippage between min and max from the seed
     const slippagePct =
       this.SLIPPAGE_MIN +
-      Math.random() * (this.SLIPPAGE_MAX - this.SLIPPAGE_MIN);
+      seededRandom(seed) * (this.SLIPPAGE_MAX - this.SLIPPAGE_MIN);
 
     const slippageMultiplier = side === "BUY" ? 1 + slippagePct : 1 - slippagePct;
     const filledPrice = marketPrice * slippageMultiplier;
@@ -146,9 +153,11 @@ export class ExecutionAgent extends BaseAgent {
     const side = decision.action;
 
     if (this.mode === "paper") {
+      const slippageSeed = `${token}-${decision.timestamp}`;
       const { filledPrice, slippage, slippagePct } = this.computeSlippagePrice(
         currentPrice,
         side,
+        slippageSeed,
       );
 
       try {
@@ -163,8 +172,8 @@ export class ExecutionAgent extends BaseAgent {
           },
         });
 
-        // Type guard: check if position has an id (success) or error
-        if ("error" in (position as any)) {
+        // Type guard: check if position carries an error
+        if ("error" in position) {
           return {
             success: false,
             filledPrice,
@@ -175,17 +184,16 @@ export class ExecutionAgent extends BaseAgent {
             side,
             size: decision.positionSize,
             timestamp,
-            error: (position as any).error,
+            error: position.error,
           };
         }
 
-        if (position && "id" in position) {
-          this.activePositionIds.add(position.id);
-        }
+        // position is now narrowed to TradePosition — safe to access .id
+        this.activePositionIds.add(position.id);
 
         return {
           success: true,
-          tradeId: (position as any).id,
+          tradeId: position.id,
           filledPrice,
           requestedPrice: currentPrice,
           slippage,
@@ -211,20 +219,80 @@ export class ExecutionAgent extends BaseAgent {
       }
     }
 
-    // Live mode: placeholder for exchange API integration
-    return {
-      success: false,
-      filledPrice: currentPrice,
-      requestedPrice: currentPrice,
-      slippage: 0,
-      slippagePct: 0,
-      mode: "live",
-      side,
-      size: decision.positionSize,
-      timestamp,
-      error:
-        "Live trading mode is not yet implemented. Switch to paper mode or configure exchange API keys.",
-    };
+    // ── Live mode: route through Binance exchange adapter ────────
+    return this.executeLiveEntry(side, currentPrice, decision, token, timestamp);
+  }
+
+  /**
+   * Execute an entry order in live mode via the exchange adapter.
+   */
+  private async executeLiveEntry(
+    side: "BUY" | "SELL",
+    currentPrice: number,
+    decision: OrchestratorDecision,
+    token: string,
+    timestamp: number,
+  ): Promise<ExecutionResult> {
+    const adapter = getExchange("binance");
+
+    if (!adapter || !adapter.isLive) {
+      return {
+        success: false,
+        filledPrice: currentPrice,
+        requestedPrice: currentPrice,
+        slippage: 0,
+        slippagePct: 0,
+        mode: "live",
+        side,
+        size: decision.positionSize,
+        timestamp,
+        error: "Live trading requires exchange API keys — configure in Settings.",
+      };
+    }
+
+    try {
+      const orderResult = await adapter.placeOrder({
+        symbol: token,
+        side,
+        type: "MARKET",
+        quantity: decision.positionSize,
+      });
+
+      // Store exchange order ID mapped to our internal tracking
+      const internalId = `live_${orderResult.orderId}`;
+      this.liveOrderMap.set(internalId, orderResult.orderId);
+      this.activePositionIds.add(internalId);
+
+      const slippage = Math.abs(orderResult.avgPrice - currentPrice);
+      const slippagePct = currentPrice > 0 ? slippage / currentPrice : 0;
+
+      return {
+        success: orderResult.status === "FILLED" || orderResult.status === "PARTIALLY_FILLED",
+        tradeId: internalId,
+        filledPrice: orderResult.avgPrice,
+        requestedPrice: currentPrice,
+        slippage: Math.round(slippage * 100000) / 100000,
+        slippagePct: Math.round(slippagePct * 10000) / 10000,
+        mode: "live",
+        side,
+        size: orderResult.filledQuantity,
+        timestamp,
+        error: orderResult.status === "REJECTED" ? "Order rejected by exchange" : undefined,
+      };
+    } catch (err) {
+      return {
+        success: false,
+        filledPrice: currentPrice,
+        requestedPrice: currentPrice,
+        slippage: 0,
+        slippagePct: 0,
+        mode: "live",
+        side,
+        size: decision.positionSize,
+        timestamp,
+        error: err instanceof Error ? err.message : "Live order placement failed",
+      };
+    }
   }
 
   /**
@@ -237,9 +305,11 @@ export class ExecutionAgent extends BaseAgent {
     const timestamp = Date.now();
 
     if (this.mode === "paper") {
+      const slippageSeed = positionId;
       const { filledPrice, slippage, slippagePct } = this.computeSlippagePrice(
         currentPrice,
         "EXIT",
+        slippageSeed,
       );
 
       try {
@@ -250,7 +320,8 @@ export class ExecutionAgent extends BaseAgent {
           },
         });
 
-        if ("error" in (result as any)) {
+        // Type guard: check if result carries an error
+        if ("error" in result) {
           return {
             success: false,
             tradeId: positionId,
@@ -262,7 +333,7 @@ export class ExecutionAgent extends BaseAgent {
             side: "EXIT",
             size: 0,
             timestamp,
-            error: (result as any).error,
+            error: result.error,
           };
         }
 
@@ -297,21 +368,85 @@ export class ExecutionAgent extends BaseAgent {
       }
     }
 
-    // Live mode placeholder
-    return {
-      success: false,
-      tradeId: positionId,
-      filledPrice: currentPrice,
-      requestedPrice: currentPrice,
-      slippage: 0,
-      slippagePct: 0,
-      mode: "live",
-      side: "EXIT",
-      size: 0,
-      timestamp,
-      error:
-        "Live trading mode is not yet implemented. Switch to paper mode or configure exchange API keys.",
-    };
+    // ── Live mode: cancel order via exchange adapter ────────────
+    return this.executeLiveExit(positionId, currentPrice, timestamp);
+  }
+
+  /**
+   * Execute an exit in live mode via the exchange adapter.
+   */
+  private async executeLiveExit(
+    positionId: string,
+    currentPrice: number,
+    timestamp: number,
+  ): Promise<ExecutionResult> {
+    const adapter = getExchange("binance");
+
+    if (!adapter || !adapter.isLive) {
+      return {
+        success: false,
+        tradeId: positionId,
+        filledPrice: currentPrice,
+        requestedPrice: currentPrice,
+        slippage: 0,
+        slippagePct: 0,
+        mode: "live",
+        side: "EXIT",
+        size: 0,
+        timestamp,
+        error: "Live trading requires exchange API keys — configure in Settings.",
+      };
+    }
+
+    const exchangeOrderId = this.liveOrderMap.get(positionId);
+    if (!exchangeOrderId) {
+      return {
+        success: false,
+        tradeId: positionId,
+        filledPrice: currentPrice,
+        requestedPrice: currentPrice,
+        slippage: 0,
+        slippagePct: 0,
+        mode: "live",
+        side: "EXIT",
+        size: 0,
+        timestamp,
+        error: "No exchange order ID found for this position — cannot cancel live order.",
+      };
+    }
+
+    try {
+      await adapter.cancelOrder(exchangeOrderId);
+      this.activePositionIds.delete(positionId);
+      this.liveOrderMap.delete(positionId);
+
+      return {
+        success: true,
+        tradeId: positionId,
+        filledPrice: currentPrice,
+        requestedPrice: currentPrice,
+        slippage: 0,
+        slippagePct: 0,
+        mode: "live",
+        side: "EXIT",
+        size: 0,
+        timestamp,
+      };
+    } catch (err) {
+      return {
+        success: false,
+        tradeId: positionId,
+        filledPrice: currentPrice,
+        requestedPrice: currentPrice,
+        slippage: 0,
+        slippagePct: 0,
+        mode: "live",
+        side: "EXIT",
+        size: 0,
+        timestamp,
+        error: err instanceof Error ? err.message : "Live order cancellation failed",
+      };
+    }
   }
 
   /**

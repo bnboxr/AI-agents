@@ -28,6 +28,7 @@ import { ConfidenceAgent } from "./confidence";
 import { DevilsAdvocateAgent } from "./devils-advocate";
 import { PositionManagerAgent, getPositionManager } from "./position-manager";
 import type { PositionManagerOutput } from "./position-manager";
+import { StrategyAgent } from "./strategy";
 import { isKillSwitchActive, getKillSwitchReason, markApiHealthy, recordLastPrice } from "../risk-engine";
 import type {
   AgentReport,
@@ -63,6 +64,7 @@ const probabilityAgent = new ProbabilityAgent();
 const confidenceAgent = new ConfidenceAgent();
 const devilsAdvocateAgent = new DevilsAdvocateAgent();
 const positionManager = getPositionManager();
+const strategyAgent = new StrategyAgent();
 
 // ── Scoring Weights ───────────────────────────────────────────────
 
@@ -656,6 +658,46 @@ async function gatherReports(ctx: PriceContext): Promise<AgentReport[]> {
       direction: "NEUTRAL",
       confidence: 50,
       reasoning: "Insufficient OHLCV data for volume analysis (need 10+ candles).",
+      data: {},
+    });
+  }
+
+  // ── Strategy Agent: Multi-strategy voting (Trend, Swing, Breakout, Mean Reversion, Scalp) ──
+  if (ctx.ohlcv && ctx.ohlcv.length >= 10) {
+    try {
+      // Extract regime from already-computed regime report for weight adjustment
+      const regimeReportData = reports.find((r) => r.role === "regime")?.data;
+      const regime = (regimeReportData as any)?.regime as string | undefined;
+
+      const strategyReport = await strategyAgent.analyzeMarket({
+        token: ctx.token,
+        chainId: ctx.chainId,
+        currentPrice: ctx.currentPrice,
+        bars: ctx.ohlcv,
+        regime,
+      });
+
+      // Attach full vote data
+      reports.push(strategyReport);
+    } catch {
+      reports.push({
+        agentId: "strategy-agent",
+        role: "strategy",
+        timestamp: Date.now(),
+        direction: "NEUTRAL",
+        confidence: 0,
+        reasoning: "Strategy agent analysis unavailable.",
+        data: {},
+      });
+    }
+  } else {
+    reports.push({
+      agentId: "strategy-agent",
+      role: "strategy",
+      timestamp: Date.now(),
+      direction: "NEUTRAL",
+      confidence: 50,
+      reasoning: "Insufficient OHLCV data for strategy analysis (need 10+ candles).",
       data: {},
     });
   }
@@ -1968,5 +2010,6 @@ export {
   confidenceAgent,
   devilsAdvocateAgent,
   positionManager,
+  strategyAgent,
 };
 export type { PriceContext };

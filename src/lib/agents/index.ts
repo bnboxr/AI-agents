@@ -129,8 +129,12 @@ export {
   confidenceAgent,
   devilsAdvocateAgent,
   positionManager,
+  strategyAgent,
 } from "./orchestrator";
 export type { PriceContext } from "./orchestrator";
+
+export { StrategyAgent } from "./strategy";
+export type { StrategyVote, SubStrategyResult, StrategyVoteResult, StrategyAgentContext } from "./strategy";
 
 export { CorrelationAgent, getCorrelationAgent, pearsonR, logReturns } from "./correlation";
 export type {

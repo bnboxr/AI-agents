@@ -322,8 +322,8 @@ function NavLink({ to, children }: { to: string; children: ReactNode }) {
     <Link
       to={to}
       className="nav-link px-2 py-1.5 rounded text-[0.65rem] sm:text-xs font-semibold text-[#546e7a] hover:text-[#00e676] hover:bg-[#0d1117] transition-all duration-150 whitespace-nowrap font-mono tracking-wider"
-      activeProps={{ className: "text-[#00e676] bg-[#0d1117] border border-[#1a1f2e]" }}
-      inactiveProps={{}}
+      activeOptions={{ exact: false }}
+      activeProps={{ className: "!text-[#00e676] !bg-[#0d1117] border border-[#1a1f2e]" }}
     >
       {children}
     </Link>

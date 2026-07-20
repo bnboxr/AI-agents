@@ -127,47 +127,27 @@ async function main(): Promise<DeploymentResult> {
   };
 
   // ──────────────────────────────────────────────────────────────
-  // 1. FlashLoanArbitrage
+  // 1. HSMCVault (no deps — deploy first)
   // ──────────────────────────────────────────────────────────────
-  if (!singleContract || singleContract === "FlashLoanArbitrage") {
-    console.log("📜 Deploying FlashLoanArbitrage...");
-    const flashArgs = getFlashLoanArgs();
-    const FlashLoanArbitrage = await ethers.getContractFactory("FlashLoanArbitrage");
-    const flashLoan = await FlashLoanArbitrage.deploy(...flashArgs);
-    await flashLoan.waitForDeployment();
-    const flashAddr = await flashLoan.getAddress();
-    console.log(`  ✅ Deployed at: ${flashAddr}`);
+  if (!singleContract || singleContract === "HSMCVault") {
+    console.log("📜 Deploying HSMCVault...");
+    const vaultOwner = process.env.VAULT_OWNER || process.env.DEPLOYER_ADDRESS || deployer.address;
+    const HSMCVault = await ethers.getContractFactory("HSMCVault");
+    const vault = await HSMCVault.deploy(vaultOwner);
+    await vault.waitForDeployment();
+    const vaultAddr = await vault.getAddress();
+    console.log(`  ✅ Deployed at: ${vaultAddr}`);
     result.contracts.push({
-      name: "FlashLoanArbitrage",
-      address: flashAddr,
-      constructorArgs: flashArgs,
+      name: "HSMCVault",
+      address: vaultAddr,
+      constructorArgs: [vaultOwner],
     });
 
-    await verifyContract(flashAddr, flashArgs, "FlashLoanArbitrage");
+    await verifyContract(vaultAddr, [vaultOwner], "HSMCVault");
   }
 
   // ──────────────────────────────────────────────────────────────
-  // 2. CrossChainArbitrage
-  // ──────────────────────────────────────────────────────────────
-  if (!singleContract || singleContract === "CrossChainArbitrage") {
-    console.log("\n📜 Deploying CrossChainArbitrage...");
-    const crossArgs = getCrossChainArgs();
-    const CrossChainArbitrage = await ethers.getContractFactory("CrossChainArbitrage");
-    const crossChain = await CrossChainArbitrage.deploy(...crossArgs);
-    await crossChain.waitForDeployment();
-    const crossAddr = await crossChain.getAddress();
-    console.log(`  ✅ Deployed at: ${crossAddr}`);
-    result.contracts.push({
-      name: "CrossChainArbitrage",
-      address: crossAddr,
-      constructorArgs: crossArgs.map((a) => (Array.isArray(a) ? a.map(Number) : a)),
-    });
-
-    await verifyContract(crossAddr, crossArgs, "CrossChainArbitrage");
-  }
-
-  // ──────────────────────────────────────────────────────────────
-  // 3. YieldOptimizer
+  // 2. YieldOptimizer
   // ──────────────────────────────────────────────────────────────
   if (!singleContract || singleContract === "YieldOptimizer") {
     console.log("\n📜 Deploying YieldOptimizer...");
@@ -187,6 +167,46 @@ async function main(): Promise<DeploymentResult> {
   }
 
   // ──────────────────────────────────────────────────────────────
+  // 3. FlashLoanArbitrage
+  // ──────────────────────────────────────────────────────────────
+  if (!singleContract || singleContract === "FlashLoanArbitrage") {
+    console.log("\n📜 Deploying FlashLoanArbitrage...");
+    const flashArgs = getFlashLoanArgs();
+    const FlashLoanArbitrage = await ethers.getContractFactory("FlashLoanArbitrage");
+    const flashLoan = await FlashLoanArbitrage.deploy(...flashArgs);
+    await flashLoan.waitForDeployment();
+    const flashAddr = await flashLoan.getAddress();
+    console.log(`  ✅ Deployed at: ${flashAddr}`);
+    result.contracts.push({
+      name: "FlashLoanArbitrage",
+      address: flashAddr,
+      constructorArgs: flashArgs,
+    });
+
+    await verifyContract(flashAddr, flashArgs, "FlashLoanArbitrage");
+  }
+
+  // ──────────────────────────────────────────────────────────────
+  // 4. CrossChainArbitrage
+  // ──────────────────────────────────────────────────────────────
+  if (!singleContract || singleContract === "CrossChainArbitrage") {
+    console.log("\n📜 Deploying CrossChainArbitrage...");
+    const crossArgs = getCrossChainArgs();
+    const CrossChainArbitrage = await ethers.getContractFactory("CrossChainArbitrage");
+    const crossChain = await CrossChainArbitrage.deploy(...crossArgs);
+    await crossChain.waitForDeployment();
+    const crossAddr = await crossChain.getAddress();
+    console.log(`  ✅ Deployed at: ${crossAddr}`);
+    result.contracts.push({
+      name: "CrossChainArbitrage",
+      address: crossAddr,
+      constructorArgs: crossArgs.map((a) => (Array.isArray(a) ? a.map(Number) : a)),
+    });
+
+    await verifyContract(crossAddr, crossArgs, "CrossChainArbitrage");
+  }
+
+  // ──────────────────────────────────────────────────────────────
   // Summary
   // ──────────────────────────────────────────────────────────────
   console.log("\n═══════════════════════════════════════");
@@ -199,7 +219,7 @@ async function main(): Promise<DeploymentResult> {
 
   // Save deployment artifacts for the frontend
   const fs = await import("fs");
-  const outPath = "../deployment-output.json";
+  const outPath = "./deployed-addresses.json";
   fs.writeFileSync(outPath, JSON.stringify(result, null, 2));
   console.log(`📝 Deployment output saved to ${outPath}\n`);
 
@@ -214,3 +234,5 @@ main()
     console.error("❌ Deployment failed:", error);
     process.exit(1);
   });
+/home/agent-lead/.profile: line 28: /home/agent-lead/.cargo/env: No such file or directory
+/home/agent-lead/.profile: line 28: /home/agent-lead/.cargo/env: No such file or directory

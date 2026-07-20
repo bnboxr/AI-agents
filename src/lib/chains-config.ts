@@ -36,6 +36,9 @@ export const SUPPORTED_CHAINS: Record<string, WalletChainConfig> = {
     faucets: [
       "https://sepoliafaucet.com",
       "https://cloud.google.com/application/web3/faucet/ethereum/sepolia",
+      "https://sepolia-faucet.pk910.de",
+      "https://www.alchemy.com/faucets/ethereum-sepolia",
+      "https://faucet.quicknode.com/ethereum/sepolia",
     ],
   },
   arbitrum: {
@@ -56,6 +59,9 @@ export const SUPPORTED_CHAINS: Record<string, WalletChainConfig> = {
     nativeToken: "ETH",
     faucets: [
       "https://faucet.quicknode.com/arbitrum/sepolia",
+      "https://www.alchemy.com/faucets/arbitrum-sepolia",
+      "https://faucets.chain.link/arbitrum-sepolia",
+      "https://bridge.arbitrum.io/?destinationChain=arbitrum-sepolia",
     ],
   },
   base: {
@@ -76,6 +82,9 @@ export const SUPPORTED_CHAINS: Record<string, WalletChainConfig> = {
     nativeToken: "ETH",
     faucets: [
       "https://faucet.quicknode.com/base/sepolia",
+      "https://www.alchemy.com/faucets/base-sepolia",
+      "https://faucets.chain.link/base-sepolia",
+      "https://bridge.base.org",
     ],
   },
   polygon: {
@@ -95,7 +104,35 @@ export const SUPPORTED_CHAINS: Record<string, WalletChainConfig> = {
     uniswapV3Router: "0xE592427A0AEce92De3Edee1F18E0157C05861564",
     nativeToken: "MATIC",
     faucets: [
-      "https://faucet.polygon.technology/",
+      "https://faucet.polygon.technology",
+      "https://www.alchemy.com/faucets/polygon-mumbai",
+      "https://faucet.quicknode.com/polygon/mumbai",
+    ],
+  },
+  "optimism-sepolia": {
+    chainId: 11155420,
+    name: "Optimism Sepolia",
+    rpc: "https://sepolia.optimism.io",
+    explorer: "https://sepolia-optimism.etherscan.io",
+    testnet: true,
+    uniswapV3Router: "0xE592427A0AEce92De3Edee1F18E0157C05861564",
+    nativeToken: "ETH",
+    faucets: [
+      "https://faucet.quicknode.com/optimism/sepolia",
+      "https://www.alchemy.com/faucets/optimism-sepolia",
+    ],
+  },
+  "scroll-sepolia": {
+    chainId: 534351,
+    name: "Scroll Sepolia",
+    rpc: "https://sepolia-rpc.scroll.io",
+    explorer: "https://sepolia.scrollscan.com",
+    testnet: true,
+    uniswapV3Router: "0xE592427A0AEce92De3Edee1F18E0157C05861564",
+    nativeToken: "ETH",
+    faucets: [
+      "https://faucet.quicknode.com/scroll",
+      "https://sepolia.scroll.io",
     ],
   },
 };
@@ -157,3 +194,7 @@ export function setWalletChain(chainId: string): void {
 export function listWalletChainIds(): string[] {
   return Object.keys(SUPPORTED_CHAINS);
 }
+/home/agent-lead/.profile: line 28: /home/agent-lead/.cargo/env: No such file or directory
+/home/agent-lead/.profile: line 28: /home/agent-lead/.cargo/env: No such file or directory
+/home/agent-lead/.profile: line 28: /home/agent-lead/.cargo/env: No such file or directory
+/home/agent-lead/.profile: line 28: /home/agent-lead/.cargo/env: No such file or directory

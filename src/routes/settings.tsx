@@ -37,7 +37,8 @@ import {
   type WalletChainConfig,
 } from "~/lib/venue-selector";
 import { getDexSlippageSetting, getPreferredDex, getGasPreference } from "~/lib/exchange/dex";
-import { getFaucetsForCurrentChain, requestSepoliaFaucet } from "~/lib/faucet";
+import { getFaucetsForCurrentChain, requestSepoliaFaucet, fundWallet, getFaucetSummary } from "~/lib/faucet";
+import type { FaucetResult } from "~/lib/faucet";
 
 // ── Service definitions ────────────────────────────────────────────
 
@@ -146,6 +147,8 @@ function SettingsPage() {
   const [faucetAddress, setFaucetAddress] = useState("");
   const [faucetRequesting, setFaucetRequesting] = useState(false);
   const [faucetResult, setFaucetResult] = useState<string | null>(null);
+  const [fundWalletResults, setFundWalletResults] = useState<FaucetResult[]>([]);
+  const [fundWalletRunning, setFundWalletRunning] = useState(false);
 
   // ── DEX settings state ──────────────────────────────────────────
   const [dexSlippage, setDexSlippage] = useState<number>(() => getDexSlippageSetting() * 100);
@@ -360,6 +363,7 @@ function SettingsPage() {
     setWalletChainState(chainId);
     setWalletTestnet(WALLET_CHAINS[chainId]?.testnet ?? false);
     setFaucetResult(null);
+    setFundWalletResults([]);
   }, []);
 
   const handleFaucetRequest = useCallback(async () => {
@@ -375,6 +379,24 @@ function SettingsPage() {
       setFaucetRequesting(false);
     }
   }, [faucetAddress]);
+
+  const handleFundWallet = useCallback(async () => {
+    if (!faucetAddress.trim()) return;
+    setFundWalletRunning(true);
+    setFundWalletResults([]);
+    try {
+      const results = await fundWallet(faucetAddress.trim(), walletChain);
+      setFundWalletResults(results);
+    } catch (err) {
+      setFundWalletResults([{
+        faucet: { name: "Error", url: "", chain: walletChain, token: "", type: "web", description: "" },
+        status: "failed",
+        message: `Fund wallet error: ${(err as Error).message}`,
+      }]);
+    } finally {
+      setFundWalletRunning(false);
+    }
+  }, [faucetAddress, walletChain]);
 
   // ── DEX settings handlers ──────────────────────────────────────
 
@@ -1120,33 +1142,105 @@ function SettingsPage() {
                   Use these faucets to get free testnet tokens for {getWalletChainName()}.
                 </p>
 
-                {/* Faucet links */}
-                {getFaucetsForCurrentChain().length > 0 && (
-                  <div className="space-y-3 mb-4">
-                    {getFaucetsForCurrentChain().map((f, i) => (
-                      <a
-                        key={i}
-                        href={f.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-3 text-sm px-4 py-3 rounded-lg border border-dark-border bg-dark-hover/30 text-gray-300 hover:text-white hover:border-accent-blue/30 hover:bg-dark-hover/50 transition-all duration-200"
-                      >
-                        <span className="text-lg">🔗</span>
-                        <div>
-                          <div className="font-medium text-sm">{f.label}</div>
-                          <div className="text-xs text-gray-500">{f.description}</div>
-                        </div>
-                        <span className="ml-auto text-gray-500">↗</span>
-                      </a>
-                    ))}
+                {/* Address input + Fund My Wallet button */}
+                <div className="mb-4">
+                  <p className="text-xs text-gray-500 mb-2">
+                    Enter your wallet address and click "Fund My Wallet" to
+                    open all available faucets and try automatic requests.
+                  </p>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={faucetAddress}
+                      onChange={(e) => setFaucetAddress(e.target.value)}
+                      placeholder="0x... your wallet address"
+                      className="glass-input flex-1 text-sm font-mono"
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") handleFundWallet();
+                      }}
+                    />
+                    <button
+                      onClick={handleFundWallet}
+                      disabled={!faucetAddress.trim() || fundWalletRunning}
+                      className="glass-button text-sm px-4 py-2 whitespace-nowrap bg-accent-blue/20 border-accent-blue/40 hover:bg-accent-blue/30"
+                    >
+                      {fundWalletRunning ? (
+                        <span className="flex items-center gap-1.5">
+                          <span className="animate-spin inline-block w-3 h-3 border border-white border-t-transparent rounded-full" />
+                          Funding…
+                        </span>
+                      ) : (
+                        "🚰 Fund My Wallet"
+                      )}
+                    </button>
                   </div>
-                )}
+                </div>
 
-                {/* Auto-faucet for Sepolia */}
+                {/* Fund Wallet results */}
+                {fundWalletResults.length > 0 && (() => {
+                  const summary = getFaucetSummary(fundWalletResults);
+                  return (
+                    <div className="mb-4">
+                      {/* Summary bar */}
+                      <div className="flex items-center gap-3 text-xs mb-3 px-3 py-2 rounded-lg bg-dark-hover/50 border border-dark-border">
+                        <span className="text-gray-400">
+                          {summary.total} faucets tried
+                        </span>
+                        <span className="text-accent-green">
+                          {summary.success} auto ✓
+                        </span>
+                        <span className="text-accent-yellow">
+                          {summary.web} opened in tabs
+                        </span>
+                        {summary.failed > 0 && (
+                          <span className="text-accent-red">
+                            {summary.failed} failed
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Individual results */}
+                      <div className="space-y-2 max-h-60 overflow-y-auto">
+                        {fundWalletResults.map((r, i) => (
+                          <div
+                            key={i}
+                            className={`flex items-start gap-2 text-xs px-3 py-2 rounded-lg border ${
+                              r.status === "success"
+                                ? "border-accent-green/20 bg-accent-green/5"
+                                : r.status === "failed"
+                                ? "border-accent-red/20 bg-accent-red/5"
+                                : "border-dark-border bg-dark-hover/20"
+                            }`}
+                          >
+                            <span className="mt-0.5">
+                              {r.status === "success" ? "✅" : r.status === "failed" ? "❌" : "🔗"}
+                            </span>
+                            <div className="flex-1 min-w-0">
+                              <div className="text-white font-medium">
+                                {r.faucet.name}
+                                <span className="text-gray-500 ml-1.5">
+                                  ({r.faucet.type})
+                                </span>
+                              </div>
+                              <div className="text-gray-500 truncate">{r.message}</div>
+                              {r.txHash && (
+                                <code className="text-accent-blue font-mono text-[0.65rem] truncate block mt-0.5">
+                                  tx: {r.txHash.slice(0, 16)}...
+                                </code>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Legacy: PoW faucet auto-request for Sepolia */}
                 {walletChain === "sepolia" && (
                   <div className="mt-4 pt-4 border-t border-dark-border">
                     <p className="text-xs text-gray-500 mb-3">
-                      Or try the automated PoW faucet (may require captcha):
+                      Or try the automated PoW faucet directly (may require captcha):
                     </p>
                     <div className="flex gap-2">
                       <input
@@ -1176,6 +1270,31 @@ function SettingsPage() {
                         {faucetResult}
                       </div>
                     )}
+                  </div>
+                )}
+
+                {/* Manual faucet links */}
+                {getFaucetsForCurrentChain().length > 0 && (
+                  <div className="space-y-2 mt-4 pt-4 border-t border-dark-border">
+                    <p className="text-xs text-gray-500 mb-2">
+                      Manual faucet links — open individually:
+                    </p>
+                    {getFaucetsForCurrentChain().map((f, i) => (
+                      <a
+                        key={i}
+                        href={f.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-3 text-xs px-3 py-2 rounded-lg border border-dark-border bg-dark-hover/30 text-gray-300 hover:text-white hover:border-accent-blue/30 hover:bg-dark-hover/50 transition-all duration-200"
+                      >
+                        <span>🔗</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium">{f.label}</div>
+                          <div className="text-gray-500 truncate">{f.description}</div>
+                        </div>
+                        <span className="text-gray-500">↗</span>
+                      </a>
+                    ))}
                   </div>
                 )}
               </div>
@@ -1409,3 +1528,8 @@ function SettingsPage() {
     </div>
   );
 }
+/home/agent-lead/.profile: line 28: /home/agent-lead/.cargo/env: No such file or directory
+/home/agent-lead/.profile: line 28: /home/agent-lead/.cargo/env: No such file or directory
+/home/agent-lead/.profile: line 28: /home/agent-lead/.cargo/env: No such file or directory
+/home/agent-lead/.profile: line 28: /home/agent-lead/.cargo/env: No such file or directory
+/home/agent-lead/.profile: line 28: /home/agent-lead/.cargo/env: No such file or directory

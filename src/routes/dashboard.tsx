@@ -996,5 +996,3 @@ function mapToData(
     winRate: stats?.winRate ?? "0",
   };
 }
-/home/agent-lead/.profile: line 28: /home/agent-lead/.cargo/env: No such file or directory
-/home/agent-lead/.profile: line 28: /home/agent-lead/.cargo/env: No such file or directory

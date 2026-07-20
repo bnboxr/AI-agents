@@ -17,6 +17,7 @@ import type {
 } from "./types";
 import { getBinanceAdapter } from "./binance";
 import { getBitunixAdapter } from "./bitunix";
+import { getDexAdapter } from "./dex";
 import { createServerFn } from "@tanstack/react-start";
 
 // ── Exchange Registry ──────────────────────────────────────────────
@@ -26,6 +27,7 @@ const exchanges = new Map<string, ExchangeAdapter>();
 // Register built-in exchanges
 exchanges.set("binance", getBinanceAdapter());
 exchanges.set("bitunix", getBitunixAdapter());
+exchanges.set("dex", getDexAdapter());
 
 // Placeholder entries for to-be-built exchanges
 const PLACEHOLDER_EXCHANGES: ExchangeConfig[] = [

@@ -16,6 +16,7 @@ import type { AgentReport, OrchestratorDecision } from "./types";
 import { getOrderBook, type OrderBook, type OrderBookLevel } from "./liquidity";
 import { getTradingExchanges } from "~/lib/exchange/manager";
 import { getBitunixAdapter } from "~/lib/exchange/bitunix";
+import { getDexAdapter } from "~/lib/exchange/dex";
 import type { OrderRequest, OrderResult } from "~/lib/exchange/types";
 import { resolveVenue } from "~/lib/venue-selector";
 import { debitBalance, creditBalance, getBalance, addPaperPosition, removePaperPosition } from "~/lib/unified-balance";
@@ -334,9 +335,10 @@ export class ExecutionAgent extends BaseAgent {
       }
     }
 
-    // ── PAPER MODE: Route through Bitunix adapter + unified balance ───
+    // ── PAPER MODE: Route through exchange adapters + unified balance ──
     const venue = resolveVenue();
     const bitunix = getBitunixAdapter();
+    const dex = getDexAdapter();
 
     // ── Pre-trade balance check ──────────────────────────────────────
     const bal = await getBalance();
@@ -371,169 +373,108 @@ export class ExecutionAgent extends BaseAgent {
       orderBook,
     );
 
+    /** Helper: execute paper trade via a given adapter, with full balance + DB pipeline. */
+    const executePaperTrade = async (
+      adapter: { placeOrder(order: OrderRequest): Promise<OrderResult> },
+      adapterName: string,
+    ): Promise<ExecutionResult> => {
+      console.log(`[ExecutionAgent] Paper trade via ${venue} (${adapterName}) — ${side} ${decision.positionSize} ${token} @ ~${filledPrice}`);
+
+      const orderReq: OrderRequest = {
+        symbol: token,
+        side,
+        type: "MARKET",
+        quantity: decision.positionSize,
+        price: filledPrice,
+      };
+
+      const orderResult: OrderResult = await adapter.placeOrder(orderReq);
+
+      if (orderResult.status === "REJECTED") {
+        return {
+          success: false,
+          filledPrice,
+          requestedPrice: currentPrice,
+          slippage,
+          slippagePct,
+          mode: "paper",
+          side,
+          size: decision.positionSize,
+          timestamp,
+          error: `${adapterName} paper order rejected`,
+        };
+      }
+
+      // Debit balance for the trade
+      const actualCost = decision.positionSize * orderResult.avgPrice;
+      try {
+        await debitBalance(actualCost);
+      } catch (balErr) {
+        return {
+          success: false,
+          filledPrice: orderResult.avgPrice,
+          requestedPrice: currentPrice,
+          slippage,
+          slippagePct,
+          mode: "paper",
+          side,
+          size: decision.positionSize,
+          timestamp,
+          error: `Balance debit failed: ${balErr instanceof Error ? balErr.message : "insufficient funds"}`,
+        };
+      }
+
+      // Track position in unified balance
+      addPaperPosition({
+        id: orderResult.orderId,
+        symbol: token,
+        side: side === "BUY" ? "LONG" : "SHORT",
+        size: decision.positionSize,
+        entryPrice: orderResult.avgPrice,
+        openedAt: timestamp,
+      });
+
+      this.activePositionIds.add(orderResult.orderId);
+
+      // Persist trade to DB
+      if (isDbAvailable()) {
+        const stopLoss = decision.stopLoss || 0;
+        const takeProfit = decision.takeProfit || 0;
+        sql`
+          INSERT INTO trades (id, chain_id, token, direction, entry_price, current_price, size, leverage, pnl, pnl_pct, stop_loss, take_profit, status, opened_at)
+          VALUES (${orderResult.orderId}, ${chainId}, ${token}, ${side === "BUY" ? "LONG" : "SHORT"}, ${orderResult.avgPrice}, ${currentPrice}, ${decision.positionSize}, 1, 0, 0, ${stopLoss}, ${takeProfit}, 'open', now())
+        `.catch((err) => console.error("[DB] execution trade insert failed:", err));
+      }
+
+      return {
+        success: true,
+        tradeId: orderResult.orderId,
+        filledPrice: orderResult.avgPrice,
+        requestedPrice: currentPrice,
+        slippage: Math.abs(orderResult.avgPrice - currentPrice),
+        slippagePct: currentPrice > 0 ? Math.abs(orderResult.avgPrice - currentPrice) / currentPrice : 0,
+        mode: "paper",
+        side,
+        size: decision.positionSize,
+        timestamp,
+      };
+    };
+
     try {
       // ── Route through venue ──────────────────────────────────────
-      if (venue === "bitunix" || venue === "wallet") {
-        // Use Bitunix paper trading for both bitunix and wallet (wallet on-chain is simulated)
-        console.log(`[ExecutionAgent] Paper trade via ${venue} — ${side} ${decision.positionSize} ${token} @ ~${filledPrice}`);
-
-        const orderReq: OrderRequest = {
-          symbol: token,
-          side,
-          type: "MARKET",
-          quantity: decision.positionSize,
-          price: filledPrice,
-        };
-
-        const orderResult: OrderResult = await bitunix.placeOrder(orderReq);
-
-        if (orderResult.status === "REJECTED") {
-          return {
-            success: false,
-            filledPrice,
-            requestedPrice: currentPrice,
-            slippage,
-            slippagePct,
-            mode: "paper",
-            side,
-            size: decision.positionSize,
-            timestamp,
-            error: `Bitunix paper order rejected`,
-          };
-        }
-
-        // ── Debit balance for the trade ───────────────────────────
-        const actualCost = decision.positionSize * orderResult.avgPrice;
-        try {
-          await debitBalance(actualCost);
-        } catch (balErr) {
-          return {
-            success: false,
-            filledPrice: orderResult.avgPrice,
-            requestedPrice: currentPrice,
-            slippage,
-            slippagePct,
-            mode: "paper",
-            side,
-            size: decision.positionSize,
-            timestamp,
-            error: `Balance debit failed: ${balErr instanceof Error ? balErr.message : "insufficient funds"}`,
-          };
-        }
-
-        // Track position in unified balance
-        addPaperPosition({
-          id: orderResult.orderId,
-          symbol: token,
-          side: side === "BUY" ? "LONG" : "SHORT",
-          size: decision.positionSize,
-          entryPrice: orderResult.avgPrice,
-          openedAt: timestamp,
-        });
-
-        this.activePositionIds.add(orderResult.orderId);
-
-        // ── Persist trade to DB ────────────────────────────────────
-        if (isDbAvailable()) {
-          const stopLoss = decision.stopLoss || 0;
-          const takeProfit = decision.takeProfit || 0;
-          sql`
-            INSERT INTO trades (id, chain_id, token, direction, entry_price, current_price, size, leverage, pnl, pnl_pct, stop_loss, take_profit, status, opened_at)
-            VALUES (${orderResult.orderId}, ${chainId}, ${token}, ${side === "BUY" ? "LONG" : "SHORT"}, ${orderResult.avgPrice}, ${currentPrice}, ${decision.positionSize}, 1, 0, 0, ${stopLoss}, ${takeProfit}, 'open', now())
-          `.catch((err) => console.error("[DB] execution trade insert failed:", err));
-        }
-
-        return {
-          success: true,
-          tradeId: orderResult.orderId,
-          filledPrice: orderResult.avgPrice,
-          requestedPrice: currentPrice,
-          slippage: Math.abs(orderResult.avgPrice - currentPrice),
-          slippagePct: currentPrice > 0 ? Math.abs(orderResult.avgPrice - currentPrice) / currentPrice : 0,
-          mode: "paper",
-          side,
-          size: decision.positionSize,
-          timestamp,
-        };
+      if (venue === "bitunix") {
+        return await executePaperTrade(bitunix, "Bitunix");
+      } else if (venue === "wallet") {
+        return await executePaperTrade(dex, "DEX/Uniswap V3");
       } else {
-        // "auto" venue — try Bitunix first, fallback to wallet
-        // In paper mode, wallet is also simulated via Bitunix
+        // "auto" venue — try Bitunix first, fallback to DEX
         console.log(`[ExecutionAgent] Paper trade via auto → bitunix — ${side} ${decision.positionSize} ${token}`);
-
-        const orderReq: OrderRequest = {
-          symbol: token,
-          side,
-          type: "MARKET",
-          quantity: decision.positionSize,
-          price: filledPrice,
-        };
-
-        const orderResult: OrderResult = await bitunix.placeOrder(orderReq);
-
-        if (orderResult.status === "REJECTED") {
-          return {
-            success: false,
-            filledPrice,
-            requestedPrice: currentPrice,
-            slippage,
-            slippagePct,
-            mode: "paper",
-            side,
-            size: decision.positionSize,
-            timestamp,
-            error: `Auto-route: Bitunix paper order rejected`,
-          };
-        }
-
         try {
-          await debitBalance(decision.positionSize * orderResult.avgPrice);
-        } catch (balErr) {
-          return {
-            success: false,
-            filledPrice: orderResult.avgPrice,
-            requestedPrice: currentPrice,
-            slippage,
-            slippagePct,
-            mode: "paper",
-            side,
-            size: decision.positionSize,
-            timestamp,
-            error: `Balance debit failed: ${balErr instanceof Error ? balErr.message : "insufficient funds"}`,
-          };
+          return await executePaperTrade(bitunix, "Bitunix (auto)");
+        } catch {
+          console.log(`[ExecutionAgent] Bitunix failed, falling back to DEX`);
+          return await executePaperTrade(dex, "DEX (auto fallback)");
         }
-
-        addPaperPosition({
-          id: orderResult.orderId,
-          symbol: token,
-          side: side === "BUY" ? "LONG" : "SHORT",
-          size: decision.positionSize,
-          entryPrice: orderResult.avgPrice,
-          openedAt: timestamp,
-        });
-
-        this.activePositionIds.add(orderResult.orderId);
-
-        if (isDbAvailable()) {
-          const stopLoss = decision.stopLoss || 0;
-          const takeProfit = decision.takeProfit || 0;
-          sql`
-            INSERT INTO trades (id, chain_id, token, direction, entry_price, current_price, size, leverage, pnl, pnl_pct, stop_loss, take_profit, status, opened_at)
-            VALUES (${orderResult.orderId}, ${chainId}, ${token}, ${side === "BUY" ? "LONG" : "SHORT"}, ${orderResult.avgPrice}, ${currentPrice}, ${decision.positionSize}, 1, 0, 0, ${stopLoss}, ${takeProfit}, 'open', now())
-          `.catch((err) => console.error("[DB] execution trade insert failed:", err));
-        }
-
-        return {
-          success: true,
-          tradeId: orderResult.orderId,
-          filledPrice: orderResult.avgPrice,
-          requestedPrice: currentPrice,
-          slippage: Math.abs(orderResult.avgPrice - currentPrice),
-          slippagePct: currentPrice > 0 ? Math.abs(orderResult.avgPrice - currentPrice) / currentPrice : 0,
-          mode: "paper",
-          side,
-          size: decision.positionSize,
-          timestamp,
-        };
       }
     } catch (err) {
       return {
@@ -622,8 +563,10 @@ export class ExecutionAgent extends BaseAgent {
       }
     }
 
-    // ── PAPER MODE: Route through Bitunix adapter + unified balance ───
+    // ── PAPER MODE: Route through exchange adapter + unified balance ───
+    const venue = resolveVenue();
     const bitunix = getBitunixAdapter();
+    const dex = getDexAdapter();
 
     let orderBook: OrderBook | null = null;
     try {
@@ -640,13 +583,24 @@ export class ExecutionAgent extends BaseAgent {
     );
 
     try {
-      // Close via Bitunix paper trading
-      const symbol = token || positionId;
-      const closeResult = await bitunix.closePaperPosition(symbol);
+      // Choose adapter based on venue
+      let closeResult: OrderResult & { realizedPnl?: number; exitPrice?: number };
+      let adapterName: string;
+
+      if (venue === "wallet") {
+        closeResult = await dex.closePaperPosition(token || positionId);
+        adapterName = "DEX/Uniswap V3";
+      } else {
+        // bitunix or auto — use Bitunix
+        closeResult = await bitunix.closePaperPosition(token || positionId);
+        adapterName = "Bitunix";
+      }
+
+      console.log(`[ExecutionAgent] Paper exit via ${adapterName} — ${closeResult.symbol} @ ${closeResult.avgPrice}`);
 
       // Remove from unified balance tracking
       removePaperPosition(positionId);
-      
+
       // Credit balance with PnL
       const positionSize = closeResult.quantity;
       const realizedPnl = closeResult.realizedPnl ?? 0;

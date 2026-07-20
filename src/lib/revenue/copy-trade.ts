@@ -513,4 +513,3 @@ export function resetCopyTradeState(): void {
     paperMode: SEED_WALLETS.length === 0,
   };
 }
-/home/agent-lead/.profile: line 28: /home/agent-lead/.cargo/env: No such file or directory

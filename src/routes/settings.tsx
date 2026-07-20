@@ -27,6 +27,7 @@ import { CHAINS } from "~/lib/chains";
 import { getExchangeConfigs, toggleExchange } from "~/lib/exchange";
 import type { ExchangeConfig } from "~/lib/exchange";
 import { getVenuePreference, setVenuePreference, type TradingVenue } from "~/lib/venue-selector";
+import { getDexSlippageSetting, getPreferredDex, getGasPreference } from "~/lib/exchange/dex";
 
 // ── Service definitions ────────────────────────────────────────────
 
@@ -128,6 +129,11 @@ function SettingsPage() {
   const [saving, setSaving] = useState<Record<string, boolean>>({});
   const [exchangeToggling, setExchangeToggling] = useState<Record<string, boolean>>({});
   const [tradingVenue, setTradingVenue] = useState<TradingVenue>(getVenuePreference());
+
+  // ── DEX settings state ──────────────────────────────────────────
+  const [dexSlippage, setDexSlippage] = useState<number>(() => getDexSlippageSetting() * 100);
+  const [preferredDex, setPreferredDex] = useState<string>(() => getPreferredDex());
+  const [gasPreference, setGasPreferenceState] = useState<"fast" | "medium" | "slow">(() => getGasPreference());
 
   // ── RPC form state ─────────────────────────────────────────────
   const [newRpcLabel, setNewRpcLabel] = useState("");
@@ -328,6 +334,29 @@ function SettingsPage() {
   const handleVenueChange = useCallback((venue: TradingVenue) => {
     setTradingVenue(venue);
     setVenuePreference(venue);
+  }, []);
+
+  // ── DEX settings handlers ──────────────────────────────────────
+
+  const handleDexSlippageChange = useCallback((value: number) => {
+    setDexSlippage(value);
+    if (typeof window !== "undefined" && window.localStorage) {
+      window.localStorage.setItem("hsmc_dex_slippage", (value / 100).toString());
+    }
+  }, []);
+
+  const handlePreferredDexChange = useCallback((dex: string) => {
+    setPreferredDex(dex);
+    if (typeof window !== "undefined" && window.localStorage) {
+      window.localStorage.setItem("hsmc_preferred_dex", dex);
+    }
+  }, []);
+
+  const handleGasPreferenceChange = useCallback((pref: "fast" | "medium" | "slow") => {
+    setGasPreferenceState(pref);
+    if (typeof window !== "undefined" && window.localStorage) {
+      window.localStorage.setItem("hsmc_gas_preference", pref);
+    }
   }, []);
 
   return (
@@ -978,6 +1007,112 @@ function SettingsPage() {
                 {tradingVenue === "bitunix" ? "Bitunix" : tradingVenue === "wallet" ? "Wallet/DEX" : "Auto (Bitunix → Wallet)"}
               </span>
             </p>
+          </div>
+        </div>
+
+        {/* DEX Configuration section */}
+        <div className="mt-10 animate-fade-in-up" style={{ animationDelay: "0.38s" }}>
+          <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+            <span>🦄</span> DEX Configuration
+          </h2>
+          <p className="text-gray-400 text-sm mb-4">
+            Configure how DEX/Uniswap trades are simulated in paper mode.
+          </p>
+          <div className="glass-card p-5 space-y-6">
+            {/* Slippage tolerance */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-sm font-medium text-white">
+                  Slippage Tolerance
+                </label>
+                <span className="text-sm text-accent-blue font-mono">
+                  {dexSlippage.toFixed(1)}%
+                </span>
+              </div>
+              <p className="text-xs text-gray-500 mb-3">
+                Total DEX slippage = 0.3% Uniswap pool fee + this price impact.
+                Applied to both entry and exit.
+              </p>
+              <input
+                type="range"
+                min={0.1}
+                max={5}
+                step={0.1}
+                value={dexSlippage}
+                onChange={(e) => handleDexSlippageChange(parseFloat(e.target.value))}
+                className="w-full h-2 rounded-lg appearance-none cursor-pointer"
+                style={{
+                  background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${(dexSlippage / 5) * 100}%, #1e293b ${(dexSlippage / 5) * 100}%, #1e293b 100%)`,
+                }}
+              />
+              <div className="flex justify-between text-xs text-gray-600 mt-1">
+                <span>0.1% (tight)</span>
+                <span>5% (loose)</span>
+              </div>
+              <p className="text-xs text-accent-yellow mt-2">
+                Default: 0.5% price impact + 0.3% pool fee = 0.8% total.
+              </p>
+            </div>
+
+            {/* Preferred DEX */}
+            <div>
+              <label className="text-sm font-medium text-white mb-2 block">
+                Preferred DEX
+              </label>
+              <p className="text-xs text-gray-500 mb-3">
+                Select the DEX protocol to simulate swaps through.
+              </p>
+              <div className="flex gap-3 flex-wrap">
+                {([
+                  { value: "uniswap_v3", label: "🦄 Uniswap V3", desc: "Concentrated liquidity, best prices" },
+                  { value: "uniswap_v2", label: "🔄 Uniswap V2", desc: "Classic AMM, wider spreads" },
+                  { value: "sushiswap", label: "🍣 SushiSwap", desc: "0.25% fee (vs 0.3%)" },
+                ]).map((opt) => (
+                  <button
+                    key={opt.value}
+                    onClick={() => handlePreferredDexChange(opt.value)}
+                    className={`text-sm px-4 py-3 rounded-lg border transition-all duration-200 text-left ${
+                      preferredDex === opt.value
+                        ? "border-accent-blue bg-accent-blue/10 text-white"
+                        : "border-dark-border text-gray-500 hover:border-dark-border-light hover:text-gray-300"
+                    }`}
+                  >
+                    <div className="font-semibold">{opt.label}</div>
+                    <div className="text-xs text-gray-500 mt-0.5">{opt.desc}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Gas preference */}
+            <div>
+              <label className="text-sm font-medium text-white mb-2 block">
+                Gas Preference
+              </label>
+              <p className="text-xs text-gray-500 mb-3">
+                Simulated gas cost for DEX transactions. Affects fee estimates.
+              </p>
+              <div className="flex gap-3 flex-wrap">
+                {([
+                  { value: "fast" as const, label: "⚡ Fast", desc: "~50 gwei", cost: "~$26" },
+                  { value: "medium" as const, label: "🚶 Medium", desc: "~25 gwei", cost: "~$13" },
+                  { value: "slow" as const, label: "🐢 Slow", desc: "~10 gwei", cost: "~$5" },
+                ]).map((opt) => (
+                  <button
+                    key={opt.value}
+                    onClick={() => handleGasPreferenceChange(opt.value)}
+                    className={`text-sm px-4 py-3 rounded-lg border transition-all duration-200 text-left ${
+                      gasPreference === opt.value
+                        ? "border-accent-blue bg-accent-blue/10 text-white"
+                        : "border-dark-border text-gray-500 hover:border-dark-border-light hover:text-gray-300"
+                    }`}
+                  >
+                    <div className="font-semibold">{opt.label}</div>
+                    <div className="text-xs text-gray-500 mt-0.5">{opt.desc} · est. {opt.cost}/swap</div>
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
 

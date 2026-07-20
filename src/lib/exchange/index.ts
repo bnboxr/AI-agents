@@ -18,6 +18,15 @@ export type {
 
 export { BinanceAdapter, getBinanceAdapter } from "./binance";
 export { BitunixAdapter, getBitunixAdapter } from "./bitunix";
+export {
+  DexAdapter,
+  getDexAdapter,
+  DEX_PAIRS,
+  getDexSlippageSetting,
+  getPreferredDex,
+  getGasPreference,
+} from "./dex";
+export type { DexPosition } from "./dex";
 
 export {
   registerExchange,

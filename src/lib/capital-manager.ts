@@ -5,7 +5,7 @@
 //
 // pSOL Auto-Staking: when payout > 0.01 SOL, auto-stake into Marinade.
 //
-// LIVE MODE: Loads STARTING_CAPITAL from env (default $10).
+// LIVE MODE: Loads STARTING_CAPITAL from env (default $1,000,000).
 // Verifies real exchange balance on startup.
 
 import { triggerAutoStake, getPSolState, compoundYield, type PSolStakingState } from "./staking/psol";
@@ -21,7 +21,7 @@ interface CapitalState {
   exchangeBalance: number | null;
 }
 
-/** Load starting capital from env or default to $10 */
+/** Load starting capital from env or default to $1,000,000 */
 function loadStartingCapital(): number {
   try {
     const envVal =
@@ -34,7 +34,7 @@ function loadStartingCapital(): number {
     console.warn("[CapitalManager] loadStartingCapital failed:", err);
     // env not available
   }
-  return 10;
+  return 1_000_000;
 }
 
 const initialCapital = loadStartingCapital();

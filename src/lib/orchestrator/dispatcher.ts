@@ -8,7 +8,8 @@ import { validateTrade, recordTradeResult, initAntiDrain, checkDailyDrawdown } f
 import { updateChainBalance, getChainBalance, setInitialBalance } from '../chain-balance';
 import { refreshCooldowns, canClaim, countAvailableFaucets } from '../faucet-cooldown';
 import { isWalletTestnet, getWalletChainConfig } from '../chains-config';
-import { getBalance } from '../unified-balance';
+import { getBalance, getSyncBalance } from '../unified-balance';
+import { getCapitalSummary } from '../strategy-prioritizer';
 
 const POLL_INTERVAL_MS = 2_000;   // 2s between dispatch polls
 const MAX_CONCURRENT = 3;
@@ -18,7 +19,9 @@ const RETRY_BACKOFF_MS = 5_000;    // 5s backoff between retries
 let intervalId: ReturnType<typeof setInterval> | null = null;
 let activeCount = 0;
 let lastFaucetCheck = 0;
+let lastStrategyLog = 0;
 const FAUCET_CHECK_INTERVAL_MS = 60_000; // 60s
+const STRATEGY_LOG_INTERVAL_MS = 60_000; // 60s — log capital/strategy summary
 
 export function getActiveCount(): number {
   return activeCount;
@@ -261,6 +264,24 @@ function poll(): void {
       }
     })();
   }
+
+  // ── Periodic Strategy Capital Summary ───────────────────────────
+  if (now - lastStrategyLog >= STRATEGY_LOG_INTERVAL_MS) {
+    lastStrategyLog = now;
+    try {
+      const balance = getSyncBalance();
+      const summary = getCapitalSummary(balance.usdt);
+      console.log(
+        `[Strategy] Capital: ${balance.usdt.toFixed(2)}, ` +
+        `Eligible: [${summary.eligible.join(", ")}], ` +
+        `Next: ${summary.nextMilestone ?? "all unlocked"}, ` +
+        `Risk: ${summary.highestRisk}`,
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`[Strategy] Failed to compute capital summary: ${msg}`);
+    }
+  }
 }
 
 export function startDispatcher(): void {
@@ -284,6 +305,9 @@ export function stopDispatcher(): void {
 
   console.log('[Orchestrator Dispatcher] Stopped');
 }
+/home/agent-lead/.profile: line 28: /home/agent-lead/.cargo/env: No such file or directory
+/home/agent-lead/.profile: line 28: /home/agent-lead/.cargo/env: No such file or directory
+/home/agent-lead/.profile: line 28: /home/agent-lead/.cargo/env: No such file or directory
 /home/agent-lead/.profile: line 28: /home/agent-lead/.cargo/env: No such file or directory
 /home/agent-lead/.profile: line 28: /home/agent-lead/.cargo/env: No such file or directory
 /home/agent-lead/.profile: line 28: /home/agent-lead/.cargo/env: No such file or directory

@@ -147,48 +147,169 @@ function RootComponent() {
 
 /* ── Navigation ───────────────────────────────────────────────────── */
 
+interface DropdownItem {
+  label: string;
+  to: string;
+}
+
+function NavDropdown({ label, items }: { label: string; items: DropdownItem[] }) {
+  const [open, setOpen] = useState(false);
+  let closeTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const handleMouseEnter = () => {
+    if (closeTimer) { clearTimeout(closeTimer); closeTimer = null; }
+    setOpen(true);
+  };
+
+  const handleMouseLeave = () => {
+    closeTimer = setTimeout(() => setOpen(false), 200);
+  };
+
+  return (
+    <div
+      className="relative"
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+    >
+      <button
+        className="nav-link px-2 py-1.5 rounded text-[0.65rem] sm:text-xs font-semibold text-[#546e7a] hover:text-[#00e676] hover:bg-[#0d1117] transition-all duration-150 whitespace-nowrap font-mono tracking-wider flex items-center gap-1"
+      >
+        {label}
+        <svg className={`w-2.5 h-2.5 transition-transform duration-200 ${open ? "rotate-180" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+      {open && (
+        <div className="absolute top-full left-0 mt-1 py-1.5 min-w-[160px] rounded-lg border border-[#1a1f2e] bg-[#0d1117]/95 backdrop-blur-xl shadow-xl shadow-black/40 z-50">
+          {items.map((item) => (
+            <Link
+              key={item.to}
+              to={item.to}
+              className="block px-3 py-1.5 text-[0.65rem] sm:text-[0.7rem] font-semibold text-[#78909c] hover:text-[#00e676] hover:bg-[#141b24] transition-all duration-100 whitespace-nowrap font-mono tracking-wider"
+              onClick={() => setOpen(false)}
+            >
+              {item.label}
+            </Link>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function NavBar() {
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  const chainsItems: DropdownItem[] = [
+    { label: "SOL", to: "/chains/solana" },
+    { label: "XRP", to: "/chains/xrp" },
+    { label: "TRX", to: "/chains/tron" },
+    { label: "ATOM", to: "/chains/cosmos" },
+    { label: "All Chains", to: "/chains" },
+  ];
+
+  const toolsItems: DropdownItem[] = [
+    { label: "ARB", to: "/arbitrage" },
+    { label: "BACK", to: "/backtesting" },
+    { label: "GAS", to: "/gas" },
+    { label: "ALRT", to: "/alerts" },
+    { label: "RISK", to: "/risk" },
+    { label: "CTRCT", to: "/contracts" },
+  ];
+
+  const moreItems: DropdownItem[] = [
+    { label: "PORT", to: "/portfolio" },
+    { label: "SEND", to: "/withdraw" },
+    { label: "DEPO", to: "/deposit" },
+    { label: "STAKE", to: "/stake" },
+    { label: "VAULT", to: "/vault" },
+    { label: "CHAT", to: "/chat" },
+    { label: "AGENTS", to: "/agents" },
+    { label: "ANALYTICS", to: "/analytics" },
+    { label: "NET", to: "/network" },
+    { label: "TRAIN", to: "/training" },
+    { label: "CFG", to: "/settings" },
+  ];
+
   return (
     <header className="fixed top-0 left-0 right-0 z-50">
       <nav className="glass-nav">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 sm:px-6 py-2.5">
+          {/* Logo */}
           <Link to="/" className="flex items-center gap-2 group shrink-0">
             <span className="text-xl font-black text-[#00e676] font-mono">{">"}</span>
             <span className="text-lg font-bold text-[#e0e6ed] group-hover:text-[#00e676] transition-colors hidden sm:inline font-mono tracking-tight">
               PĂUN_AI
             </span>
           </Link>
-          <div className="flex items-center gap-0.5 overflow-x-auto scrollbar-hide">
-            <NavLink to="/dashboard">DASH</NavLink>
+
+          {/* Desktop Nav Links */}
+          <div className="hidden md:flex items-center gap-0.5">
             <NavLink to="/">HOME</NavLink>
+            <NavLink to="/dashboard">DASH</NavLink>
             <NavLink to="/swap">SWAP</NavLink>
             <NavLink to="/earn">EARN</NavLink>
-            <NavLink to="/portfolio">PORT</NavLink>
-            <NavLink to="/withdraw">SEND</NavLink>
-            <NavLink to="/arbitrage">ARB</NavLink>
-            <NavLink to="/chains">CHAINS</NavLink>
-            <NavLink to="/chains/solana">SOL</NavLink>
-            <NavLink to="/chains/xrp">XRP</NavLink>
-            <NavLink to="/chains/tron">TRX</NavLink>
-            <NavLink to="/chains/cosmos">ATOM</NavLink>
-            <NavLink to="/contracts">CTRCT</NavLink>
-            <NavLink to="/settings">CFG</NavLink>
-            <NavLink to="/deposit">DEPO</NavLink>
             <NavLink to="/trade">TRADE</NavLink>
-            <NavLink to="/chat">CHAT</NavLink>
-            <NavLink to="/risk">RISK</NavLink>
-            <NavLink to="/backtesting">BACK</NavLink>
-            <NavLink to="/gas">GAS</NavLink>
-            <NavLink to="/alerts">ALRT</NavLink>
-            <NavLink to="/training">TRAIN</NavLink>
-            <NavLink to="/network">NET</NavLink>
+            <NavDropdown label="CHAINS" items={chainsItems} />
+            <NavDropdown label="TOOLS" items={toolsItems} />
+            <NavDropdown label="MORE" items={moreItems} />
           </div>
+
+          {/* Right side */}
           <div className="shrink-0 ml-2 flex items-center gap-1">
             <ChainSelector />
             <AlertBell />
             <ConnectButton />
+
+            {/* Mobile hamburger */}
+            <button
+              className="md:hidden ml-1 p-1.5 rounded text-[#546e7a] hover:text-[#00e676] hover:bg-[#0d1117] transition-colors"
+              onClick={() => setMobileOpen(!mobileOpen)}
+              aria-label="Toggle menu"
+            >
+              {mobileOpen ? (
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              ) : (
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+              )}
+            </button>
           </div>
         </div>
+
+        {/* Mobile menu */}
+        {mobileOpen && (
+          <div className="md:hidden border-t border-[#1a1f2e] bg-[#080a0f]/98 backdrop-blur-xl">
+            <div className="px-4 py-3 flex flex-col gap-0.5 max-h-[70vh] overflow-y-auto">
+              <MobileNavLink to="/" onClick={() => setMobileOpen(false)}>HOME</MobileNavLink>
+              <MobileNavLink to="/dashboard" onClick={() => setMobileOpen(false)}>DASH</MobileNavLink>
+              <MobileNavLink to="/swap" onClick={() => setMobileOpen(false)}>SWAP</MobileNavLink>
+              <MobileNavLink to="/earn" onClick={() => setMobileOpen(false)}>EARN</MobileNavLink>
+              <MobileNavLink to="/trade" onClick={() => setMobileOpen(false)}>TRADE</MobileNavLink>
+              <MobileSection>CHAINS</MobileSection>
+              {chainsItems.map((item) => (
+                <MobileNavLink key={item.to} to={item.to} onClick={() => setMobileOpen(false)} indent>
+                  {item.label}
+                </MobileNavLink>
+              ))}
+              <MobileSection>TOOLS</MobileSection>
+              {toolsItems.map((item) => (
+                <MobileNavLink key={item.to} to={item.to} onClick={() => setMobileOpen(false)} indent>
+                  {item.label}
+                </MobileNavLink>
+              ))}
+              <MobileSection>MORE</MobileSection>
+              {moreItems.map((item) => (
+                <MobileNavLink key={item.to} to={item.to} onClick={() => setMobileOpen(false)} indent>
+                  {item.label}
+                </MobileNavLink>
+              ))}
+            </div>
+          </div>
+        )}
       </nav>
       {/* Animated gradient line — green→cyan pulse */}
       <div className="nav-glow-bar"></div>
@@ -206,6 +327,26 @@ function NavLink({ to, children }: { to: string; children: ReactNode }) {
     >
       {children}
     </Link>
+  );
+}
+
+function MobileNavLink({ to, children, onClick, indent }: { to: string; children: ReactNode; onClick: () => void; indent?: boolean }) {
+  return (
+    <Link
+      to={to}
+      onClick={onClick}
+      className={`block py-2 text-xs font-semibold text-[#78909c] hover:text-[#00e676] hover:bg-[#0d1117] rounded transition-colors font-mono tracking-wider ${indent ? "pl-6" : ""}`}
+    >
+      {children}
+    </Link>
+  );
+}
+
+function MobileSection({ children }: { children: ReactNode }) {
+  return (
+    <div className="py-1.5 text-[0.6rem] font-bold text-[#546e7a] font-mono tracking-[0.15em] border-t border-[#1a1f2e] mt-1 pt-2">
+      {children}
+    </div>
   );
 }
 

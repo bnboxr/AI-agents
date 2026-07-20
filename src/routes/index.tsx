@@ -3,13 +3,12 @@ import { useState, useEffect, useMemo } from "react";
 import { useAccount, useBalance, useReadContracts } from "wagmi";
 import { formatUnits, type Address } from "viem";
 import {
-  getAllChainStatus,
   getPrices,
   getFearGreed,
   getArbitrageOpportunities,
   getMempoolTxs,
 } from "~/lib/blockchain";
-import type { ChainStatus, PriceData, FearGreedData, ArbitrageOpportunity, MempoolTx } from "~/lib/blockchain";
+import type { PriceData, FearGreedData, ArbitrageOpportunity, MempoolTx } from "~/lib/blockchain";
 import { getChainTokens } from "~/lib/web3";
 import {
   getPortfolioHistory,
@@ -59,8 +58,7 @@ async function fetchPrices(symbols: string[]): Promise<Record<string, { usd: num
 
 export const Route = createFileRoute("/")({
   loader: async () => {
-    const [chains, prices, fearGreed, arbitrage, mempool, portfolioData, agentActivities] = await Promise.all([
-      getAllChainStatus(),
+    const [prices, fearGreed, arbitrage, mempool, portfolioData, agentActivities] = await Promise.all([
       getPrices(),
       getFearGreed(),
       getArbitrageOpportunities(),
@@ -72,9 +70,9 @@ export const Route = createFileRoute("/")({
     if (agentActivities.length === 0) {
       await initializeAgentScanning();
       const refreshed = await getAgentActivityLog();
-      return { chains, prices, fearGreed, arbitrage, mempool, portfolioData, agentActivities: refreshed };
+      return { prices, fearGreed, arbitrage, mempool, portfolioData, agentActivities: refreshed };
     }
-    return { chains, prices, fearGreed, arbitrage, mempool, portfolioData, agentActivities };
+    return { prices, fearGreed, arbitrage, mempool, portfolioData, agentActivities };
   },
   component: HomePage,
 });
@@ -96,14 +94,13 @@ function HomePage() {
     const interval = setInterval(async () => {
       setRefreshing(true);
       try {
-        const [chains, prices, fearGreed, arbitrage, mempool] = await Promise.all([
-          getAllChainStatus(),
+        const [prices, fearGreed, arbitrage, mempool] = await Promise.all([
           getPrices(),
           getFearGreed(),
           getArbitrageOpportunities(),
           getMempoolTxs(),
         ]);
-        setData(prev => ({ ...prev, chains, prices, fearGreed, arbitrage, mempool }));
+        setData(prev => ({ ...prev, prices, fearGreed, arbitrage, mempool }));
         setLastRefresh(Date.now());
       } catch { /* keep current */ }
       setRefreshing(false);
@@ -153,17 +150,11 @@ function HomePage() {
     return total;
   }, [nativeBalance, erc20Balances, portfolioPrices, tokens]);
 
-  const { chains, prices, fearGreed, arbitrage, mempool, portfolioData, agentActivities: initialActivities } = data;
-  const onlineChains = chains.filter((c) => c.online).length;
-  const totalChains = chains.length;
+  const { prices, fearGreed, arbitrage, mempool, portfolioData, agentActivities: initialActivities } = data;
+  const secondsAgo = Math.round((Date.now() - lastRefresh) / 1000);
 
-  const fmtNum = (n: number) => n.toLocaleString("en-US");
   const fmtPrice = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const fmtPct = (n: number) => `${n >= 0 ? "+" : ""}${n.toFixed(2)}%`;
-  const fmtBlock = (n: number | null) => n !== null ? fmtNum(n) : "—";
-  const fmtGas = (n: number | null) => n !== null ? `${n.toFixed(1)} gwei` : "—";
-  const fmtLatency = (n: number | null) => n !== null ? `${n}ms` : "—";
-  const secondsAgo = Math.round((Date.now() - lastRefresh) / 1000);
 
   return (
     <div className="pt-14 pb-12 px-4 sm:px-6 lg:px-8">
@@ -206,7 +197,7 @@ function HomePage() {
         </section>
 
         {/* ── Header Stats Bar ──────────────────────────────── */}
-        <section className="grid grid-cols-2 lg:grid-cols-4 gap-3 animate-fade-in">
+        <section className="grid grid-cols-2 lg:grid-cols-3 gap-3 animate-fade-in">
           <HeaderStat
             label="BTC"
             value={prices.btc ? fmtPrice(prices.btc.usd) : "—"}
@@ -227,13 +218,6 @@ function HomePage() {
             subtitle={fearGreed?.classification ?? null}
             positive={fearGreed ? fearGreed.value > 50 : null}
             icon="🧠"
-          />
-          <HeaderStat
-            label="Chains Online"
-            value={`${onlineChains}/${totalChains}`}
-            subtitle={`${Math.round((onlineChains / totalChains) * 100)}% uptime`}
-            positive={onlineChains > totalChains * 0.8}
-            icon="🔗"
           />
         </section>
 
@@ -260,25 +244,6 @@ function HomePage() {
             {new Date(lastRefresh).toLocaleTimeString("en-US", { hour12: false })}
           </span>
         </div>
-
-        {/* ── Chain Status Grid ─────────────────────────────── */}
-        <section>
-          <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3 flex items-center gap-2">
-            <span className="text-accent-blue">▸</span> Chain Status — {totalChains} Networks
-          </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2">
-            {chains.map((chain, i) => (
-              <ChainStatusCard
-                key={chain.id}
-                chain={chain}
-                delay={i * 30}
-                fmtBlock={fmtBlock}
-                fmtGas={fmtGas}
-                fmtLatency={fmtLatency}
-              />
-            ))}
-          </div>
-        </section>
 
         {/* ── Arbitrage + Mempool ───────────────────────────── */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -389,53 +354,5 @@ function HeaderStat({
         </div>
       )}
     </div>
-  );
-}
-
-function ChainStatusCard({
-  chain, delay, fmtBlock, fmtGas, fmtLatency,
-}: {
-  chain: ChainStatus;
-  delay: number;
-  fmtBlock: (n: number | null) => string;
-  fmtGas: (n: number | null) => string;
-  fmtLatency: (n: number | null) => string;
-}) {
-  return (
-    <Link
-      to="/chains/$chainId"
-      params={{ chainId: chain.id }}
-      className="glass-card p-3 animate-fade-in-up group block"
-      style={{ animationDelay: `${delay}ms` }}
-    >
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-2">
-          <span className={chain.online ? "status-dot-online" : "status-dot-offline"}></span>
-          <span className="text-sm font-semibold text-white group-hover:text-accent-blue transition-colors">{chain.name}</span>
-        </div>
-        <span className="text-xs text-gray-400">{chain.nativeToken}</span>
-      </div>
-      <div className="space-y-1 text-xs">
-        <div className="flex justify-between">
-          <span className="text-gray-400">Block</span>
-          <span className="text-mono-sm text-gray-200">{fmtBlock(chain.blockHeight)}</span>
-        </div>
-        <div className="flex justify-between">
-          <span className="text-gray-400">Gas</span>
-          <span className="text-mono-sm text-gray-200">{chain.online ? fmtGas(chain.gasPrice) : "—"}</span>
-        </div>
-        <div className="flex justify-between">
-          <span className="text-gray-400">Latency</span>
-          <span className={`text-mono-sm ${chain.online ? 'text-accent-green' : 'text-accent-red'}`}>
-            {fmtLatency(chain.latency)}
-          </span>
-        </div>
-        {!chain.online && chain.error && (
-          <div className="mt-1 pt-1 border-t border-dark-border">
-            <span className="text-accent-red text-mono-sm block truncate" title={chain.error}>{chain.error}</span>
-          </div>
-        )}
-      </div>
-    </Link>
   );
 }

@@ -7,8 +7,31 @@ import * as bip39 from "bip39";
 import { HDKey } from "@scure/bip32";
 import { getAutonomousWallet } from "../autonomous-wallet";
 
-// @ts-expect-error — xrpl types may not resolve perfectly in this bundler config
-import { Client, Wallet } from "xrpl";
+// ── xrpl lazy-load: avoid top-level import (xrpl → @scure/bip32 ESM crashes Bun SSR) ──
+
+interface XrplWallet {
+  classicAddress: string;
+  seed?: string;
+}
+
+interface XrplClient {
+  connect(): Promise<void>;
+  disconnect(): Promise<void>;
+  request(req: Record<string, unknown>): Promise<{ result: Record<string, unknown> }>;
+}
+
+interface XrplModule {
+  Wallet: { fromSeed(seed: string): XrplWallet };
+  Client: new (url: string) => XrplClient;
+}
+
+let _xrplModule: XrplModule | null = null;
+
+async function loadXrpl(): Promise<XrplModule> {
+  if (_xrplModule) return _xrplModule;
+  _xrplModule = (await import("xrpl")) as unknown as XrplModule;
+  return _xrplModule;
+}
 
 // ── Constants ───────────────────────────────────────────────────────────
 
@@ -33,7 +56,7 @@ export interface XrpWalletInfo {
 
 // ── In-memory cache ────────────────────────────────────────────────────
 
-let cachedWallet_: Wallet | null = null;
+let cachedWallet_: XrplWallet | null = null;
 let cachedAddress_: string | null = null;
 let cachedXrpPrice: { price: number; ts: number } | null = null;
 const PRICE_CACHE_TTL = 30_000; // 30 seconds
@@ -44,7 +67,7 @@ const PRICE_CACHE_TTL = 30_000; // 30 seconds
  * Derive an XRP Wallet from the autonomous wallet's BIP39 mnemonic
  * using BIP44 path m/44'/144'/0'/0/0 (secp256k1).
  */
-export async function getXrpWallet(): Promise<Wallet> {
+export async function getXrpWallet(): Promise<XrplWallet> {
   if (cachedWallet_) return cachedWallet_;
 
   const aw = await getAutonomousWallet();
@@ -57,6 +80,7 @@ export async function getXrpWallet(): Promise<Wallet> {
   }
 
   const privKeyHex = Buffer.from(child.privateKey).toString("hex").toUpperCase();
+  const { Wallet } = await loadXrpl();
   const wallet = Wallet.fromSeed(privKeyHex);
 
   cachedWallet_ = wallet;
@@ -84,6 +108,7 @@ export async function getXrpBalance(rpcUrl?: string): Promise<XrpWalletInfo> {
   const wallet = await getXrpWallet();
   const address = wallet.classicAddress;
 
+  const { Client } = await loadXrpl();
   const client = new Client(rpcUrl ?? getDefaultRpcUrl());
 
   let balanceXrp = 0;
@@ -169,7 +194,8 @@ export function getXrpTestnetRpcUrl(): string {
  * Create and return a connected XRPL Client.
  * Caller must disconnect when done.
  */
-export async function connectXrpl(rpcUrl?: string): Promise<Client> {
+export async function connectXrpl(rpcUrl?: string): Promise<XrplClient> {
+  const { Client } = await loadXrpl();
   const client = new Client(rpcUrl ?? getDefaultRpcUrl());
   await client.connect();
   return client;

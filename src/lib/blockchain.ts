@@ -257,7 +257,13 @@ async function checkCosmosChain(chain: ChainConfig): Promise<ChainStatus> {
   const start = Date.now();
   try {
     const res = await fetchWithTimeout(`${chain.rpc}/abci_info?`, {}, 8000);
-    const data = await res.json();
+    const text = await res.text();
+    let data: any;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      throw new Error("Non-JSON response from Cosmos RPC");
+    }
     const latency = Date.now() - start;
     const blockHeight = data?.result?.response?.last_block_height
       ? parseInt(data.result.response.last_block_height, 10)
@@ -287,6 +293,22 @@ async function checkCosmosChain(chain: ChainConfig): Promise<ChainStatus> {
   }
 }
 
+/** XRP Ledger uses WebSocket (wss://) which is incompatible with HTTP fetch.
+ *  We cannot easily query XRP ledger status via a simple HTTP REST call,
+ *  so we gracefully return N/A rather than showing a misleading error. */
+async function checkXrpChain(chain: ChainConfig): Promise<ChainStatus> {
+  return {
+    id: chain.id,
+    name: chain.name,
+    nativeToken: chain.nativeToken,
+    explorer: chain.explorer,
+    online: true, // Assume online — WS check requires persistent connection
+    blockHeight: null,
+    gasPrice: null,
+    latency: null,
+  };
+}
+
 export async function checkChain(chain: ChainConfig): Promise<ChainStatus> {
   switch (chain.type) {
     case 'evm': return checkEVMChain(chain);
@@ -296,6 +318,7 @@ export async function checkChain(chain: ChainConfig): Promise<ChainStatus> {
     case 'sui': return checkSuiChain(chain);
     case 'tron': return checkTronChain(chain);
     case 'cosmos': return checkCosmosChain(chain);
+    case 'xrp': return checkXrpChain(chain);
     default: return checkEVMChain(chain);
   }
 }

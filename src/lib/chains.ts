@@ -12,7 +12,7 @@ export interface ChainConfig {
 export const CHAINS: ChainConfig[] = [
   { id: 'ethereum', name: 'Ethereum', rpc: 'https://eth.drpc.org', chainId: 1, nativeToken: 'ETH', explorer: 'https://etherscan.io', type: 'evm' },
   { id: 'bnb', name: 'BNB Chain', rpc: 'https://bsc-dataseed1.binance.org', chainId: 56, nativeToken: 'BNB', explorer: 'https://bscscan.com', type: 'evm' },
-  { id: 'polygon', name: 'Polygon', rpc: 'https://polygon-rpc.com', chainId: 137, nativeToken: 'MATIC', explorer: 'https://polygonscan.com', type: 'evm' },
+  { id: 'polygon', name: 'Polygon', rpc: 'https://polygon.llamarpc.com', chainId: 137, nativeToken: 'MATIC', explorer: 'https://polygonscan.com', type: 'evm' },
   { id: 'arbitrum', name: 'Arbitrum', rpc: 'https://arb1.arbitrum.io/rpc', chainId: 42161, nativeToken: 'ETH', explorer: 'https://arbiscan.io', type: 'evm' },
   { id: 'optimism', name: 'Optimism', rpc: 'https://mainnet.optimism.io', chainId: 10, nativeToken: 'ETH', explorer: 'https://optimistic.etherscan.io', type: 'evm' },
   { id: 'base', name: 'Base', rpc: 'https://mainnet.base.org', chainId: 8453, nativeToken: 'ETH', explorer: 'https://basescan.org', type: 'evm' },

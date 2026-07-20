@@ -6,9 +6,6 @@
 
 import { getXrpAddress, getXrpBalance, fetchXrpPrice } from "./xrp-wallet";
 
-// @ts-expect-error — xrpl types
-import { Client } from "xrpl";
-
 // ── Types ──────────────────────────────────────────────────────────────
 
 export interface XrpOrderBookLevel {
@@ -74,6 +71,7 @@ export async function getXrpOrderBook(
   rpcUrl?: string,
   limit = 20,
 ): Promise<XrpOrderBook> {
+  const { Client } = await import("xrpl") as { Client: new (url: string) => { connect(): Promise<void>; disconnect(): Promise<void>; request(req: Record<string, unknown>): Promise<{ result: Record<string, unknown> }> } };
   const client = new Client(rpcUrl ?? DEFAULT_XRPL_RPC);
 
   try {

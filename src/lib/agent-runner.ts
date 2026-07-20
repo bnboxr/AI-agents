@@ -394,4 +394,3 @@ setTimeout(() => {
       console.error("[AgentRunner] Failed to load agent states on startup:", err);
     });
 }, 500);
-/home/agent-lead/.profile: line 28: /home/agent-lead/.cargo/env: No such file or directory

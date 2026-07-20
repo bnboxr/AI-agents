@@ -46,6 +46,11 @@ import {
   revealPrivateKey,
 } from "~/lib/autonomous-wallet";
 import type { AutonomousWalletPublic } from "~/lib/autonomous-wallet";
+import {
+  getAllChainAddresses,
+  fetchAllChainBalances,
+} from "~/lib/multi-chain-wallet";
+import type { ChainAddressEntry } from "~/lib/multi-chain-wallet";
 
 // ── Service definitions ────────────────────────────────────────────
 
@@ -125,9 +130,22 @@ const getPrivateKeyFn = createServerFn({ method: "POST" }).handler(
   },
 );
 
+// Multi-chain wallet server functions
+const getChainAddressesFn = createServerFn({ method: "GET" }).handler(
+  async (): Promise<ChainAddressEntry[]> => {
+    return getAllChainAddresses();
+  },
+);
+
+const getChainBalancesFn = createServerFn({ method: "POST" }).handler(
+  async ({ data }: { data: { entries: ChainAddressEntry[] } }): Promise<ChainAddressEntry[]> => {
+    return fetchAllChainBalances(data.entries);
+  },
+);
+
 export const Route = createFileRoute("/settings")({
   loader: async () => {
-    const [settings, destinations, exchangeConfigs, llmProvider, walletInfo] = await Promise.all([
+    const [settings, destinations, exchangeConfigs, llmProvider, walletInfo, chainAddresses] = await Promise.all([
       getSettings(),
       listDestinations(),
       getExchangeConfigs(),
@@ -138,6 +156,7 @@ export const Route = createFileRoute("/settings")({
         chain: "Ethereum",
         balance: "0",
       })),
+      getAllChainAddresses().catch(() => [] as ChainAddressEntry[]),
     ]);
     // Try to detect Ollama on the server side
     let ollamaStatus = { running: false, models: [] as OllamaModel[] };
@@ -146,7 +165,7 @@ export const Route = createFileRoute("/settings")({
     } catch {
       // Ollama not available
     }
-    return { ...settings, destinations, exchangeConfigs, llmProvider, ollamaStatus, walletInfo };
+    return { ...settings, destinations, exchangeConfigs, llmProvider, ollamaStatus, walletInfo, chainAddresses };
   },
   component: SettingsPage,
 });
@@ -191,6 +210,8 @@ function SettingsPage() {
 
   // ── Autonomous wallet state ─────────────────────────────────────
   const [walletData, setWalletData] = useState<AutonomousWalletPublic>(initial.walletInfo);
+  const [chainAddresses, setChainAddresses] = useState<ChainAddressEntry[]>(initial.chainAddresses);
+  const [balancesLoading, setBalancesLoading] = useState(false);
   const [showSeedConfirm, setShowSeedConfirm] = useState(false);
   const [seedPhrase, setSeedPhrase] = useState<string | null>(null);
   const [privateKey, setPrivateKey] = useState<string | null>(null);
@@ -504,6 +525,25 @@ function SettingsPage() {
       // Clipboard not available
     }
   }, []);
+
+  // Fetch on-chain balances for all chains on mount
+  useEffect(() => {
+    if (chainAddresses.length === 0) return;
+    let cancelled = false;
+    const loadBalances = async () => {
+      setBalancesLoading(true);
+      try {
+        const updated = await getChainBalancesFn({ data: { entries: chainAddresses } });
+        if (!cancelled) setChainAddresses(updated);
+      } catch {
+        // keep current data
+      } finally {
+        if (!cancelled) setBalancesLoading(false);
+      }
+    };
+    loadBalances();
+    return () => { cancelled = true; };
+  }, []); // only on mount
 
   // Auto-refresh wallet info every 30s
   useEffect(() => {
@@ -1628,46 +1668,148 @@ function SettingsPage() {
             <span>🔐</span> Autonomous Wallet
           </h2>
           <p className="text-gray-400 text-sm mb-4">
-            This platform-generated wallet executes ALL agent trades on-chain.
-            Fund it with native tokens (ETH on Ethereum, etc.) and the agents will use it automatically.
+            One BIP39 seed phrase generates ALL chain wallets below via BIP44
+            derivation. Fund any chain and agents will use it automatically.
           </p>
 
           <div className="glass-card p-5 space-y-4 border-l-2 border-accent-purple/40">
-            {/* Wallet address */}
+            {/* Multi-chain address grid */}
             <div>
-              <label className="text-xs text-gray-500 uppercase tracking-wider font-mono mb-1 block">
-                Wallet Address
-              </label>
-              <div className="flex items-center gap-2">
-                <code className="text-sm text-white font-mono break-all flex-1">
-                  {walletData.address || "Generating..."}
-                </code>
-                {walletData.address && (
-                  <button
-                    onClick={() => handleCopy(walletData.address, "address")}
-                    className="text-xs px-2 py-1 rounded-md text-gray-500 hover:text-accent-cyan hover:bg-accent-cyan/10 transition-colors shrink-0"
-                    title="Copy address"
-                  >
-                    {copiedField === "address" ? "✓ Copied" : "📋"}
-                  </button>
+              <div className="flex items-center justify-between mb-3">
+                <label className="text-xs text-gray-500 uppercase tracking-wider font-mono">
+                  Derived Chain Addresses
+                </label>
+                {balancesLoading && (
+                  <span className="text-xs text-gray-500 animate-pulse flex items-center gap-1">
+                    <span className="inline-block w-2 h-2 rounded-full bg-accent-blue" />
+                    Loading balances…
+                  </span>
+                )}
+              </div>
+
+              {/* Table header */}
+              <div className="hidden sm:grid sm:grid-cols-[1fr_2fr_1fr_auto] gap-3 px-3 py-2 text-xs text-gray-600 uppercase tracking-wider font-mono border-b border-dark-border mb-1">
+                <span>Chain</span>
+                <span>Address</span>
+                <span>Balance</span>
+                <span></span>
+              </div>
+
+              {/* Chain rows */}
+              <div className="space-y-1">
+                {chainAddresses.length === 0 ? (
+                  <div className="px-3 py-4 text-center text-sm text-gray-500">
+                    Generating wallet addresses…
+                  </div>
+                ) : (
+                  chainAddresses.map((entry) => {
+                    const shortAddr =
+                      entry.address.length > 28
+                        ? `${entry.address.slice(0, 14)}...${entry.address.slice(-10)}`
+                        : entry.address;
+                    const isError = !!entry.error;
+                    const balanceUsdStr = entry.balanceUsd > 0
+                      ? `$${entry.balanceUsd.toFixed(2)}`
+                      : entry.error
+                        ? "—"
+                        : entry.address === "—"
+                          ? "—"
+                          : "$0.00";
+
+                    return (
+                      <div
+                        key={entry.chainId}
+                        className={`grid grid-cols-1 sm:grid-cols-[1fr_2fr_1fr_auto] gap-2 sm:gap-3 px-3 py-2.5 rounded-lg transition-colors ${
+                          isError
+                            ? "bg-accent-red/5 border border-accent-red/10"
+                            : "hover:bg-dark-hover/40"
+                        }`}
+                      >
+                        {/* Chain name + icon */}
+                        <div className="flex items-center gap-2">
+                          <span className="text-lg shrink-0">{entry.icon}</span>
+                          <div>
+                            <span className="text-sm text-white font-medium">
+                              {entry.chain}
+                            </span>
+                            <span className="hidden sm:block text-[0.6rem] text-gray-500 font-mono uppercase">
+                              {entry.nativeSymbol}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Address */}
+                        <div className="flex items-center gap-1 min-w-0">
+                          <code
+                            className={`text-xs font-mono truncate ${
+                              isError ? "text-accent-red/60" : "text-gray-300"
+                            }`}
+                            title={entry.address}
+                          >
+                            {shortAddr}
+                          </code>
+                          {entry.address !== "—" && (
+                            <button
+                              onClick={() => handleCopy(entry.address, `addr-${entry.chainId}`)}
+                              className="text-xs px-1.5 py-0.5 rounded text-gray-600 hover:text-accent-cyan hover:bg-accent-cyan/10 transition-colors shrink-0"
+                              title="Copy address"
+                            >
+                              {copiedField === `addr-${entry.chainId}` ? "✓" : "📋"}
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Balance */}
+                        <div className="flex items-center">
+                          {entry.address === "—" ? (
+                            <span className="text-xs text-gray-600">—</span>
+                          ) : (
+                            <div>
+                              <span className="text-sm text-white font-mono">
+                                {balanceUsdStr}
+                              </span>
+                              {entry.balance > 0 && (
+                                <span className="text-[0.6rem] text-gray-500 ml-1">
+                                  {entry.balance.toLocaleString(undefined, {
+                                    maximumFractionDigits: 6,
+                                  })}{" "}
+                                  {entry.nativeSymbol}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Status dot */}
+                        <div className="flex items-center justify-end">
+                          {isError ? (
+                            <span
+                              className="text-[0.6rem] text-accent-red/60"
+                              title={entry.error}
+                            >
+                              ⚠
+                            </span>
+                          ) : entry.address !== "—" ? (
+                            <span className="status-dot-online" title="Derived" />
+                          ) : (
+                            <span className="status-dot-offline" title="Not available" />
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })
                 )}
               </div>
             </div>
 
-            {/* Wallet info grid */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+            {/* Wallet info summary grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 pt-2 border-t border-dark-border">
               <div>
                 <label className="text-xs text-gray-500 uppercase tracking-wider font-mono mb-1 block">
-                  Chain
+                  Seed Chains
                 </label>
-                <p className="text-sm text-white font-medium">{walletData.chain}</p>
-              </div>
-              <div>
-                <label className="text-xs text-gray-500 uppercase tracking-wider font-mono mb-1 block">
-                  Balance
-                </label>
-                <p className="text-sm text-white font-mono">
-                  {walletData.balance} ETH
+                <p className="text-sm text-white font-medium">
+                  {chainAddresses.filter((e) => e.address !== "—").length} / {chainAddresses.length}
                 </p>
               </div>
               <div>
@@ -1675,11 +1817,23 @@ function SettingsPage() {
                   Status
                 </label>
                 <div className="flex items-center gap-1.5">
-                  <span className={walletData.address ? "status-dot-online" : "status-dot-offline"} />
+                  <span
+                    className={
+                      chainAddresses.length > 0
+                        ? "status-dot-online"
+                        : "status-dot-offline"
+                    }
+                  />
                   <span className="text-sm text-gray-400">
-                    {walletData.address ? "Active" : "Pending"}
+                    {chainAddresses.length > 0 ? "Active" : "Pending"}
                   </span>
                 </div>
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 uppercase tracking-wider font-mono mb-1 block">
+                  Derivation
+                </label>
+                <p className="text-sm text-white font-mono">BIP44</p>
               </div>
             </div>
 
@@ -1687,15 +1841,15 @@ function SettingsPage() {
             <div className="bg-accent-yellow/5 border border-accent-yellow/20 rounded-lg p-3 flex items-start gap-2">
               <span className="text-accent-yellow text-sm shrink-0 mt-0.5">⚠️</span>
               <p className="text-xs text-accent-yellow/80">
-                Store this safely. Never share. This wallet executes ALL agent trades.
-                Anyone with access to the seed phrase or private key controls all agent funds.
+                One seed phrase controls ALL chain wallets. Store it safely.
+                Anyone with the seed or private key controls every address above.
               </p>
             </div>
 
             {/* Seed phrase section */}
             <div className="pt-2 border-t border-dark-border">
               <label className="text-sm font-medium text-white mb-2 block">
-                Seed Phrase (12 words)
+                Seed Phrase (12 words) — Unlocks All Chains
               </label>
               {seedPhrase ? (
                 <div className="space-y-2">
@@ -1712,7 +1866,10 @@ function SettingsPage() {
                       {copiedField === "seed" ? "✓ Copied" : "📋 Copy"}
                     </button>
                     <button
-                      onClick={() => { setSeedPhrase(null); setShowSeedConfirm(false); }}
+                      onClick={() => {
+                        setSeedPhrase(null);
+                        setShowSeedConfirm(false);
+                      }}
                       className="text-xs px-3 py-1.5 rounded-lg border border-dark-border text-gray-400 hover:text-accent-red hover:border-accent-red/40 transition-all duration-200"
                     >
                       Hide
@@ -1724,7 +1881,7 @@ function SettingsPage() {
                   {showSeedConfirm ? (
                     <div className="bg-accent-red/5 border border-accent-red/20 rounded-lg p-4 space-y-3">
                       <p className="text-sm text-accent-red font-medium">
-                        ⚠️ Anyone with this seed phrase can access ALL agent funds.
+                        ⚠️ This seed phrase controls ALL chain wallets above.
                       </p>
                       <p className="text-xs text-gray-400">
                         Make sure nobody is watching your screen. Never share the seed phrase.
@@ -1760,7 +1917,7 @@ function SettingsPage() {
             {/* Private key section */}
             <div className="pt-2 border-t border-dark-border">
               <label className="text-sm font-medium text-white mb-2 block">
-                Private Key
+                Ethereum Private Key
               </label>
               {privateKey ? (
                 <div className="space-y-2">

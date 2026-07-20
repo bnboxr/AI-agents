@@ -1,6 +1,7 @@
 // ── Base Agent Class ──────────────────────────────────────────────
 import { getApiKey } from "~/lib/api-keys";
 import type { AgentReport, AgentRole } from "./types";
+import { queryAllProviders, type LLMMessage } from "../llm/multi-provider";
 
 export interface BaseAgentConfig {
   id: string;
@@ -25,18 +26,50 @@ export class BaseAgent {
     return JSON.stringify(context, null, 2);
   }
 
-  /** Call GPT-4o with the agent's system prompt and context. */
+  /** Call ALL 4 LLM providers (OpenAI, DeepSeek, Grok, Gemini) simultaneously.
+   *  Uses the fastest valid response. Falls back to single OpenAI if multi-provider fails. */
   async analyzeMarket(context: any): Promise<AgentReport> {
-    const apiKey = getApiKey("openai");
-    if (!apiKey) {
-      return this.fallbackReport("No OpenAI API key configured. Add key in Settings.");
-    }
-
     const userPrompt = this.buildUserPrompt(context);
-    const messages = [
+    const messages: LLMMessage[] = [
       { role: "system", content: this.systemPrompt },
       { role: "user", content: userPrompt },
     ];
+
+    // Try multi-provider first (all 4 LLMs)
+    try {
+      const result = await queryAllProviders(messages, {
+        temperature: 0.2,
+        maxTokens: 300,
+        timeoutMs: 10_000,
+      });
+
+      if (result.response) {
+        const parsed = this.parseResponse(result.response.content);
+        return {
+          agentId: this.id,
+          role: this.role,
+          timestamp: Date.now(),
+          ...parsed,
+          data: {
+            ...parsed.data,
+            _llmProvider: result.response.provider,
+            _llmModel: result.response.model,
+            _llmLatencyMs: result.response.latencyMs,
+          },
+        };
+      }
+    } catch (err) {
+      console.warn(
+        `[BaseAgent] multi-provider failed for ${this.id}:`,
+        err instanceof Error ? err.message : "Unknown",
+      );
+    }
+
+    // Fallback: try OpenAI directly
+    const apiKey = getApiKey("openai");
+    if (!apiKey) {
+      return this.fallbackReport("No LLM provider available. Add API keys in Settings.");
+    }
 
     try {
       const controller = new AbortController();
@@ -71,6 +104,7 @@ export class BaseAgent {
         role: this.role,
         timestamp: Date.now(),
         ...parsed,
+        data: { ...parsed.data, _llmProvider: "openai", _llmModel: "gpt-4o" },
       };
     } catch (err) {
       const reason = err instanceof Error ? err.message : "Unknown error";

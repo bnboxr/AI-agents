@@ -4,13 +4,16 @@ import { createServerFn } from "@tanstack/react-start";
 
 export type ServiceName =
   | "openai"
+  | "deepseek"
+  | "grok"
+  | "gemini"
   | "anthropic"
   | "telegram"
   | "discord"
   | "1inch"
   | "coingecko";
 
-export type LLMProvider = "openai" | "anthropic" | "ollama";
+export type LLMProvider = "openai" | "anthropic" | "ollama" | "multi";
 
 export interface ServiceKey {
   service: ServiceName;
@@ -38,6 +41,9 @@ let llmProvider: LLMProvider = "openai";
 // Initialize all services as disabled + unconfigured
 const ALL_SERVICES: ServiceName[] = [
   "openai",
+  "deepseek",
+  "grok",
+  "gemini",
   "anthropic",
   "telegram",
   "discord",
@@ -70,6 +76,21 @@ const SERVICE_CONFIG: Record<
     url: "https://api.openai.com/v1/models",
     headerName: "Authorization",
     headerPrefix: "Bearer ",
+  },
+  deepseek: {
+    url: "https://api.deepseek.com/v1/models",
+    headerName: "Authorization",
+    headerPrefix: "Bearer ",
+  },
+  grok: {
+    url: "https://api.x.ai/v1/models",
+    headerName: "Authorization",
+    headerPrefix: "Bearer ",
+  },
+  gemini: {
+    url: "https://generativelanguage.googleapis.com/v1beta/models?key=",
+    headerName: "",
+    headerPrefix: "",
   },
   anthropic: {
     url: "https://api.anthropic.com/v1/models",
@@ -272,6 +293,9 @@ export function getApiKey(service: ServiceName): string | null {
   // Fallback: read from environment variable
   const envMap: Record<string, string> = {
     openai: process.env.OPENAI_API_KEY || "",
+    deepseek: process.env.DEEPSEEK_API_KEY || "",
+    grok: process.env.GROK_API_KEY || "",
+    gemini: process.env.GEMINI_API_KEY || "",
     anthropic: process.env.ANTHROPIC_API_KEY || "",
   };
   return envMap[service] || null;

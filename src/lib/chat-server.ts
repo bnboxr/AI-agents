@@ -3,6 +3,7 @@ import { executeToolCall, type ToolCall } from "~/lib/chat-tools";
 import { listDestinations, type PaymentDestination } from "~/lib/payment-destinations";
 import { getApiKey, type LLMProvider } from "~/lib/api-keys";
 import { detectOllama, findCompatibleModel, ollamaChat, type OllamaModel } from "~/lib/llm/local";
+import { queryFirstResponse, type LLMMessage } from "~/lib/llm/multi-provider";
 
 interface ChatMessage {
   role: "user" | "assistant" | "system";
@@ -151,10 +152,28 @@ async function detectToolViaLLM(
   if (!userMessages.length) return null;
 
   const lastUserMsg = userMessages[userMessages.length - 1].content;
-  const llmMessages = [
+  const llmMessages: LLMMessage[] = [
     { role: "system", content: SYSTEM_PROMPT },
     { role: "user", content: lastUserMsg },
   ];
+
+  // ── Multi-provider path: use ALL 4 LLMs simultaneously ─────────
+  if (provider === "multi") {
+    try {
+      const raw = await queryFirstResponse(llmMessages, {
+        temperature: 0.3,
+        maxTokens: 50,
+      });
+      if (raw) {
+        const tool = extractToolName(raw.trim());
+        if (tool) return tool;
+      }
+    } catch (err) {
+      console.warn("[ChatServer] multi-provider detection failed:", err);
+    }
+    // Fall through to regex
+    return null;
+  }
 
   if (provider === "ollama") {
     const raw = await detectToolOllama(llmMessages as ChatMessage[]);
@@ -371,15 +390,24 @@ export const processChat = createServerFn({ method: "POST" })
 
     // Dynamically import to avoid circular dependency at module load
     const { getLLMProvider } = await import("~/lib/api-keys");
-    const provider: LLMProvider = await getLLMProvider();
+    let provider: LLMProvider = await getLLMProvider();
 
     // Try LLM detection first, fall back to regex
     let toolName: string | null = null;
     let usedLLM = false;
 
-    // Check if any API key is configured
+    // Check which API keys are available
     const hasOpenAI = !!getApiKey("openai");
+    const hasDeepSeek = !!getApiKey("deepseek");
+    const hasGrok = !!getApiKey("grok");
+    const hasGemini = !!getApiKey("gemini");
     const hasAnthropic = !!getApiKey("anthropic");
+
+    // Auto-upgrade to multi-provider if multiple keys are available and user didn't explicitly pick single
+    const hasMultipleProviders = [hasOpenAI, hasDeepSeek, hasGrok, hasGemini].filter(Boolean).length >= 2;
+    if (hasMultipleProviders && provider !== "ollama" && provider !== "anthropic") {
+      provider = "multi";
+    }
 
     // Check Ollama availability
     let ollamaAvailable = false;
@@ -390,6 +418,7 @@ export const processChat = createServerFn({ method: "POST" })
     }
 
     const hasAnyProvider =
+      (provider === "multi" && hasMultipleProviders) ||
       (provider === "openai" && hasOpenAI) ||
       (provider === "anthropic" && hasAnthropic) ||
       (provider === "ollama" && ollamaAvailable);
@@ -404,6 +433,10 @@ export const processChat = createServerFn({ method: "POST" })
     } else if (provider === "anthropic" && !hasAnthropic && hasOpenAI) {
       // Fallback: user selected Anthropic but no key, try OpenAI
       toolName = await detectToolViaLLM(messages, "openai");
+      if (toolName) usedLLM = true;
+    } else if (!hasAnyProvider && hasMultipleProviders) {
+      // Try multi-provider even if default is single
+      toolName = await detectToolViaLLM(messages, "multi");
       if (toolName) usedLLM = true;
     }
 

@@ -15,6 +15,7 @@ import {
 import type { ServiceKey, RpcEntry, ServiceName, LLMProvider } from "~/lib/api-keys";
 import { detectOllama, findCompatibleModel } from "~/lib/llm/local";
 import type { OllamaModel } from "~/lib/llm/local";
+import { checkAllProviderStatus, getAvailableProviders, type ProviderStatus } from "~/lib/llm/multi-provider";
 import {
   listDestinations,
   addDestination,
@@ -67,8 +68,29 @@ const SERVICES: ServiceDef[] = [
     name: "openai",
     label: "OpenAI",
     icon: "🤖",
-    description: "GPT-4, embeddings, and AI completion APIs",
+    description: "GPT-4o, embeddings, and AI completion APIs",
     placeholder: "sk-...",
+  },
+  {
+    name: "deepseek",
+    label: "DeepSeek",
+    icon: "🔍",
+    description: "DeepSeek-V3 chat model — fast & affordable",
+    placeholder: "sk-...",
+  },
+  {
+    name: "grok",
+    label: "Grok (xAI)",
+    icon: "🚀",
+    description: "Grok-2 by xAI — real-time reasoning",
+    placeholder: "xai-...",
+  },
+  {
+    name: "gemini",
+    label: "Gemini",
+    icon: "💎",
+    description: "Google Gemini Pro — multimodal AI",
+    placeholder: "AIza...",
   },
   {
     name: "anthropic",
@@ -108,6 +130,17 @@ const SERVICES: ServiceDef[] = [
 ];
 
 // ── Route ──────────────────────────────────────────────────────────
+
+// Server function for multi-provider status check
+const checkProvidersFn = createServerFn({ method: "POST" }).handler(
+  async (): Promise<ProviderStatus[]> => {
+    try {
+      return await checkAllProviderStatus();
+    } catch {
+      return [];
+    }
+  },
+);
 
 // Server functions for autonomous wallet
 const getWalletInfo = createServerFn({ method: "GET" }).handler(
@@ -187,6 +220,8 @@ function SettingsPage() {
   const [ollamaRunning, setOllamaRunning] = useState(initial.ollamaStatus.running);
   const [ollamaChecking, setOllamaChecking] = useState(false);
   const [providerSaving, setProviderSaving] = useState(false);
+  const [multiProviderStatuses, setMultiProviderStatuses] = useState<ProviderStatus[]>([]);
+  const [checkingProviders, setCheckingProviders] = useState(false);
   const [inputs, setInputs] = useState<Record<string, string>>({});
   const [testing, setTesting] = useState<Record<string, boolean>>({});
   const [testResults, setTestResults] = useState<Record<string, { ok: boolean; message: string } | null>>({});
@@ -413,6 +448,20 @@ function SettingsPage() {
     }
   }, []);
 
+  // ── Multi-provider status check ──────────────────────────────────
+
+  const handleCheckProviders = useCallback(async () => {
+    setCheckingProviders(true);
+    try {
+      const statuses = await checkProvidersFn({ data: {} });
+      setMultiProviderStatuses(statuses);
+    } catch {
+      setMultiProviderStatuses([]);
+    } finally {
+      setCheckingProviders(false);
+    }
+  }, []);
+
   // ── Trading venue actions ──────────────────────────────────────
   
   const handleVenueChange = useCallback((venue: TradingVenue) => {
@@ -582,13 +631,14 @@ function SettingsPage() {
           </h2>
           <div className="glass-card p-5">
             <p className="text-gray-400 text-sm mb-4">
-              Select which AI model to use for chat and agent reasoning.
+              Select which AI model(s) to use for chat and agent reasoning.
+              <strong> Multi-LLM</strong> races all 4 providers (OpenAI, DeepSeek, Grok, Gemini) — fastest response wins.
               Ollama runs locally on your PC — no API key needed.
             </p>
 
             {/* Provider selector */}
             <div className="flex gap-3 mb-4 flex-wrap">
-              {(["openai", "anthropic", "ollama"] as LLMProvider[]).map((p) => (
+              {(["multi", "openai", "anthropic", "ollama"] as LLMProvider[]).map((p) => (
                 <button
                   key={p}
                   onClick={() => handleProviderChange(p)}
@@ -600,10 +650,10 @@ function SettingsPage() {
                   } disabled:opacity-40`}
                 >
                   <span>
-                    {p === "openai" ? "🤖" : p === "anthropic" ? "🧠" : "🦙"}
+                    {p === "multi" ? "🌐" : p === "openai" ? "🤖" : p === "anthropic" ? "🧠" : "🦙"}
                   </span>
                   <span>
-                    {p === "openai" ? "OpenAI (GPT-4o)" : p === "anthropic" ? "Anthropic (Claude)" : "Ollama (Local)"}
+                    {p === "multi" ? "Multi-LLM (All 4)" : p === "openai" ? "OpenAI (GPT-4o)" : p === "anthropic" ? "Anthropic (Claude)" : "Ollama (Local)"}
                   </span>
                   {provider === p && (
                     <span className="text-accent-blue text-xs">●</span>
@@ -611,6 +661,73 @@ function SettingsPage() {
                 </button>
               ))}
             </div>
+
+            {/* Multi-LLM provider status panel */}
+            {provider === "multi" && (
+              <div className="mt-3 p-4 rounded-lg border border-dark-border bg-dark-hover/40">
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-sm font-semibold text-white flex items-center gap-2">
+                    <span>🌐</span> Provider Status
+                  </h4>
+                  <button
+                    onClick={handleCheckProviders}
+                    disabled={checkingProviders}
+                    className="text-xs px-3 py-1 rounded-lg border border-dark-border text-gray-400 hover:text-white hover:border-accent-blue/40 transition-all disabled:opacity-40"
+                  >
+                    {checkingProviders ? "Checking…" : "🔄 Check All"}
+                  </button>
+                </div>
+
+                {/* Default status (before check) */}
+                {multiProviderStatuses.length === 0 && (
+                  <p className="text-xs text-gray-500 mb-3">
+                    Click "Check All" to test connectivity to all 4 LLM providers.
+                    API keys must be configured in the API Keys section below.
+                  </p>
+                )}
+
+                {/* Provider status grid */}
+                {multiProviderStatuses.length > 0 && (
+                  <div className="grid gap-2 grid-cols-2 sm:grid-cols-4">
+                    {(["openai", "deepseek", "grok", "gemini"] as const).map((prov) => {
+                      const status = multiProviderStatuses.find((s) => s.provider === prov);
+                      const isConnected = status?.connected ?? false;
+                      const icons: Record<string, string> = {
+                        openai: "🤖",
+                        deepseek: "🔍",
+                        grok: "🚀",
+                        gemini: "💎",
+                      };
+                      return (
+                        <div
+                          key={prov}
+                          className={`text-center px-2 py-2 rounded-lg border text-xs ${
+                            isConnected
+                              ? "border-accent-green/20 bg-accent-green/5"
+                              : "border-dark-border bg-dark-hover/20"
+                          }`}
+                        >
+                          <div className="text-lg mb-0.5">{icons[prov]}</div>
+                          <div className={`font-semibold ${isConnected ? "text-accent-green" : "text-gray-500"}`}>
+                            {prov.charAt(0).toUpperCase() + prov.slice(1)}
+                          </div>
+                          <div className="flex items-center justify-center gap-1 mt-1">
+                            <span className={isConnected ? "status-dot-online" : "status-dot-offline"} />
+                            <span className={isConnected ? "text-accent-green text-[0.6rem]" : "text-gray-600 text-[0.6rem]"}>
+                              {isConnected ? `${status!.latencyMs}ms` : "Offline"}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {providerSaving && (
+                  <p className="text-xs text-gray-500 mt-2">Saving preference...</p>
+                )}
+              </div>
+            )}
 
             {/* Ollama status panel */}
             {provider === "ollama" && (

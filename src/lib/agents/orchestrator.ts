@@ -38,6 +38,7 @@ import type {
   TradingState,
 } from "./types";
 import { getApiKey } from "~/lib/api-keys";
+import { queryFirstResponse, type LLMMessage } from "../llm/multi-provider";
 import { sql, isDbAvailable } from "../db";
 
 // ── Agent Registry ────────────────────────────────────────────────
@@ -857,8 +858,12 @@ async function runDialogue(
   enrichedReports: AgentReport[];
   dialogueLog: string;
 }> {
-  const apiKey = getApiKey("openai");
-  if (!apiKey) {
+  // Skip dialogue if no API keys configured at all
+  const hasOpenAI = !!getApiKey("openai");
+  const hasDeepSeek = !!getApiKey("deepseek");
+  const hasGrok = !!getApiKey("grok");
+  const hasGemini = !!getApiKey("gemini");
+  if (!hasOpenAI && !hasDeepSeek && !hasGrok && !hasGemini) {
     return { enrichedReports: reports, dialogueLog: "" };
   }
 
@@ -881,7 +886,7 @@ async function runDialogue(
         !top.some((t) => t.agentId === r.agentId)
       ) {
         top.push(r);
-        if (top.length >= 5) break; // cap at 5 for performance
+        if (top.length >= 5) break;
       }
     }
   }
@@ -902,39 +907,21 @@ async function runDialogue(
         `Your original reasoning: "${agent.reasoning}"\n\n` +
         `Based on your analysis, is this trade a good idea? Explain briefly.`;
 
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 10_000);
+      // Use multi-provider (all 4 LLMs) for dialogue refinement
+      const text = await queryFirstResponse(
+        [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+        { temperature: 0.3, maxTokens: 200, timeoutMs: 10_000 },
+      );
 
-      const res = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "gpt-4o",
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: userPrompt },
-          ],
-          temperature: 0.3,
-          max_tokens: 200,
-        }),
-        signal: controller.signal,
-      });
-      clearTimeout(timeout);
-
-      if (!res.ok) {
+      if (!text) {
         dialogueLines.push(
           `→ ${agent.role}: "${agent.reasoning.slice(0, 80)}"`,
         );
         continue;
       }
-
-      const data = (await res.json()) as {
-        choices: Array<{ message: { content: string } }>;
-      };
-      const text = data.choices?.[0]?.message?.content || "";
 
       // Parse the structured response
       let parsedConfidence: number | null = null;
@@ -963,7 +950,6 @@ async function runDialogue(
           enrichedReports[idx].confidence = Math.round(
             (enrichedReports[idx].confidence + parsedConfidence) / 2,
           );
-          // Use the clarified reasoning if it's non-trivial
           if (parsedReasoning.length > 10) {
             enrichedReports[idx].reasoning = parsedReasoning.slice(0, 200);
           }
@@ -974,8 +960,7 @@ async function runDialogue(
         `→ ${agent.role}: "${parsedReasoning.slice(0, 120)}"`,
       );
     } catch (err) {
-      console.warn("[Orchestrator] dialogue GPT-4o call failed:", err);
-      // GPT-4o call failed — keep original reasoning and confidence
+      console.warn("[Orchestrator] dialogue LLM call failed:", err);
       dialogueLines.push(
         `→ ${agent.role}: "${agent.reasoning.slice(0, 80)}"`,
       );

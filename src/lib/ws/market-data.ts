@@ -4,6 +4,8 @@
 //
 // Symbols are mapped from internal token names to Binance USDT pairs.
 
+import { recordMarketPrice } from "../risk-engine";
+
 // ── Types ──────────────────────────────────────────────────────────
 
 export interface PriceTick {
@@ -177,6 +179,9 @@ function connectBinance(symbols: string[]): void {
         priceCache.set(symbol, { price, timestamp });
         pushHistory(tick);
         notifySubscribers(tick);
+
+        // Feed live price into circuit breaker
+        recordMarketPrice(symbol, price);
       } catch (err) {
         console.warn("[MarketData] onmessage parse error:", err);
         // malformed message — skip
@@ -256,6 +261,9 @@ async function pollCoinGecko(symbols: string[]): Promise<void> {
       priceCache.set(symbol, { price, timestamp: now });
       pushHistory(tick);
       notifySubscribers(tick);
+
+      // Feed live price into circuit breaker (fallback path)
+      recordMarketPrice(symbol, price);
     }
 
     // If we're in fallback and WebSocket comes back, try reconnecting
@@ -410,3 +418,5 @@ export function isSymbolTracked(symbol: string): boolean {
 export function getTrackedSymbols(): string[] {
   return [...trackedSymbols];
 }
+/home/agent-lead/.profile: line 28: /home/agent-lead/.cargo/env: No such file or directory
+/home/agent-lead/.profile: line 28: /home/agent-lead/.cargo/env: No such file or directory

@@ -156,7 +156,7 @@ export async function internalScan(chainId: string): Promise<AgentScanResult> {
         }
       }
     }
-  } catch { /* continue */ }
+  } catch (err) { console.warn("[AgentRunner] internalScan price check failed:", err); /* continue */ }
 
   // 3. Record the activity
   const actionText = opportunities.length > 0
@@ -208,7 +208,8 @@ export const runAllAgentScans = createServerFn({ method: 'POST' }).handler(async
   for (const chain of CHAINS) {
     try {
       results.push(await internalScan(chain.id));
-    } catch {
+    } catch (err) {
+      console.warn("[AgentRunner] runAllAgentScans — chain scan failed:", err);
       results.push({ chainId: chain.id, timestamp: Date.now(), opportunities: [] });
     }
   }

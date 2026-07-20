@@ -294,7 +294,8 @@ export const getPrices = createServerFn({ method: 'GET' }).handler(async (): Pro
       btc: data.bitcoin ? { usd: data.bitcoin.usd, change24h: data.bitcoin.usd_24h_change ?? 0 } : null,
       eth: data.ethereum ? { usd: data.ethereum.usd, change24h: data.ethereum.usd_24h_change ?? 0 } : null,
     };
-  } catch {
+  } catch (err) {
+    console.warn("[Blockchain] getPrices CoinGecko failed:", err);
     return { btc: null, eth: null };
   }
 });
@@ -313,7 +314,8 @@ export const getFearGreed = createServerFn({ method: 'GET' }).handler(async (): 
       classification: item.value_classification || 'Neutral',
       timestamp: parseInt(item.timestamp, 10),
     };
-  } catch {
+  } catch (err) {
+    console.warn("[Blockchain] getFearGreed failed:", err);
     return null;
   }
 });
@@ -382,7 +384,8 @@ export const getArbitrageOpportunities = createServerFn({ method: 'GET' }).handl
           estTime: `${Math.round(2 + Math.random() * 8)} min`,
         });
       }
-    } catch {
+    } catch (err) {
+      console.warn("[Blockchain] getArbitrageOpportunities asset fetch failed:", err);
       // skip this asset
     }
   }
@@ -438,7 +441,8 @@ export const getMempoolTxs = createServerFn({ method: 'GET' }).handler(async ():
       chain: 'ethereum',
       timestamp: parseInt(tx.timeStamp || '0', 10),
     }));
-  } catch {
+  } catch (err) {
+    console.warn("[Blockchain] getMempoolTxs failed:", err);
     return [];
   }
 });

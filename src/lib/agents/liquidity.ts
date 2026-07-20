@@ -183,12 +183,14 @@ export function subscribeOrderBook(
           for (const cb of cbs) {
             try {
               cb(book);
-            } catch {
+            } catch (err) {
+              console.warn("[LiquidityAgent] callback error:", err);
               // swallow callback errors
             }
           }
         }
-      } catch {
+      } catch (err) {
+        console.warn("[LiquidityAgent] onmessage parse error:", err);
         // Parse error: ignore malformed messages
       }
     };
@@ -208,7 +210,8 @@ export function subscribeOrderBook(
     };
 
     websockets.set(symbol, ws);
-  } catch {
+  } catch (err) {
+    console.warn("[LiquidityAgent] WebSocket connection failed:", err);
     // Connection failed; will be retried on next subscribeOrderBook call
   }
 }

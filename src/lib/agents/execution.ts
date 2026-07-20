@@ -347,7 +347,8 @@ export class ExecutionAgent extends BaseAgent {
     let orderBook: OrderBook | null = null;
     try {
       orderBook = await getOrderBook(token);
-    } catch {
+    } catch (err) {
+      console.warn("[ExecutionAgent] getOrderBook failed:", err);
       // Order book unavailable — use conservative fallback in computeSlippagePrice
     }
 
@@ -492,7 +493,8 @@ export class ExecutionAgent extends BaseAgent {
     let orderBook: OrderBook | null = null;
     try {
       orderBook = await getOrderBook(token || "");
-    } catch {
+    } catch (err) {
+      console.warn("[ExecutionAgent] exit getOrderBook failed:", err);
       // unavailable
     }
 

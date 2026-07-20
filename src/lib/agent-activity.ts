@@ -44,7 +44,8 @@ export const getPriceHistory = createServerFn({ method: 'GET' }).handler(async (
       timestamp: ts,
       price: Math.round(price * 100) / 100,
     }));
-  } catch {
+  } catch (err) {
+    console.warn("[AgentActivity] getPriceHistory failed:", err);
     return [];
   }
 });
@@ -67,7 +68,8 @@ export const getTokenPrice = createServerFn({ method: 'GET' }).handler(async (op
       usd: token.usd,
       change24h: token.usd_24h_change ?? 0,
     };
-  } catch {
+  } catch (err) {
+    console.warn("[AgentActivity] getTokenPrice failed:", err);
     return null;
   }
 });
@@ -97,7 +99,8 @@ export const getAllNativePrices = createServerFn({ method: 'GET' }).handler(asyn
       }
     }
     return result;
-  } catch {
+  } catch (err) {
+    console.warn("[AgentActivity] getAllNativePrices failed:", err);
     return {};
   }
 });
@@ -212,7 +215,8 @@ export const getPortfolioHistory = createServerFn({ method: 'GET' }).handler(asy
     }));
 
     return { points, currentTotal };
-  } catch {
+  } catch (err) {
+    console.warn("[AgentActivity] getPortfolioHistory failed:", err);
     return { points: [], currentTotal: 0 };
   }
 });

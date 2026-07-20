@@ -47,6 +47,7 @@ function tick(): void {
         attempts: 0,
       };
       enqueue(task);
+      console.log(`[Scheduler] Tick — enqueuing scan for chain ${chain.id} (priority: ${task.priority})`);
     }
   }
 }

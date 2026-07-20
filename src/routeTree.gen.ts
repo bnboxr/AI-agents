@@ -35,6 +35,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as ChainsXrpRouteImport } from './routes/chains.xrp'
 import { Route as ChainsTronRouteImport } from './routes/chains.tron'
 import { Route as ChainsSolanaRouteImport } from './routes/chains.solana'
+import { Route as ChainsCosmosRouteImport } from './routes/chains.cosmos'
 import { Route as ChainsChainIdRouteImport } from './routes/chains.$chainId'
 
 const WithdrawRoute = WithdrawRouteImport.update({
@@ -167,6 +168,11 @@ const ChainsSolanaRoute = ChainsSolanaRouteImport.update({
   path: '/solana',
   getParentRoute: () => ChainsRoute,
 } as any)
+const ChainsCosmosRoute = ChainsCosmosRouteImport.update({
+  id: '/cosmos',
+  path: '/cosmos',
+  getParentRoute: () => ChainsRoute,
+} as any)
 const ChainsChainIdRoute = ChainsChainIdRouteImport.update({
   id: '/$chainId',
   path: '/$chainId',
@@ -198,6 +204,7 @@ export interface FileRoutesByFullPath {
   '/vault': typeof VaultRoute
   '/withdraw': typeof WithdrawRoute
   '/chains/$chainId': typeof ChainsChainIdRoute
+  '/chains/cosmos': typeof ChainsCosmosRoute
   '/chains/solana': typeof ChainsSolanaRoute
   '/chains/tron': typeof ChainsTronRoute
   '/chains/xrp': typeof ChainsXrpRoute
@@ -227,6 +234,7 @@ export interface FileRoutesByTo {
   '/vault': typeof VaultRoute
   '/withdraw': typeof WithdrawRoute
   '/chains/$chainId': typeof ChainsChainIdRoute
+  '/chains/cosmos': typeof ChainsCosmosRoute
   '/chains/solana': typeof ChainsSolanaRoute
   '/chains/tron': typeof ChainsTronRoute
   '/chains/xrp': typeof ChainsXrpRoute
@@ -257,6 +265,7 @@ export interface FileRoutesById {
   '/vault': typeof VaultRoute
   '/withdraw': typeof WithdrawRoute
   '/chains/$chainId': typeof ChainsChainIdRoute
+  '/chains/cosmos': typeof ChainsCosmosRoute
   '/chains/solana': typeof ChainsSolanaRoute
   '/chains/tron': typeof ChainsTronRoute
   '/chains/xrp': typeof ChainsXrpRoute
@@ -288,6 +297,7 @@ export interface FileRouteTypes {
     | '/vault'
     | '/withdraw'
     | '/chains/$chainId'
+    | '/chains/cosmos'
     | '/chains/solana'
     | '/chains/tron'
     | '/chains/xrp'
@@ -317,6 +327,7 @@ export interface FileRouteTypes {
     | '/vault'
     | '/withdraw'
     | '/chains/$chainId'
+    | '/chains/cosmos'
     | '/chains/solana'
     | '/chains/tron'
     | '/chains/xrp'
@@ -346,6 +357,7 @@ export interface FileRouteTypes {
     | '/vault'
     | '/withdraw'
     | '/chains/$chainId'
+    | '/chains/cosmos'
     | '/chains/solana'
     | '/chains/tron'
     | '/chains/xrp'
@@ -561,6 +573,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ChainsSolanaRouteImport
       parentRoute: typeof ChainsRoute
     }
+    '/chains/cosmos': {
+      id: '/chains/cosmos'
+      path: '/cosmos'
+      fullPath: '/chains/cosmos'
+      preLoaderRoute: typeof ChainsCosmosRouteImport
+      parentRoute: typeof ChainsRoute
+    }
     '/chains/$chainId': {
       id: '/chains/$chainId'
       path: '/$chainId'
@@ -573,6 +592,7 @@ declare module '@tanstack/react-router' {
 
 interface ChainsRouteChildren {
   ChainsChainIdRoute: typeof ChainsChainIdRoute
+  ChainsCosmosRoute: typeof ChainsCosmosRoute
   ChainsSolanaRoute: typeof ChainsSolanaRoute
   ChainsTronRoute: typeof ChainsTronRoute
   ChainsXrpRoute: typeof ChainsXrpRoute
@@ -580,6 +600,7 @@ interface ChainsRouteChildren {
 
 const ChainsRouteChildren: ChainsRouteChildren = {
   ChainsChainIdRoute: ChainsChainIdRoute,
+  ChainsCosmosRoute: ChainsCosmosRoute,
   ChainsSolanaRoute: ChainsSolanaRoute,
   ChainsTronRoute: ChainsTronRoute,
   ChainsXrpRoute: ChainsXrpRoute,

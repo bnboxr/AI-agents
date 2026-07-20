@@ -253,6 +253,40 @@ async function checkTronChain(chain: ChainConfig): Promise<ChainStatus> {
   }
 }
 
+async function checkCosmosChain(chain: ChainConfig): Promise<ChainStatus> {
+  const start = Date.now();
+  try {
+    const res = await fetchWithTimeout(`${chain.rpc}/abci_info?`, {}, 8000);
+    const data = await res.json();
+    const latency = Date.now() - start;
+    const blockHeight = data?.result?.response?.last_block_height
+      ? parseInt(data.result.response.last_block_height, 10)
+      : null;
+    return {
+      id: chain.id,
+      name: chain.name,
+      nativeToken: chain.nativeToken,
+      explorer: chain.explorer,
+      online: true,
+      blockHeight,
+      gasPrice: null,
+      latency,
+    };
+  } catch (err: any) {
+    return {
+      id: chain.id,
+      name: chain.name,
+      nativeToken: chain.nativeToken,
+      explorer: chain.explorer,
+      online: false,
+      blockHeight: null,
+      gasPrice: null,
+      latency: Date.now() - start,
+      error: err.message || 'Connection failed',
+    };
+  }
+}
+
 export async function checkChain(chain: ChainConfig): Promise<ChainStatus> {
   switch (chain.type) {
     case 'evm': return checkEVMChain(chain);
@@ -261,6 +295,7 @@ export async function checkChain(chain: ChainConfig): Promise<ChainStatus> {
     case 'aptos': return checkAptosChain(chain);
     case 'sui': return checkSuiChain(chain);
     case 'tron': return checkTronChain(chain);
+    case 'cosmos': return checkCosmosChain(chain);
     default: return checkEVMChain(chain);
   }
 }

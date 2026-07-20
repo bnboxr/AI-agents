@@ -32,6 +32,7 @@ const TICKER_PAIRS = [
   { symbol: "SUI", coingeckoId: "sui" },
   { symbol: "XRP", coingeckoId: "ripple" },
   { symbol: "TRX", coingeckoId: "tron" },
+  { symbol: "ATOM", coingeckoId: "cosmos" },
 ];
 
 interface TickerData {
@@ -169,6 +170,7 @@ function NavBar() {
             <NavLink to="/chains/solana">SOL</NavLink>
             <NavLink to="/chains/xrp">XRP</NavLink>
             <NavLink to="/chains/tron">TRX</NavLink>
+            <NavLink to="/chains/cosmos">ATOM</NavLink>
             <NavLink to="/contracts">CTRCT</NavLink>
             <NavLink to="/settings">CFG</NavLink>
             <NavLink to="/deposit">DEPO</NavLink>

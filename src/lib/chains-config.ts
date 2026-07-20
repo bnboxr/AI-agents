@@ -193,6 +193,25 @@ export const SUPPORTED_CHAINS: Record<string, WalletChainConfig> = {
       "https://www.trongrid.io/shasta/#/",
     ],
   },
+  // ── Cosmos ────────────────────────────────────────────────────────
+  cosmos: {
+    chainId: 0, // cosmoshub-4
+    name: "Cosmos Hub",
+    rpc: "https://rpc.cosmos.network",
+    explorer: "https://mintscan.io/cosmos",
+    nativeToken: "ATOM",
+  },
+  "cosmos-testnet": {
+    chainId: 1, // theta-testnet-001
+    name: "Cosmos Testnet",
+    rpc: "https://rpc.sentry-01.theta-testnet.polypore.xyz",
+    explorer: "https://explorer.theta-testnet.polypore.xyz",
+    testnet: true,
+    nativeToken: "ATOM",
+    faucets: [
+      "https://faucet.theta-testnet.polypore.xyz",
+    ],
+  },
 };
 
 /** Wallet chain storage key */

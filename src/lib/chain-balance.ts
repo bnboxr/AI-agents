@@ -28,6 +28,7 @@ const NATIVE_PRICES: Record<string, number> = {
   ETH: 3400,
   MATIC: 0.55,
   SOL: 170,
+  ATOM: 6.5,
 };
 
 /** Get the native token price in USD for a chain */

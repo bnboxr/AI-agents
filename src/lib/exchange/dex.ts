@@ -45,6 +45,8 @@ const DEX_PAIRS: Record<string, { baseId: string; quoteId: string; baseDecimals:
   "XRP/BTC":   { baseId: "ripple",         quoteId: "bitcoin",       baseDecimals: 6  },
   "TRX/USDT":  { baseId: "tron",           quoteId: "tether",        baseDecimals: 6  },
   "TRX/USDC":  { baseId: "tron",           quoteId: "usd-coin",      baseDecimals: 6  },
+  "ATOM/USDC": { baseId: "cosmos",         quoteId: "usd-coin",      baseDecimals: 6  },
+  "ATOM/OSMO": { baseId: "cosmos",         quoteId: "osmosis",       baseDecimals: 6  },
 };
 
 /** CoinGecko IDs we query for pricing */
@@ -166,6 +168,7 @@ const baseIdMap: Record<string, string> = {
   uni: "uniswap", aave: "aave", arb: "arbitrum", op: "optimism",
   near: "near", sui: "sui", apt: "aptos", wbtc: "wrapped-bitcoin",
   usdc: "usd-coin", usdt: "tether", dai: "dai", trx: "tron",
+  atom: "cosmos", osmo: "osmosis",
 };
 
 // ── Price Fetching ─────────────────────────────────────────────────
@@ -492,6 +495,7 @@ function getDexFallbackPrice(pair: string): number {
     XRP: 0.60, ADA: 0.45, DOGE: 0.12, AVAX: 35, DOT: 7,
     MATIC: 0.70, LINK: 14, UNI: 8, AAVE: 100, ARB: 1.2,
     OP: 2.5, NEAR: 5, SUI: 1.5, APT: 9, TRX: 0.25,
+    ATOM: 6.5, OSMO: 0.35,
   };
   const basePrice = fallbacks[base] ?? 100;
 

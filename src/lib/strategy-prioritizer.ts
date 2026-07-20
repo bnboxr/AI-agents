@@ -71,6 +71,12 @@ const STRATEGIES: Strategy[] = [
     expectedReturn: "Variable",
     risk: "medium",
   },
+  {
+    name: "Cosmos DEX (Osmosis)",
+    minCapital: 10,
+    expectedReturn: "Variable",
+    risk: "medium",
+  },
 ];
 
 // ── Allocation presets by capital bracket ─────────────────────────────
@@ -111,6 +117,7 @@ const ALLOCATION_BRACKETS: AllocationBracket[] = [
       { name: "Solana DEX (Jupiter)", pct: 0.1 },
       { name: "XRP DEX (XRPL)", pct: 0.05 },
       { name: "TRON DEX (SunSwap)", pct: 0.05 },
+      { name: "Cosmos DEX (Osmosis)", pct: 0.05 },
     ],
   },
   // Tier 3: $500+ — full suite including flash loan arb + Solana
@@ -127,6 +134,7 @@ const ALLOCATION_BRACKETS: AllocationBracket[] = [
       { name: "Solana DEX (Jupiter)", pct: 0.05 },
       { name: "XRP DEX (XRPL)", pct: 0.05 },
       { name: "TRON DEX (SunSwap)", pct: 0.05 },
+      { name: "Cosmos DEX (Osmosis)", pct: 0.05 },
     ],
   },
 ];

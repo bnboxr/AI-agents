@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useEffect, useCallback } from "react";
-import { useAccount } from "wagmi";
+import { useAccount } from "~/lib/demo-wagmi";
 import { CHAINS } from "~/lib/chains";
 import {
   getTradeConfig,

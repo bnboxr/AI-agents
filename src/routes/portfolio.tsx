@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState, useEffect, useMemo } from "react";
-import { useAccount, useChainId, useBalance, useReadContracts } from "wagmi";
+import { useAccount, useChainId, useBalance, useReadContracts } from "~/lib/demo-wagmi";
 import { formatUnits, type Address } from "viem";
 import { getChainTokens, type TokenInfo } from "~/lib/web3";
 

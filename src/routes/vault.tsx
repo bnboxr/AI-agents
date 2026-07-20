@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useEffect, useMemo } from "react";
-import { useAccount, useChainId, useReadContract, useWriteContract, useBalance, useWaitForTransactionReceipt } from "wagmi";
+import { useAccount, useChainId, useReadContract, useWriteContract, useBalance, useWaitForTransactionReceipt } from "~/lib/demo-wagmi";
 import { parseUnits, formatUnits, type Address } from "viem";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 

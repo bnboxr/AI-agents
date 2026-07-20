@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { WagmiProvider, useAccount, useConnect, useDisconnect, useBalance, useChainId, useSwitchChain, useChains } from "wagmi";
+import { WagmiProvider, useAccount, useConnect, useDisconnect, useBalance, useChainId, useSwitchChain, useChains } from "~/lib/demo-wagmi";
 import { formatUnits } from "viem";
 import { useState, useEffect, useMemo, useCallback, type ReactNode } from "react";
 import { config, type WalletMeta, WALLET_LIST } from "~/lib/web3";

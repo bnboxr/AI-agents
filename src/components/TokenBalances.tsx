@@ -1,4 +1,4 @@
-import { useAccount, useBalance, useReadContract } from "wagmi";
+import { useAccount, useBalance, useReadContract } from "~/lib/demo-wagmi";
 import { formatUnits, erc20Abi } from "viem";
 import {
   mainnet, bsc, polygon, arbitrum, optimism, base,

@@ -17,6 +17,7 @@ export interface Notification {
 
 const notifications: Notification[] = [];
 const MAX_NOTIFICATIONS = 100;
+let _notifIdCounter = 0;
 
 // Seed some initial notifications
 function seedNotifications() {
@@ -100,7 +101,7 @@ export const addNotification = createServerFn({ method: 'POST' }).handler(async 
   } 
 }): Promise<Notification> => {
   const notif: Notification = {
-    id: `notif-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    id: `notif_${Date.now().toString(36)}_${(_notifIdCounter++).toString(36)}`,
     title: data.title,
     message: data.message,
     type: data.type,

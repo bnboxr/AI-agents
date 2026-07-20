@@ -15,6 +15,8 @@ export interface ChatStreamResponse {
   responseText: string;
 }
 
+let _callIdCounter = 0;
+
 const TOOL_NAMES = [
   "executeSwap",
   "getPortfolioValue",
@@ -432,7 +434,7 @@ export const processChat = createServerFn({ method: "POST" })
     }
 
     const args = getToolArgs(toolName, messages);
-    const id = `call_${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
+    const id = `call_${Date.now().toString(36)}_${(_callIdCounter++).toString(36)}`;
     const tc: ToolCall = { id, name: toolName, arguments: args };
     const tr = await executeToolCall(tc);
     return { toolCall: { id: tc.id, name: tc.name, arguments: tc.arguments }, toolResult: tr.result, responseText: fmtResult(tc.name, tr.result) };

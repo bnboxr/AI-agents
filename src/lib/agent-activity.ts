@@ -110,6 +110,7 @@ export const getAllNativePrices = createServerFn({ method: 'GET' }).handler(asyn
 // Server-side in-memory activity log (resets on server restart)
 // In production this would use a database
 const activityLog: AgentActivity[] = [];
+let _activityIdCounter = 0;
 
 export const logAgentActivity = createServerFn({ method: 'POST' }).handler(async (opts: {
   chainId: string;
@@ -118,7 +119,7 @@ export const logAgentActivity = createServerFn({ method: 'POST' }).handler(async
   type: 'trade' | 'deposit' | 'withdraw' | 'scan' | 'info';
 }): Promise<AgentActivity> => {
   const entry: AgentActivity = {
-    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    id: `activity_${Date.now().toString(36)}_${(_activityIdCounter++).toString(36)}`,
     chainId: opts.chainId,
     agentName: opts.agentName,
     action: opts.action,

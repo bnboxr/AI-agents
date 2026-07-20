@@ -1,4 +1,4 @@
-import { internalScan, addActivity, getAgentState } from '../agent-runner';
+import { internalScan, addActivity, getAgentState, syncAgentStateToDb } from '../agent-runner';
 import { dequeue, enqueue } from './queue';
 import type { ScanTask, TaskResult } from './types';
 import { agentBus } from '../agent-bus';
@@ -164,6 +164,9 @@ function poll(): void {
           state.status = 'scanning';
           state.lastAction = `Reîncercare scan ${task.chainId} (${retries}/${MAX_RETRIES})`;
           state.lastActionTime = Date.now();
+
+          // Sync state to DB
+          syncAgentStateToDb(state);
 
           result = await executeTask({
             ...task,

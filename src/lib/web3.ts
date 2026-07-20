@@ -16,7 +16,7 @@ import {
   celo,
   moonbeam,
 } from "wagmi/chains";
-import { injected, walletConnect, coinbaseWallet, metaMask, safe } from "@wagmi/connectors";
+import { injected, walletConnect, coinbaseWallet, safe } from "@wagmi/connectors";
 
 // NOTE: Replace this with a real WalletConnect Cloud project ID from https://cloud.walletconnect.com
 const WALLETCONNECT_PROJECT_ID = "18a7b642a20b0d109a8de743b53ccb0b";
@@ -27,8 +27,7 @@ export const config = createConfig({
     fantom, gnosis, zksync, linea, scroll, mantle, celo, moonbeam,
   ],
   connectors: [
-    injected(),           // EIP-6963 multi-injected provider discovery
-    metaMask(),           // Explicit MetaMask SDK
+    injected(),           // EIP-6963 multi-injected provider discovery (handles MetaMask, Rabby, Phantom, etc.)
     walletConnect({       // WalletConnect v2 with QR modal
       projectId: WALLETCONNECT_PROJECT_ID,
       showQrModal: true,
@@ -78,7 +77,7 @@ export const TOP_WALLETS: WalletMeta[] = [
   {
     id: "metamask", name: "MetaMask", icon: "🦊",
     rdns: "io.metamask", installUrl: "https://metamask.io/download/",
-    connectorId: "metaMaskSDK", category: "injected",
+    connectorId: "injected", category: "injected",
   },
   {
     id: "rabby", name: "Rabby", icon: "🦎",
@@ -100,15 +99,14 @@ export const TOP_WALLETS: WalletMeta[] = [
 /**
  * Full wallet list for the modal when wallets ARE detected.
  * IDs must map to real wagmi connector identifiers:
- *   injected()            -> id: "injected"       (EIP-6963 multi-provider)
- *   metaMask()            -> id: "metaMaskSDK"    (MetaMask SDK)
+ *   injected()            -> id: "injected"       (EIP-6963 multi-provider, handles MetaMask, Rabby, Phantom, etc.)
  *   walletConnect()       -> id: "walletConnect"  (WalletConnect v2)
  *   coinbaseWallet()      -> id: "coinbaseWalletSDK"
  *   safe()                -> id: "safe"
  */
 export const WALLET_LIST: WalletMeta[] = [
   // ── Injected / SDK wallets (detected via EIP-6963 or explicit connector) ──
-  { id: "metamask",         name: "MetaMask",          icon: "🦊",  rdns: "io.metamask",         installUrl: "https://metamask.io/download/",        connectorId: "metaMaskSDK", category: "injected" },
+  { id: "metamask",         name: "MetaMask",          icon: "🦊",  rdns: "io.metamask",         installUrl: "https://metamask.io/download/",        connectorId: "injected", category: "injected" },
   { id: "rabby",            name: "Rabby",             icon: "🦎",  rdns: "io.rabby",            installUrl: "https://rabby.io/",                    connectorId: "injected",   category: "injected" },
   { id: "coinbase",         name: "Coinbase Wallet",   icon: "🔵",  rdns: "com.coinbase.wallet",  installUrl: "https://www.coinbase.com/wallet",      connectorId: "coinbaseWalletSDK", category: "sdk" },
   { id: "phantom",          name: "Phantom",           icon: "👻",  rdns: "app.phantom",          installUrl: "https://phantom.app/",                 connectorId: "injected",   category: "injected" },

@@ -118,6 +118,10 @@
     0%, 100% { top: 0%; }
     50% { top: 100%; }
   }
+  @keyframes edge-glow-pulse {
+    0%, 100% { opacity: 0.3; stroke-dashoffset: 0; }
+    50% { opacity: 0.8; stroke-dashoffset: 20; }
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -593,3 +597,10 @@
 @utility peacock-underline {
   text-decoration-color: #00e676;
 }
+
+/* ── Agent Network Graph ──────────────────────────────────── */
+@utility edge-glow {
+  animation: edge-glow-pulse 2s ease-in-out infinite;
+}
+/home/agent-lead/.profile: line 28: /home/agent-lead/.cargo/env: No such file or directory
+/home/agent-lead/.profile: line 28: /home/agent-lead/.cargo/env: No such file or directory

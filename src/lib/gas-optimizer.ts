@@ -118,10 +118,11 @@ async function fetchGasPrice(chainId: string): Promise<number | null> {
     // Fall through to estimate
   }
 
-  // Fallback: use estimate with small random jitter
+  // Fallback: use static estimate (no randomization)
   const base = GAS_PRICE_ESTIMATES[chainId];
   if (base !== undefined) {
-    return base * (0.9 + Math.random() * 0.2);
+    // Static estimate — real gas price fetch failed
+    return base * 1.0;
   }
   return null;
 }

@@ -63,7 +63,7 @@ function seedNotifications() {
   notifications.push(...seed);
 }
 
-seedNotifications();
+// seedNotifications() is available for admin-triggered seeding but does NOT auto-fire on module init
 
 // ── Server Functions ───────────────────────────────────────────────
 

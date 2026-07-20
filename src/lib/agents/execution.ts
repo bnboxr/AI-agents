@@ -21,6 +21,9 @@ import type { OrderRequest, OrderResult } from "~/lib/exchange/types";
 import { resolveVenue } from "~/lib/venue-selector";
 import { debitBalance, creditBalance, getBalance, addPaperPosition, removePaperPosition } from "~/lib/unified-balance";
 import { sql, isDbAvailable } from "~/lib/db";
+import { validateTrade, recordTradeResult, initAntiDrain } from "~/lib/anti-drain";
+import { updateChainBalance } from "~/lib/chain-balance";
+import { isWalletTestnet } from "~/lib/chains-config";
 
 /** Result type for trade opening: either a successful position or an error. */
 interface TradeOpenResult {
@@ -358,6 +361,38 @@ export class ExecutionAgent extends BaseAgent {
       };
     }
 
+    // ── Anti-Drain: Pre-trade validation (testnet only) ─────────────
+    if (isWalletTestnet() && this.mode === "paper") {
+      initAntiDrain(chainId, bal.usdt);
+
+      const validation = validateTrade(
+        bal.usdt,
+        decision.positionSize,
+        decision.confidence,
+        chainId,
+      );
+
+      if (!validation.allowed) {
+        return {
+          success: false,
+          filledPrice: currentPrice,
+          requestedPrice: currentPrice,
+          slippage: 0,
+          slippagePct: 0,
+          mode: "paper",
+          side,
+          size: decision.positionSize,
+          timestamp,
+          error: `Anti-drain blocked: ${validation.reason}`,
+        };
+      }
+
+      console.log(
+        `[ExecutionAgent] Anti-drain OK — ${validation.tier} tier, ` +
+        `max size ${validation.maxSize?.toFixed(2)}, confidence ${decision.confidence}%`,
+      );
+    }
+
     // Try to fetch real order book for accurate slippage
     let orderBook: OrderBook | null = null;
     try {
@@ -444,6 +479,13 @@ export class ExecutionAgent extends BaseAgent {
           INSERT INTO trades (id, chain_id, token, direction, entry_price, current_price, size, leverage, pnl, pnl_pct, stop_loss, take_profit, status, opened_at)
           VALUES (${orderResult.orderId}, ${chainId}, ${token}, ${side === "BUY" ? "LONG" : "SHORT"}, ${orderResult.avgPrice}, ${currentPrice}, ${decision.positionSize}, 1, 0, 0, ${stopLoss}, ${takeProfit}, 'open', now())
         `.catch((err) => console.error("[DB] execution trade insert failed:", err));
+      }
+
+      // ── Post-trade: Update chain balance & anti-drain ─────────────
+      if (isWalletTestnet()) {
+        updateChainBalance(chainId, 0).catch(() => {});
+        const currentBal = await getBalance();
+        recordTradeResult(chainId, 0, currentBal.usdt);
       }
 
       return {
@@ -619,6 +661,16 @@ export class ExecutionAgent extends BaseAgent {
         `.catch((err) => console.error("[DB] execution close update failed:", err));
       }
 
+      // ── Post-close: Update chain balance & anti-drain ────────────
+      if (isWalletTestnet()) {
+        // Use a tracked chainId or "unknown" — chainId is available at the
+        // trade-open site; on close we approximate from the symbol
+        const exitChainId = token || "unknown";
+        updateChainBalance(exitChainId, realizedPnl).catch(() => {});
+        const currentBal = await getBalance();
+        recordTradeResult(exitChainId, realizedPnl, currentBal.usdt);
+      }
+
       // Also close in the old trading-engine (for backward compat)
       try {
         const { closeTrade } = await import("~/lib/trading-engine");
@@ -710,3 +762,8 @@ export class ExecutionAgent extends BaseAgent {
     return this.activePositionIds.size;
   }
 }
+/home/agent-lead/.profile: line 28: /home/agent-lead/.cargo/env: No such file or directory
+/home/agent-lead/.profile: line 28: /home/agent-lead/.cargo/env: No such file or directory
+/home/agent-lead/.profile: line 28: /home/agent-lead/.cargo/env: No such file or directory
+/home/agent-lead/.profile: line 28: /home/agent-lead/.cargo/env: No such file or directory
+/home/agent-lead/.profile: line 28: /home/agent-lead/.cargo/env: No such file or directory

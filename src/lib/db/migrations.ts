@@ -279,9 +279,59 @@ export async function runMigrations(): Promise<void> {
       )
     `);
 
-    console.log("[DB] ✓ All 11 tables created/verified successfully.");
+    // ── Table 12: chain_balances (Agent Training) ────────────────────
+    await sql.query(`
+      CREATE TABLE IF NOT EXISTS chain_balances (
+        chain_id            TEXT PRIMARY KEY,
+        chain_name          TEXT NOT NULL,
+        native_balance      DOUBLE PRECISION NOT NULL DEFAULT 0,
+        usd_value           DOUBLE PRECISION NOT NULL DEFAULT 0,
+        initial_balance     DOUBLE PRECISION NOT NULL DEFAULT 0,
+        current_balance     DOUBLE PRECISION NOT NULL DEFAULT 0,
+        total_trades        INTEGER NOT NULL DEFAULT 0,
+        total_pnl           DOUBLE PRECISION NOT NULL DEFAULT 0,
+        last_faucet_claim   BIGINT NOT NULL DEFAULT 0,
+        faucets_used        TEXT[] DEFAULT '{}',
+        updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `);
+
+    // ── Table 13: faucet_claims (Agent Training) ─────────────────────
+    await sql.query(`
+      CREATE TABLE IF NOT EXISTS faucet_claims (
+        id            BIGSERIAL PRIMARY KEY,
+        faucet_name   TEXT NOT NULL,
+        chain_id      TEXT NOT NULL,
+        claimed_at    BIGINT NOT NULL,
+        reset_at      BIGINT NOT NULL,
+        amount        DOUBLE PRECISION NOT NULL DEFAULT 0,
+        tx_hash       TEXT
+      )
+    `);
+    await sql.query(`CREATE INDEX IF NOT EXISTS idx_faucet_claims_chain ON faucet_claims (chain_id, reset_at DESC)`);
+
+    // ── Table 14: anti_drain_state (Agent Training) ──────────────────
+    await sql.query(`
+      CREATE TABLE IF NOT EXISTS anti_drain_state (
+        chain_id              TEXT PRIMARY KEY,
+        consecutive_losses    INTEGER NOT NULL DEFAULT 0,
+        consecutive_wins      INTEGER NOT NULL DEFAULT 0,
+        total_trades          INTEGER NOT NULL DEFAULT 0,
+        win_rate              DOUBLE PRECISION NOT NULL DEFAULT 0,
+        peak_balance          DOUBLE PRECISION NOT NULL DEFAULT 0,
+        current_balance       DOUBLE PRECISION NOT NULL DEFAULT 0,
+        daily_drawdown_pct    DOUBLE PRECISION NOT NULL DEFAULT 0,
+        profit_locked         DOUBLE PRECISION NOT NULL DEFAULT 0,
+        blocked_until         BIGINT NOT NULL DEFAULT 0,
+        tier                  TEXT NOT NULL DEFAULT 'STARTER',
+        updated_at            TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `);
+
+    console.log("[DB] ✓ All 14 tables created/verified successfully.");
   } catch (err) {
     console.error("[DB] Migration failed:", err);
     throw err;
   }
 }
+/home/agent-lead/.profile: line 28: /home/agent-lead/.cargo/env: No such file or directory

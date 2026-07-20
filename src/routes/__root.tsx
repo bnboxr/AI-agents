@@ -173,6 +173,7 @@ function NavBar() {
             <NavLink to="/backtesting">BACK</NavLink>
             <NavLink to="/gas">GAS</NavLink>
             <NavLink to="/alerts">ALRT</NavLink>
+            <NavLink to="/training">TRAIN</NavLink>
           </div>
           <div className="shrink-0 ml-2 flex items-center gap-1">
             <ChainSelector />
@@ -242,3 +243,4 @@ function RootDocument({ children }: { children: ReactNode }) {
     </html>
   );
 }
+/home/agent-lead/.profile: line 28: /home/agent-lead/.cargo/env: No such file or directory

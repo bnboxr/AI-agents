@@ -284,12 +284,15 @@ function TrainingPage() {
     ([, cfg]) => cfg.testnet,
   );
 
-  // Also include Solana mainnet for display
+  // Also include Solana and TRON mainnet for display
   const solanaChains = Object.entries(SUPPORTED_CHAINS).filter(
     ([id, cfg]) => id === "solana" && !cfg.testnet,
   );
+  const tronChains = Object.entries(SUPPORTED_CHAINS).filter(
+    ([id, cfg]) => id === "tron" && !cfg.testnet,
+  );
 
-  const allDisplayChains = [...testnetChains, ...solanaChains];
+  const allDisplayChains = [...testnetChains, ...solanaChains, ...tronChains];
 
   return (
     <div className="min-h-dvh pt-20 pb-12 px-4 sm:px-6">

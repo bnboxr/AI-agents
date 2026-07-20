@@ -174,6 +174,25 @@ export const SUPPORTED_CHAINS: Record<string, WalletChainConfig> = {
       "https://faucet.solana.com",
     ],
   },
+  // ── TRON ──────────────────────────────────────────────────────────
+  tron: {
+    chainId: 0x2b6653dc,
+    name: "TRON",
+    rpc: "https://api.trongrid.io",
+    explorer: "https://tronscan.org",
+    nativeToken: "TRX",
+  },
+  "tron-shasta": {
+    chainId: 0x94a9059e,
+    name: "TRON Shasta",
+    rpc: "https://api.shasta.trongrid.io",
+    explorer: "https://shasta.tronscan.org",
+    testnet: true,
+    nativeToken: "TRX",
+    faucets: [
+      "https://www.trongrid.io/shasta/#/",
+    ],
+  },
 };
 
 /** Wallet chain storage key */

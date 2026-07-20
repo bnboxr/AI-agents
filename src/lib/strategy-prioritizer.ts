@@ -65,6 +65,12 @@ const STRATEGIES: Strategy[] = [
     expectedReturn: "Variable",
     risk: "medium",
   },
+  {
+    name: "TRON DEX (SunSwap)",
+    minCapital: 10,
+    expectedReturn: "Variable",
+    risk: "medium",
+  },
 ];
 
 // ── Allocation presets by capital bracket ─────────────────────────────
@@ -100,10 +106,11 @@ const ALLOCATION_BRACKETS: AllocationBracket[] = [
       { name: "Airdrop Farming", pct: 0.1 },
       { name: "Micro-Yield (AAVE)", pct: 0.1 },
       { name: "LP Fees", pct: 0.2 },
-      { name: "Spot Trading", pct: 0.25 },
+      { name: "Spot Trading", pct: 0.2 },
       { name: "Perpetuals", pct: 0.2 },
       { name: "Solana DEX (Jupiter)", pct: 0.1 },
       { name: "XRP DEX (XRPL)", pct: 0.05 },
+      { name: "TRON DEX (SunSwap)", pct: 0.05 },
     ],
   },
   // Tier 3: $500+ — full suite including flash loan arb + Solana
@@ -113,12 +120,13 @@ const ALLOCATION_BRACKETS: AllocationBracket[] = [
     allocations: [
       { name: "Airdrop Farming", pct: 0.05 },
       { name: "Micro-Yield (AAVE)", pct: 0.1 },
-      { name: "LP Fees", pct: 0.15 },
+      { name: "LP Fees", pct: 0.1 },
       { name: "Spot Trading", pct: 0.2 },
       { name: "Perpetuals", pct: 0.25 },
       { name: "Flash Loan Arb", pct: 0.15 },
       { name: "Solana DEX (Jupiter)", pct: 0.05 },
       { name: "XRP DEX (XRPL)", pct: 0.05 },
+      { name: "TRON DEX (SunSwap)", pct: 0.05 },
     ],
   },
 ];

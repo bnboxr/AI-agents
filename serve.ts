@@ -223,4 +223,3 @@ async function handleHttp(req: Request): Promise<Response> {
   return (handler as { fetch: (r: Request) => Response | Promise<Response> }).fetch(req);
 }
 
-console.log(`team-site serving on http://${HOST}:${String(PORT)}`);

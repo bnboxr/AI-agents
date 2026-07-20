@@ -43,6 +43,8 @@ const DEX_PAIRS: Record<string, { baseId: string; quoteId: string; baseDecimals:
   "SOL/USDT":  { baseId: "solana",         quoteId: "tether",        baseDecimals: 9  },
   "XRP/USD":   { baseId: "ripple",         quoteId: "usd-coin",      baseDecimals: 6  },
   "XRP/BTC":   { baseId: "ripple",         quoteId: "bitcoin",       baseDecimals: 6  },
+  "TRX/USDT":  { baseId: "tron",           quoteId: "tether",        baseDecimals: 6  },
+  "TRX/USDC":  { baseId: "tron",           quoteId: "usd-coin",      baseDecimals: 6  },
 };
 
 /** CoinGecko IDs we query for pricing */
@@ -163,7 +165,7 @@ const baseIdMap: Record<string, string> = {
   dot: "polkadot", matic: "matic-network", link: "chainlink",
   uni: "uniswap", aave: "aave", arb: "arbitrum", op: "optimism",
   near: "near", sui: "sui", apt: "aptos", wbtc: "wrapped-bitcoin",
-  usdc: "usd-coin", usdt: "tether", dai: "dai",
+  usdc: "usd-coin", usdt: "tether", dai: "dai", trx: "tron",
 };
 
 // ── Price Fetching ─────────────────────────────────────────────────
@@ -489,7 +491,7 @@ function getDexFallbackPrice(pair: string): number {
     BTC: 67_000, WBTC: 67_000, ETH: 3_500, SOL: 170, BNB: 600,
     XRP: 0.60, ADA: 0.45, DOGE: 0.12, AVAX: 35, DOT: 7,
     MATIC: 0.70, LINK: 14, UNI: 8, AAVE: 100, ARB: 1.2,
-    OP: 2.5, NEAR: 5, SUI: 1.5, APT: 9,
+    OP: 2.5, NEAR: 5, SUI: 1.5, APT: 9, TRX: 0.25,
   };
   const basePrice = fallbacks[base] ?? 100;
 

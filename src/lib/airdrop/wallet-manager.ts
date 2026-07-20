@@ -112,7 +112,8 @@ export function needsGasFunding(index: number, chainId: string): boolean {
   const minGas = getMinGas(chainId);
   try {
     return parseFloat(state.balance) < parseFloat(minGas);
-  } catch {
+  } catch (err) {
+    console.warn("[WalletManager] needsGasFunding parse failed:", err);
     return true;
   }
 }
@@ -135,7 +136,8 @@ export function updateWalletAfterTx(
     const gasCost = parseFloat(tx.gasUsed) * parseFloat(tx.effectiveGasPrice) / 1e18;
     const currentGas = parseFloat(state.totalGasSpent);
     state.totalGasSpent = (currentGas + gasCost).toString();
-  } catch {
+  } catch (err) {
+    console.warn("[WalletManager] updateWalletAfterTx parse failed:", err);
     // ignore parse errors
   }
 }

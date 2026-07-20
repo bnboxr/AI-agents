@@ -435,7 +435,8 @@ export function startPriceAlertChecking(): void {
         });
 
       checkPriceAlerts();
-    } catch {
+    } catch (err) {
+      console.warn("[AlertEngine] price check failed:", err);
       // Silently ignore errors in automated checking
     }
   }, 30_000);

@@ -48,7 +48,8 @@ async function tryCoinGecko(coingeckoId: string): Promise<PriceFeedResult | null
       source: 'coingecko',
       timestamp: Date.now(),
     };
-  } catch {
+  } catch (err) {
+    console.warn("[PriceFeeds] tryCoinGecko failed:", err);
     return null;
   }
 }
@@ -86,7 +87,8 @@ async function try1Inch(coingeckoId: string): Promise<PriceFeedResult | null> {
       source: '1inch',
       timestamp: Date.now(),
     };
-  } catch {
+  } catch (err) {
+    console.warn("[PriceFeeds] try1Inch failed:", err);
     return null;
   }
 }
@@ -132,7 +134,8 @@ async function tryUniswapV3(coingeckoId: string): Promise<PriceFeedResult | null
       source: 'uniswap',
       timestamp: Date.now(),
     };
-  } catch {
+  } catch (err) {
+    console.warn("[PriceFeeds] tryUniswapV3 failed:", err);
     return null;
   }
 }
@@ -190,7 +193,7 @@ export async function getRobustMultiPrices(coingeckoIds: string[]): Promise<Mult
       // If we got all, return
       if (Object.keys(result).length === coingeckoIds.length) return result;
     }
-  } catch { /* fall through */ }
+  } catch (err) { console.warn("[PriceFeeds] getRobustMultiPrices bulk fetch failed:", err); /* fall through */ }
 
   // For any missing, try individual fallback
   const missing = coingeckoIds.filter(id => !result[id]);

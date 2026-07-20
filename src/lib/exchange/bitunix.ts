@@ -86,7 +86,8 @@ async function fetchBitunixPrice(symbol: string): Promise<number> {
       const cgId = getCoingeckoId(pair);
       if (fbData[cgId]?.usd) return fbData[cgId].usd;
     }
-  } catch {
+  } catch (err) {
+    console.warn("[Bitunix] fetchBitunixPrice failed:", err);
     // Fall through to final fallback
   }
 
@@ -113,7 +114,8 @@ async function paperPlaceOrder(orderReq: OrderRequest): Promise<OrderResult> {
 
   try {
     fillPrice = await fetchBitunixPrice(pair);
-  } catch {
+  } catch (err) {
+    console.warn("[Bitunix] paperPlaceOrder fetchBitunixPrice failed:", err);
     // Fallback: use a simulated price for paper trading
     fillPrice = getFallbackPrice(pair);
   }
@@ -282,7 +284,8 @@ class BitunixAdapter implements ExchangeAdapter {
           try {
             const price = await this.getPrice(`${bal.asset}/USDT`);
             bal.usdValue = (bal.free + bal.locked) * price;
-          } catch {
+          } catch (err) {
+            console.warn("[Bitunix] getBalance price fetch failed:", err);
             bal.usdValue = 0;
           }
         }

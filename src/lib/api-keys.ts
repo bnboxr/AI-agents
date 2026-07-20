@@ -236,7 +236,8 @@ export const testApiKey = createServerFn({ method: "POST" }).handler(
       try {
         const body = await res.text();
         detail = body.slice(0, 200);
-      } catch {
+      } catch (err) {
+        console.warn("[ApiKeys] verifyConnection body parse failed:", err);
         // ignore parse failure
       }
 

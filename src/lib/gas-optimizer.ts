@@ -113,7 +113,8 @@ async function fetchGasPrice(chainId: string): Promise<number | null> {
         return Math.round(gwei * 100) / 100;
       }
     }
-  } catch {
+  } catch (err) {
+    console.warn("[GasOptimizer] fetchLiveGasPrice failed:", err);
     // Fall through to estimate
   }
 

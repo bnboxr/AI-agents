@@ -73,7 +73,8 @@ async function detectToolOpenAI(
       choices: Array<{ message: { content: string } }>;
     };
     return data.choices?.[0]?.message?.content?.trim() ?? null;
-  } catch {
+  } catch (err) {
+    console.warn("[ChatServer] detectToolOpenAI failed:", err);
     return null;
   } finally {
     clearTimeout(timeout);
@@ -105,7 +106,8 @@ async function detectToolAnthropic(
     if (!res.ok) return null;
     const data = (await res.json()) as { content: Array<{ text: string }> };
     return data.content?.[0]?.text?.trim() ?? null;
-  } catch {
+  } catch (err) {
+    console.warn("[ChatServer] detectToolAnthropic failed:", err);
     return null;
   } finally {
     clearTimeout(timeout);
@@ -125,7 +127,8 @@ async function detectToolOllama(messages: ChatMessage[]): Promise<string | null>
       max_tokens: 50,
     });
     return response.content.trim() || null;
-  } catch {
+  } catch (err) {
+    console.warn("[ChatServer] detectToolOllama failed:", err);
     return null;
   }
 }

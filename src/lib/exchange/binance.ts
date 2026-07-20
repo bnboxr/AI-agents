@@ -47,8 +47,8 @@ function parsePaperBalances(): AssetBalance[] {
           usdValue: asset === 'USDT' ? (typeof amount === 'number' ? amount : 0) : 0,
         }));
       }
-    } catch {
-      console.warn('[Binance] PAPER_BALANCES parse failed — using defaults');
+    } catch (err) {
+      console.warn("[Binance] PAPER_BALANCES parse failed — using defaults:", err);
     }
   }
   // Modest defaults for a new account
@@ -98,7 +98,8 @@ async function fetchBinancePrice(symbol: string): Promise<number> {
     }
     const data = await res.json() as { price: string };
     return parseFloat(data.price);
-  } catch {
+  } catch (err) {
+    console.warn("[Binance] fetchBinancePrice failed:", err);
     const cached = getCachedPrice(symbol.replace("USDT", ""));
     if (cached !== null) return cached;
     throw new Error(`No price available for ${symbol}`);
@@ -113,7 +114,8 @@ async function paperPlaceOrder(orderReq: OrderRequest): Promise<OrderResult> {
 
   try {
     fillPrice = await fetchBinancePrice(pair);
-  } catch {
+  } catch (err) {
+    console.warn("[Binance] paperPlaceOrder fetchBinancePrice failed:", err);
     throw new Error(`Cannot get price for ${pair}`);
   }
 
@@ -272,7 +274,8 @@ class BinanceAdapter implements ExchangeAdapter {
           try {
             const price = await this.getPrice(`${bal.asset}USDT`);
             bal.usdValue = (bal.free + bal.locked) * price;
-          } catch {
+          } catch (err) {
+            console.warn("[Binance] getBalance price fetch failed:", err);
             bal.usdValue = 0;
           }
         }

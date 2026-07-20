@@ -310,7 +310,8 @@ export async function placeOrderBestExchange(order: OrderRequest): Promise<Order
         bestPrice = price;
         bestExchange = adapter;
       }
-    } catch {
+    } catch (err) {
+      console.warn("[ExchangeManager] smartRoute price check failed:", err);
       // skip failed exchanges
     }
   }

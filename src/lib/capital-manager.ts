@@ -30,7 +30,8 @@ function loadStartingCapital(): number {
       const parsed = parseFloat(envVal);
       if (!isNaN(parsed) && parsed > 0) return parsed;
     }
-  } catch {
+  } catch (err) {
+    console.warn("[CapitalManager] loadStartingCapital failed:", err);
     // env not available
   }
   return 10;
@@ -108,7 +109,8 @@ export async function verifyExchangeBalance(): Promise<CapitalState> {
         }
       }
     }
-  } catch {
+  } catch (err) {
+    console.warn("[CapitalManager] verifyExchangeBalance failed:", err);
     // Exchange API unavailable — continue with paper balance
   }
 
@@ -145,7 +147,8 @@ export async function recordProfit(pnl: number): Promise<CapitalState> {
     // Re-verify exchange balance to sync
     try {
       await verifyExchangeBalance();
-    } catch {
+    } catch (err) {
+      console.warn("[CapitalManager] recordProfit verifyExchangeBalance failed:", err);
       // best-effort
     }
   } else if (pnl < 0) {

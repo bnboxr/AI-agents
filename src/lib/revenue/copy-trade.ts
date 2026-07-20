@@ -70,7 +70,8 @@ function loadSeedWallets(): Omit<TrackedWallet, "addedAt" | "lastTradeAt">[] {
         }));
       }
     }
-  } catch {
+  } catch (err) {
+    console.warn("[CopyTrade] loadSeedWallets parse failed:", err);
     // Ignore parse errors — fall through to empty array
   }
   return [];

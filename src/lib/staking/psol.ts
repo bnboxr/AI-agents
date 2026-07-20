@@ -61,7 +61,8 @@ function detectLiveMode(): boolean {
       typeof process !== "undefined" && process.env?.SOLANA_RPC_URL;
     // Live if RPC is configured and we can attempt real connections
     return !!rpcUrl;
-  } catch {
+  } catch (err) {
+    console.warn("[PSol] detectLiveMode failed:", err);
     return false;
   }
 }
@@ -72,7 +73,8 @@ function getSolanaRpcUrl(): string {
       (typeof process !== "undefined" && process.env?.SOLANA_RPC_URL) ||
       "https://api.mainnet-beta.solana.com"
     );
-  } catch {
+  } catch (err) {
+    console.warn("[PSol] getSolanaRpcUrl failed:", err);
     return "https://api.mainnet-beta.solana.com";
   }
 }
@@ -95,7 +97,8 @@ export async function fetchSolPrice(): Promise<number> {
       cachedSolPrice = price;
       lastSolPriceFetch = now;
     }
-  } catch {
+  } catch (err) {
+    console.warn("[PSol] fetchSolPrice failed:", err);
     // Keep cached value on error
   }
   return cachedSolPrice;
@@ -157,7 +160,8 @@ async function fetchMarinadeAPY(): Promise<number> {
       return Math.round(apyDecimal * 100 * 100) / 100;
     }
     return DEFAULT_APY;
-  } catch {
+  } catch (err) {
+    console.warn("[PSol] fetchMarinadeAPY failed:", err);
     return DEFAULT_APY;
   }
 }
@@ -191,11 +195,13 @@ async function fetchRealMSolBalance(): Promise<number | null> {
     try {
       const balance = await connection.getTokenAccountBalance(tokenAccount);
       return balance.value.uiAmount ?? 0;
-    } catch {
+    } catch (err) {
+      console.warn("[PSol] getTokenAccountBalance failed:", err);
       // Token account may not exist yet (0 balance)
       return 0;
     }
-  } catch {
+  } catch (err) {
+    console.warn("[PSol] fetchRealMSolBalance failed:", err);
     // @solana/web3.js not available — fall back to simulated
     return null;
   }
@@ -235,7 +241,8 @@ async function sendRealMarinadeDeposit(amountSOL: number): Promise<string | null
     // Return the serialized transaction for the client to sign.
     const serialized = tx.serialize({ requireAllSignatures: false });
     return Buffer.from(serialized).toString("base64");
-  } catch {
+  } catch (err) {
+    console.warn("[PSol] sendRealMarinadeDeposit failed:", err);
     return null;
   }
 }

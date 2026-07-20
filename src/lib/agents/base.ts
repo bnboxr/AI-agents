@@ -94,7 +94,8 @@ export class BaseAgent {
         reasoning: String(json.reasoning || "No reasoning provided"),
         data: json.data || {},
       };
-    } catch {
+    } catch (err) {
+      console.warn("[BaseAgent] parseResponse failed:", err);
       return {
         direction: "NEUTRAL",
         confidence: 30,

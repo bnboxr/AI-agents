@@ -73,7 +73,8 @@ async function fetchLidoAPR(): Promise<number | null> {
     const data = await res.json();
     // Lido returns APR as decimal (e.g., 0.03 = 3%)
     return data?.data?.apr ? parseFloat(data.data.apr) * 100 : null;
-  } catch {
+  } catch (err) {
+    console.warn("[StakingProtocols] fetchLidoAPR failed:", err);
     return null;
   }
 }
@@ -88,7 +89,8 @@ async function fetchRocketPoolAPR(): Promise<number | null> {
     // Rocket Pool returns commission and rETH stats
     const apr = data?.node_commission_rate ?? data?.reth_apr;
     return apr ? parseFloat(apr) * 100 : null;
-  } catch {
+  } catch (err) {
+    console.warn("[StakingProtocols] fetchRocketPoolAPR failed:", err);
     return null;
   }
 }
@@ -102,7 +104,8 @@ async function fetchMarinadeAPY(): Promise<number | null> {
     const data = await res.json();
     // Marinade APY
     return data?.apy ? parseFloat(data.apy) * 100 : null;
-  } catch {
+  } catch (err) {
+    console.warn("[StakingProtocols] fetchMarinadeAPY failed:", err);
     return null;
   }
 }
@@ -115,7 +118,8 @@ async function fetchMetaPoolAPY(): Promise<number | null> {
     if (!res.ok) return null;
     const data = await res.json();
     return data?.apy ? parseFloat(data.apy) : null;
-  } catch {
+  } catch (err) {
+    console.warn("[StakingProtocols] fetchMetaPoolAPY failed:", err);
     return null;
   }
 }
@@ -129,7 +133,8 @@ async function fetchBenqiAPY(): Promise<number | null> {
     if (!res.ok) return null;
     const data = await res.json();
     return data?.data?.apy ? parseFloat(data.data.apy) : null;
-  } catch {
+  } catch (err) {
+    console.warn("[StakingProtocols] fetchBenqiAPY failed:", err);
     return null;
   }
 }

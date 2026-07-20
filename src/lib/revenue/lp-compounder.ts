@@ -38,7 +38,8 @@ function detectLiveMode(): boolean {
     const baseRpc =
       typeof process !== "undefined" && process.env?.BASE_RPC_URL;
     return !!baseRpc;
-  } catch {
+  } catch (err) {
+    console.warn("[LPCompounder] detectLiveMode failed:", err);
     return false;
   }
 }
@@ -151,7 +152,8 @@ async function buildRealLPDeposit(
     }
 
     return null;
-  } catch {
+  } catch (err) {
+    console.warn("[LPCompounder] buildRealLPDeposit failed:", err);
     return null;
   }
 }

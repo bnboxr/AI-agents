@@ -72,7 +72,8 @@ async function fetchHistoricalPrices(
     const data = await res.json();
     const prices: [number, number][] = data?.prices ?? [];
     return prices.map(([ts, price]) => ({ timestamp: ts, price }));
-  } catch {
+  } catch (err) {
+    console.warn("[Backtesting] fetchCoinGeckoRange failed:", err);
     return [];
   }
 }

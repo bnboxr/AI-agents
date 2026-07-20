@@ -136,7 +136,8 @@ Respond in JSON format only: {"direction":"LONG"|"SHORT"|"HOLD","confidence":0-1
       confidence: json.confidence || 50,
       reasoning: json.reasoning || "AI analysis complete",
     };
-  } catch {
+  } catch (err) {
+    console.warn("[TradingEngine] analyzeMarketWithAI failed:", err);
     return { direction: null, confidence: 0, reasoning: "Analysis failed — using fallback rules" };
   }
 }

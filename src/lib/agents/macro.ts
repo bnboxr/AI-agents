@@ -72,7 +72,8 @@ export class MacroAnalysisAgent extends BaseAgent {
         price: meta.regularMarketPrice,
         changePct: meta.regularMarketChangePercent ?? 0,
       };
-    } catch {
+    } catch (err) {
+      console.warn("[MacroAgent] fetchDXY failed:", err);
       return null;
     }
   }
@@ -106,7 +107,8 @@ export class MacroAnalysisAgent extends BaseAgent {
         price: meta.regularMarketPrice,
         changePct: meta.regularMarketChangePercent ?? 0,
       };
-    } catch {
+    } catch (err) {
+      console.warn("[MacroAgent] fetchSP500 failed:", err);
       return null;
     }
   }
@@ -140,7 +142,8 @@ export class MacroAnalysisAgent extends BaseAgent {
         price: meta.regularMarketPrice,
         changePct: meta.regularMarketChangePercent ?? 0,
       };
-    } catch {
+    } catch (err) {
+      console.warn("[MacroAgent] fetchGold failed:", err);
       return null;
     }
   }
@@ -172,7 +175,8 @@ export class MacroAnalysisAgent extends BaseAgent {
         value: parseInt(item.value, 10),
         label: item.value_classification,
       };
-    } catch {
+    } catch (err) {
+      console.warn("[MacroAgent] fetchFearGreed failed:", err);
       return null;
     }
   }
@@ -233,7 +237,8 @@ export class MacroAnalysisAgent extends BaseAgent {
 
         return { dxyCryptoCorr, sp500CryptoCorr, goldCryptoCorr };
       }
-    } catch {
+    } catch (err) {
+      console.warn("[MacroAgent] computeCorrelations — correlation agent unavailable:", err);
       // Correlation agent unavailable — use hardcoded defaults
     }
 

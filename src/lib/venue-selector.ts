@@ -1,5 +1,6 @@
 // ── Venue Selector ──────────────────────────────────────────────────
 // Persists trading venue preference (Bitunix / Wallet / Auto).
+// Also exports wallet chain helpers (re-exports from chains-config).
 // Uses localStorage for persistence (browser-only).
 // Falls back to "bitunix" default.
 
@@ -61,3 +62,17 @@ export function resolveVenue(): "bitunix" | "wallet" {
   }
   return pref;
 }
+
+// ── Wallet Chain Helpers (re-exported from chains-config) ───────────
+
+export {
+  getWalletChain,
+  getWalletChainName,
+  getWalletChainId,
+  getWalletChainConfig,
+  isWalletTestnet,
+  setWalletChain,
+  listWalletChainIds,
+  SUPPORTED_CHAINS as WALLET_CHAINS,
+} from "./chains-config";
+export type { WalletChainConfig } from "./chains-config";

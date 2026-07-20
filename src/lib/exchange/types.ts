@@ -2,6 +2,9 @@
 // Shared interfaces for all exchange integrations.
 // All live execution is disabled by default (paper mode).
 
+/** Exchange role: data-only, trading-only, or both. */
+export type ExchangeRole = "data" | "trading" | "both";
+
 export interface OrderBook {
   symbol: string;
   bids: OrderBookLevel[];  // sorted: highest price first
@@ -71,6 +74,9 @@ export interface ExchangeAdapter {
   /** Human-readable exchange name */
   name: string;
 
+  /** Exchange role: data, trading, or both */
+  role: ExchangeRole;
+
   /** Get the current price for a symbol (e.g. "BTCUSDT") */
   getPrice(symbol: string): Promise<number>;
 
@@ -100,6 +106,20 @@ export interface ExchangeAdapter {
 
   /** Set enabled state */
   setEnabled(enabled: boolean): void;
+
+  // ── Perpetuals (optional) ──────────────────────────────────────────
+
+  /** Place a perpetual futures order */
+  placePerpetualOrder?(order: PerpetualOrderRequest): Promise<OrderResult>;
+
+  /** Get open perpetual positions */
+  getPerpetualPositions?(symbol?: string): Promise<PerpetualPosition[]>;
+
+  /** Set leverage for a perpetual symbol */
+  setLeverage?(symbol: string, leverage: number): Promise<void>;
+
+  /** Close a perpetual position by symbol */
+  closePerpetualPosition?(symbol: string): Promise<OrderResult>;
 }
 
 export interface ArbitrageOpportunity {
@@ -116,7 +136,31 @@ export interface ArbitrageOpportunity {
 export interface ExchangeConfig {
   exchangeId: string;
   name: string;
+  role: ExchangeRole;
   enabled: boolean;
   isLive: boolean;
   apiKeyConfigured: boolean;
+}
+
+// ── Perpetuals ──────────────────────────────────────────────────────
+
+export interface PerpetualOrderRequest extends OrderRequest {
+  leverage: number;        // 1-125x
+  marginMode: "isolated" | "cross";
+  reduceOnly?: boolean;
+  stopLossPrice?: number;
+  takeProfitPrice?: number;
+}
+
+export interface PerpetualPosition {
+  symbol: string;
+  side: "LONG" | "SHORT";
+  quantity: number;
+  entryPrice: number;
+  markPrice: number;
+  leverage: number;
+  marginMode: "isolated" | "cross";
+  unrealizedPnl: number;
+  liquidationPrice: number;
+  marginUsed: number;
 }

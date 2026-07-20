@@ -6,6 +6,7 @@
 
 import type {
   ExchangeAdapter,
+  ExchangeRole,
   ArbitrageOpportunity,
   ExchangeConfig,
   OrderBook,
@@ -28,8 +29,8 @@ exchanges.set("bitunix", getBitunixAdapter());
 
 // Placeholder entries for to-be-built exchanges
 const PLACEHOLDER_EXCHANGES: ExchangeConfig[] = [
-  { exchangeId: "bybit", name: "Bybit", enabled: false, isLive: false, apiKeyConfigured: false },
-  { exchangeId: "coinbase", name: "Coinbase", enabled: false, isLive: false, apiKeyConfigured: false },
+  { exchangeId: "bybit", name: "Bybit", role: "data", enabled: false, isLive: false, apiKeyConfigured: false },
+  { exchangeId: "coinbase", name: "Coinbase", role: "data", enabled: false, isLive: false, apiKeyConfigured: false },
 ];
 
 // ── Exchange Config Store ──────────────────────────────────────────
@@ -44,6 +45,7 @@ function ensureConfig(exchangeId: string): ExchangeConfig {
     config = {
       exchangeId,
       name: adapter?.name ?? placeholder?.name ?? exchangeId,
+      role: adapter?.role ?? placeholder?.role ?? "both",
       enabled: adapter?.isEnabled ?? placeholder?.enabled ?? false,
       isLive: adapter?.isLive ?? false,
       apiKeyConfigured: adapter?.isLive ?? false,
@@ -60,6 +62,7 @@ function syncAdapterToConfig(exchangeId: string): void {
   exchangeConfigs.set(exchangeId, {
     exchangeId,
     name: adapter.name,
+    role: adapter.role,
     enabled: adapter.isEnabled,
     isLive: adapter.isLive,
     apiKeyConfigured: adapter.isLive,
@@ -97,16 +100,31 @@ export function getAllExchangeConfigs(): ExchangeConfig[] {
 
 /**
  * Get only enabled exchange adapters.
+ * @param role Optional filter — returns only exchanges matching the given role.
  */
-export function getActiveExchanges(): ExchangeAdapter[] {
+export function getActiveExchanges(role?: ExchangeRole): ExchangeAdapter[] {
   const active: ExchangeAdapter[] = [];
   for (const [id, adapter] of exchanges) {
     const config = ensureConfig(id);
-    if (config.enabled) {
-      active.push(adapter);
-    }
+    if (!config.enabled) continue;
+    if (role && adapter.role !== role && adapter.role !== "both") continue;
+    active.push(adapter);
   }
   return active;
+}
+
+/**
+ * Get only exchanges with trading capability (role "trading" or "both").
+ */
+export function getTradingExchanges(): ExchangeAdapter[] {
+  return getActiveExchanges("trading");
+}
+
+/**
+ * Get only exchanges with data capability (role "data" or "both").
+ */
+export function getDataExchanges(): ExchangeAdapter[] {
+  return getActiveExchanges("data");
 }
 
 /**
@@ -290,17 +308,18 @@ export const scanArbitrage = createServerFn({ method: "POST" }).handler(
 // ── Aggregate Exchange Operations ──────────────────────────────────
 
 /**
- * Place an order on the best-priced exchange for the given symbol.
+ * Place an order on the best-priced trading exchange for the given symbol.
+ * Only uses exchanges with role "trading" or "both".
  */
 export async function placeOrderBestExchange(order: OrderRequest): Promise<OrderResult> {
-  const active = getActiveExchanges();
-  if (active.length === 0) throw new Error("No active exchanges");
+  const trading = getTradingExchanges();
+  if (trading.length === 0) throw new Error("No trading-capable exchanges active");
 
   // Get prices from all exchanges
   let bestExchange: ExchangeAdapter | null = null;
   let bestPrice = order.side === "BUY" ? Infinity : -Infinity;
 
-  for (const adapter of active) {
+  for (const adapter of trading) {
     try {
       const price = await adapter.getPrice(order.symbol);
       if (order.side === "BUY" && price < bestPrice) {

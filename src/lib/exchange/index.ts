@@ -2,6 +2,7 @@
 
 export type {
   ExchangeAdapter,
+  ExchangeRole,
   OrderBook,
   OrderBookLevel,
   OrderRequest,
@@ -11,6 +12,8 @@ export type {
   Order,
   ArbitrageOpportunity,
   ExchangeConfig,
+  PerpetualOrderRequest,
+  PerpetualPosition,
 } from "./types";
 
 export { BinanceAdapter, getBinanceAdapter } from "./binance";
@@ -20,6 +23,8 @@ export {
   registerExchange,
   getAllExchangeConfigs,
   getActiveExchanges,
+  getTradingExchanges,
+  getDataExchanges,
   setExchangeEnabled,
   getExchange,
   getBestPrice,

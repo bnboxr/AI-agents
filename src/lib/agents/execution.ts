@@ -4,14 +4,15 @@
 // the PositionManagerAgent (src/lib/agents/position-manager.ts) before
 // reaching this agent. See orchestrator.ts runAgentAnalysis() flow.
 //
-// MODE DETECTION: Live mode when BINANCE_API_KEY or BITUNIX_API_KEY env
-// var is present. Falls back to paper mode when no API keys are configured.
+// MODE DETECTION: Live mode when a trading-capable exchange (role "trading"
+// or "both") has API keys configured. Falls back to paper mode otherwise.
 // Zero Math.random() — slippage derived from real order book depth.
 
 import { BaseAgent } from "./base";
 import type { AgentReport, OrchestratorDecision } from "./types";
 import { openTrade, closeTrade } from "~/lib/trading-engine";
 import { getOrderBook, type OrderBook, type OrderBookLevel } from "./liquidity";
+import { getTradingExchanges } from "~/lib/exchange/manager";
 
 /** Result type for trade opening: either a successful position or an error. */
 interface TradeOpenResult {
@@ -41,14 +42,10 @@ export interface ExecutionResult {
   timestamp: number;
 }
 
-/** Detect if real API keys are configured */
+/** Detect if any trading-capable exchange has real API keys configured */
 function detectLiveMode(): boolean {
-  // Check for Binance API key (env var or process.env)
-  const binanceKey =
-    typeof process !== "undefined" && process.env?.BINANCE_API_KEY;
-  const bitunixKey =
-    typeof process !== "undefined" && process.env?.BITUNIX_API_KEY;
-  return !!(binanceKey || bitunixKey);
+  const tradingExchanges = getTradingExchanges();
+  return tradingExchanges.some((ex) => ex.isLive);
 }
 
 const SYSTEM_PROMPT = `You are a trade execution specialist at a top quantitative hedge fund. Your job is to execute trades with minimal slippage and maximum efficiency.
@@ -162,71 +159,59 @@ export class ExecutionAgent extends BaseAgent {
   }
 
   /**
-   * Execute a real Binance REST API market order.
-   * Signs request with BINANCE_API_KEY and BINANCE_API_SECRET.
+   * Execute a real market order via the first available live trading exchange.
+   * Uses getTradingExchanges() to only route to exchanges with role "trading" or "both".
    */
-  private async executeLiveBinanceOrder(
+  private async executeLiveOrder(
     symbol: string,
     side: "BUY" | "SELL",
     quantity: number,
     currentPrice: number,
-  ): Promise<{ success: boolean; filledPrice: number; orderId?: string; error?: string }> {
-    const apiKey =
-      typeof process !== "undefined" ? process.env?.BINANCE_API_KEY : undefined;
-    const apiSecret =
-      typeof process !== "undefined" ? process.env?.BINANCE_API_SECRET : undefined;
+  ): Promise<{ success: boolean; filledPrice: number; exchange: string; orderId?: string; error?: string }> {
+    const tradingExchanges = getTradingExchanges().filter((ex) => ex.isLive);
 
-    if (!apiKey || !apiSecret) {
-      return { success: false, filledPrice: currentPrice, error: "Binance API keys not configured" };
+    if (tradingExchanges.length === 0) {
+      return {
+        success: false,
+        filledPrice: currentPrice,
+        exchange: "none",
+        error: "No live trading-capable exchange configured",
+      };
     }
 
+    // Use the first live trading exchange
+    const exchange = tradingExchanges[0];
+    console.log(`[ExecutionAgent] Live execution via ${exchange.name} (${exchange.role})`);
+
     try {
-      const binanceSymbol = symbol.toUpperCase().replace("-", "").replace("/", "");
-      const timestamp = Date.now();
-      const params = new URLSearchParams({
-        symbol: binanceSymbol,
-        side: side,
+      const result = await exchange.placeOrder({
+        symbol,
+        side,
         type: "MARKET",
-        quantity: quantity.toFixed(6),
-        timestamp: timestamp.toString(),
+        quantity,
       });
 
-      // Simple HMAC signing (would use crypto in production)
-      const response = await fetch(
-        `https://api.binance.com/api/v3/order?${params.toString()}`,
-        {
-          method: "POST",
-          headers: {
-            "X-MBX-APIKEY": apiKey,
-          },
-          signal: AbortSignal.timeout(8000),
-        },
-      );
-
-      if (!response.ok) {
-        const err = await response.text();
-        return { success: false, filledPrice: currentPrice, error: `Binance API error: ${err}` };
+      if (result.status === "REJECTED") {
+        return {
+          success: false,
+          filledPrice: currentPrice,
+          exchange: exchange.name,
+          error: `${exchange.name} rejected order: data-only exchange cannot execute trades`,
+        };
       }
 
-      const data = await response.json();
-      const filledPrice = data.fills
-        ? data.fills.reduce(
-            (sum: number, f: { price: string; qty: string }) =>
-              sum + parseFloat(f.price) * parseFloat(f.qty),
-            0,
-          ) / parseFloat(data.executedQty)
-        : parseFloat(data.price || "0");
-
       return {
-        success: true,
-        filledPrice: filledPrice || currentPrice,
-        orderId: data.orderId?.toString(),
+        success: result.status === "FILLED" || result.status === "PARTIALLY_FILLED",
+        filledPrice: result.avgPrice || currentPrice,
+        exchange: exchange.name,
+        orderId: result.orderId,
       };
     } catch (err) {
       return {
         success: false,
         filledPrice: currentPrice,
-        error: err instanceof Error ? err.message : "Binance order failed",
+        exchange: exchange.name,
+        error: err instanceof Error ? err.message : `${exchange.name} order failed`,
       };
     }
   }
@@ -284,10 +269,10 @@ export class ExecutionAgent extends BaseAgent {
     // BUY or SELL: open new position
     const side = decision.action;
 
-    // ── LIVE MODE: Route to real exchange ──────────────────────────
+    // ── LIVE MODE: Route to trading exchange ──────────────────────
     if (this.mode === "live") {
       try {
-        const liveResult = await this.executeLiveBinanceOrder(
+        const liveResult = await this.executeLiveOrder(
           token,
           side,
           decision.positionSize,
@@ -428,11 +413,11 @@ export class ExecutionAgent extends BaseAgent {
   ): Promise<ExecutionResult> {
     const timestamp = Date.now();
 
-    // ── LIVE MODE: Cancel on exchange ───────────────────────────────
+    // ── LIVE MODE: Cancel on trading exchange ─────────────────────
     if (this.mode === "live") {
       try {
-        // For exits in live mode, place a SELL market order
-        const liveResult = await this.executeLiveBinanceOrder(
+        // For exits in live mode, place a SELL market order via trading exchange
+        const liveResult = await this.executeLiveOrder(
           token || positionId,
           "SELL",
           0, // close full position

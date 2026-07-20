@@ -190,6 +190,7 @@ async function paperPlaceOrder(orderReq: OrderRequest): Promise<OrderResult> {
 
 class BinanceAdapter implements ExchangeAdapter {
   name = "Binance";
+  role: ExchangeRole = "data";
   wsEndpoint = BINANCE_WS;
   isEnabled = true;
   isLive = false;
@@ -246,11 +247,21 @@ class BinanceAdapter implements ExchangeAdapter {
   }
 
   async placeOrder(order: OrderRequest): Promise<OrderResult> {
-    if (!this.isLive) {
-      return paperPlaceOrder(order);
-    }
-    // Live mode — placeholder for real API integration
-    throw new Error("Live Binance trading not yet implemented. Use paper mode.");
+    // Binance is data-only — reject all trading requests
+    return {
+      orderId: `rejected_${Date.now()}`,
+      symbol: getPair(order.symbol),
+      side: order.side,
+      type: order.type,
+      quantity: order.quantity,
+      filledQuantity: 0,
+      avgPrice: 0,
+      status: "REJECTED",
+      fee: 0,
+      feeAsset: "USDT",
+      timestamp: Date.now(),
+      isPaper: !this.isLive,
+    };
   }
 
   async cancelOrder(orderId: string): Promise<void> {

@@ -109,7 +109,7 @@ export async function getSolanaBalance(rpcUrl?: string): Promise<SolanaWalletInf
 /**
  * Fetch SOL/USD price from CoinGecko with 30s cache.
  */
-async function fetchSolPrice(): Promise<number> {
+export async function fetchSolPrice(): Promise<number> {
   const now = Date.now();
   if (cachedSolPrice && (now - cachedSolPrice.ts) < PRICE_CACHE_TTL) {
     return cachedSolPrice.price;

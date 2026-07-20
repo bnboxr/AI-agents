@@ -5,6 +5,7 @@
 //
 // pSOL Auto-Staking: when payout > 0.01 SOL, auto-stake into Marinade.
 
+import { createHmac } from "crypto";
 import { triggerAutoStake, getPSolState, compoundYield, type PSolStakingState } from "./staking/psol";
 
 interface CapitalState {

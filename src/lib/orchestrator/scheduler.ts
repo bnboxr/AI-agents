@@ -2,10 +2,18 @@ import { CHAINS } from '../chains';
 import { getAgentState } from '../agent-runner';
 import { enqueue } from './queue';
 import type { ScanTask, TaskPriority } from './types';
+import { runAgentAnalysis } from '../agents/orchestrator';
+import { getPrice } from '../ws/price-context';
+import type { PriceContext } from '../agents/orchestrator';
+import { getApiKey } from '~/lib/api-keys';
 
 const SCAN_INTERVAL_MS = 15_000; // 15s between scheduler ticks
 const MIN_SCAN_GAP_MS = 60_000;   // Don't scan the same chain more than once per 60s
 const STAGGER_OFFSET_MS = 3_000;  // 3s offset per chain for initial scans
+
+// Track last analysis time per chain to avoid over-calling the 29-agent pipeline
+const lastAnalysisTime = new Map<string, number>();
+const MIN_ANALYSIS_GAP_MS = 60_000; // Run full AI analysis at most once per 60s per chain
 
 let intervalId: ReturnType<typeof setInterval> | null = null;
 let initialStaggerTimers: ReturnType<typeof setTimeout>[] = [];
@@ -28,6 +36,37 @@ function determinePriority(chainId: string): TaskPriority {
   return 'LOW';
 }
 
+async function runAnalysisForChain(chain: typeof CHAINS[number], now: number): Promise<void> {
+  const lastTime = lastAnalysisTime.get(chain.id) ?? 0;
+  if (now - lastTime < MIN_ANALYSIS_GAP_MS) return;
+
+  // Only run analysis if we have an OpenAI API key configured
+  const apiKey = getApiKey("openai");
+  if (!apiKey) return;
+
+  // Get current price from WebSocket cache
+  const token = chain.nativeToken;
+  const currentPrice = getPrice(token);
+  if (currentPrice === null || currentPrice <= 0) return;
+
+  lastAnalysisTime.set(chain.id, now);
+
+  const priceContext: PriceContext = {
+    token,
+    chainId: chain.id,
+    currentPrice,
+    change24h: 0,
+    volume24h: 0,
+    high24h: currentPrice,
+    low24h: currentPrice,
+  };
+
+  // Fire-and-forget: don't block the scheduler tick
+  runAgentAnalysis({ data: priceContext }).catch((err) => {
+    console.error(`[Scheduler] runAgentAnalysis failed for ${chain.id}/${token}:`, err);
+  });
+}
+
 function tick(): void {
   const now = Date.now();
 
@@ -47,6 +86,10 @@ function tick(): void {
       };
       enqueue(task);
     }
+
+    // ── Wire 29-agent AI pipeline into every analysis cycle ─────
+    // Runs runAgentAnalysis() automatically — no longer just manual UI trigger.
+    runAnalysisForChain(chain, now);
   }
 }
 

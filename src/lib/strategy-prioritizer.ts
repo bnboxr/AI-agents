@@ -59,6 +59,12 @@ const STRATEGIES: Strategy[] = [
     expectedReturn: "Variable",
     risk: "medium",
   },
+  {
+    name: "XRP DEX (XRPL)",
+    minCapital: 10,
+    expectedReturn: "Variable",
+    risk: "medium",
+  },
 ];
 
 // ── Allocation presets by capital bracket ─────────────────────────────
@@ -96,7 +102,8 @@ const ALLOCATION_BRACKETS: AllocationBracket[] = [
       { name: "LP Fees", pct: 0.2 },
       { name: "Spot Trading", pct: 0.25 },
       { name: "Perpetuals", pct: 0.2 },
-      { name: "Solana DEX (Jupiter)", pct: 0.15 },
+      { name: "Solana DEX (Jupiter)", pct: 0.1 },
+      { name: "XRP DEX (XRPL)", pct: 0.05 },
     ],
   },
   // Tier 3: $500+ — full suite including flash loan arb + Solana
@@ -110,7 +117,8 @@ const ALLOCATION_BRACKETS: AllocationBracket[] = [
       { name: "Spot Trading", pct: 0.2 },
       { name: "Perpetuals", pct: 0.25 },
       { name: "Flash Loan Arb", pct: 0.15 },
-      { name: "Solana DEX (Jupiter)", pct: 0.1 },
+      { name: "Solana DEX (Jupiter)", pct: 0.05 },
+      { name: "XRP DEX (XRPL)", pct: 0.05 },
     ],
   },
 ];

@@ -135,6 +135,25 @@ export const SUPPORTED_CHAINS: Record<string, WalletChainConfig> = {
       "https://sepolia.scroll.io",
     ],
   },
+  // ── XRP ────────────────────────────────────────────────────────────
+  xrp: {
+    chainId: 0,
+    name: "XRP Ledger",
+    rpc: "wss://s1.ripple.com",
+    explorer: "https://livenet.xrpl.org",
+    nativeToken: "XRP",
+  },
+  "xrp-testnet": {
+    chainId: 1,
+    name: "XRP Testnet",
+    rpc: "wss://s.altnet.rippletest.net:51233",
+    explorer: "https://testnet.xrpl.org",
+    testnet: true,
+    nativeToken: "XRP",
+    faucets: [
+      "https://xrpl.org/xrp-testnet-faucet.html",
+    ],
+  },
   // ── Solana ──────────────────────────────────────────────────────────
   solana: {
     chainId: 101,

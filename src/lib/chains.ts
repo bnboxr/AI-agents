@@ -5,7 +5,7 @@ export interface ChainConfig {
   chainId?: number;
   nativeToken: string;
   explorer: string;
-  type: 'evm' | 'solana' | 'near' | 'aptos' | 'sui' | 'tron';
+  type: 'evm' | 'solana' | 'near' | 'aptos' | 'sui' | 'tron' | 'xrp';
   icon?: string;
 }
 
@@ -30,6 +30,7 @@ export const CHAINS: ChainConfig[] = [
   { id: 'aptos', name: 'Aptos', rpc: 'https://fullnode.mainnet.aptoslabs.com/v1', nativeToken: 'APT', explorer: 'https://explorer.aptoslabs.com', type: 'aptos' },
   { id: 'sui', name: 'Sui', rpc: 'https://fullnode.mainnet.sui.io', nativeToken: 'SUI', explorer: 'https://suiscan.xyz', type: 'sui' },
   { id: 'tron', name: 'TRON', rpc: 'https://api.trongrid.io', nativeToken: 'TRX', explorer: 'https://tronscan.org', type: 'tron' },
+  { id: 'xrp', name: 'XRP Ledger', rpc: 'wss://s1.ripple.com', chainId: 0, nativeToken: 'XRP', explorer: 'https://livenet.xrpl.org', type: 'xrp' },
 ];
 
 export function getChain(id: string): ChainConfig | undefined {

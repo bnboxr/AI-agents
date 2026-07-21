@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<host-apdu-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/hce_service_description"
+    android:requireDeviceUnlock="false">
+
+    <!-- Route all AID groups to this service -->
+    <aid-group
+        android:category="payment"
+        android:description="@string/hce_aid_description">
+        <!-- HSMC Pay Application ID — registered payment AID -->
+        <aid-filter android:name="F0010203040506" />
+        <!-- Payment System Environment (PSE) — standard contactless payment AID -->
+        <aid-filter android:name="325041592E5359532E4444463031" />
+    </aid-group>
+</host-apdu-service>

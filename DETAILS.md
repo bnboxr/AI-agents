@@ -1276,4 +1276,106 @@ After conversion, the receipt shows:
 
 ---
 
+## HSMC Pay Android — Native Tap-to-Pay App
+
+### Overview
+
+HSMC Pay Android is a native React Native app enabling true tap-to-pay via NFC HCE (Host Card Emulation). Customers install the APK, set a spending budget, and tap their phone at any NFC-enabled POS terminal — payments are auto-processed without manual confirmation.
+
+### Architecture
+
+```
+HSMC Pay Android APK
+├── MainActivity.kt — app entry point
+├── HCEService.kt — HostApduService for NFC card emulation
+├── HCEBridgeModule.kt — React Native ↔ Android bridge
+├── Wallet Module — stores private key (encrypted), signs transactions (EIP-712)
+├── Budget Manager — pre-authorized spending limit (AsyncStorage)
+├── Transaction History — local storage with stats
+├── Settings — budget slider ($10–$5,000), network selector, wallet management
+└── UI — glassmorphism dark theme matching HSMC platform
+```
+
+### NFC Payment Flow
+
+```
+Customer taps phone at POS
+       │
+       ▼
+Android OS routes APDU to HCEService.kt
+       │
+       ▼
+HCEService emits event to React Native JS layer
+       │
+       ▼
+HCEService.ts parses payment request:
+  • Check budget (BudgetService)
+  • Sign authorization (WalletService → EIP-712)
+  • Record transaction (TransactionStore)
+       │
+       ▼
+Signed response returned to HCEService.kt
+       │
+       ▼
+APDU response sent to POS reader → Payment Complete
+```
+
+### Screens
+
+| Screen | File | Description |
+|--------|------|-------------|
+| Wallet | `src/screens/WalletScreen.tsx` | Balance, budget bar, create/import wallet |
+| Pay | `src/screens/PayScreen.tsx` | NFC readiness indicator, "Ready to Pay" circle with pulse animation |
+| History | `src/screens/HistoryScreen.tsx` | Transaction list with stats, pull-to-refresh |
+| Settings | `src/screens/SettingsScreen.tsx` | Budget slider, network toggle (Amoy/Mainnet), export/delete wallet |
+
+### Services
+
+| Service | File | Description |
+|---------|------|-------------|
+| HCE Service | `src/services/HCEService.ts` | NFC event handling, payment orchestration |
+| Wallet Service | `src/services/WalletService.ts` | Wallet creation, EIP-712 signing, key encryption |
+| Budget Service | `src/services/BudgetService.ts` | Budget CRUD, spend tracking, period resets |
+| Transaction Store | `src/services/TransactionStore.ts` | Local transaction history with stats |
+
+### Native Android Components
+
+| Component | File | Description |
+|-----------|------|-------------|
+| HCEService | `android/.../HCEService.kt` | HostApduService — processes APDU commands from POS |
+| HCEBridgeModule | `android/.../HCEBridgeModule.kt` | React Native bridge for HCE communication |
+| HCEBridgePackage | `android/.../HCEBridgePackage.kt` | Registers native module with React Native |
+
+### Key Permissions
+
+- `android.permission.NFC` — NFC access
+- `android.hardware.nfc.hce` (required) — Host Card Emulation
+- AID: `F0010203040506` — registered HSMC Pay payment AID
+- PSE AID: `325041592E5359532E4444463031` — standard contactless payment
+
+### Project Location
+
+- **Directory**: `hsmc-pay-android/`
+- **Branch**: `feat/hsmc-pay-android`
+- **Build**: `cd android && ./gradlew assembleRelease`
+- **APK output**: `android/app/build/outputs/apk/release/app-release.apk`
+
+### Build Requirements
+
+- Node.js 18+, Android Studio, Android SDK 34+, JDK 17
+- Physical Android device with NFC HCE (Android 4.4+)
+
+### Security Notes
+
+⚠️ **Prototype**: Private key stored with basic encryption in AsyncStorage. For production, use Android Keystore with `react-native-keychain` for biometric-protected, hardware-backed key storage.
+
+### Theme
+
+Glassmorphism dark theme matching HSMC platform:
+- Background: `#080a0f`
+- Primary accent: `#00e676`
+- Glass panels: `rgba(255,255,255,0.07)` with subtle borders
+
+---
+
 > **HSMC Platform** — *Autonomous AI Hedge Fund. 29 agents. 4 LLMs. Zero human intervention.*

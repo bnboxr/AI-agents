@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">HSMC Pay</string>
+    <string name="hce_service_description">HSMC Pay — Tap-to-Pay via NFC</string>
+    <string name="hce_aid_description">HSMC Pay Payment Application</string>
+</resources>

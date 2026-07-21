@@ -1,10 +1,11 @@
-// App.tsx — HSMC Pay main entry point with bottom tab navigation
+// App.tsx — HSMC Pay main entry point with LockScreen + bottom tab navigation
 
-import React from 'react';
+import React, { useState } from 'react';
 import { StatusBar, Platform } from 'react-native';
 import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import LockScreen from './src/screens/LockScreen';
 import WalletScreen from './src/screens/WalletScreen';
 import PayScreen from './src/screens/PayScreen';
 import HistoryScreen from './src/screens/HistoryScreen';
@@ -28,7 +29,7 @@ const HSMCTheme = {
   },
 };
 
-export default function App() {
+function MainApp() {
   return (
     <NavigationContainer theme={HSMCTheme}>
       <StatusBar
@@ -107,4 +108,14 @@ export default function App() {
       </Tab.Navigator>
     </NavigationContainer>
   );
+}
+
+export default function App() {
+  const [isUnlocked, setIsUnlocked] = useState(false);
+
+  if (!isUnlocked) {
+    return <LockScreen onUnlock={() => setIsUnlocked(true)} />;
+  }
+
+  return <MainApp />;
 }

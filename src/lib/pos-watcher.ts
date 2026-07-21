@@ -4,6 +4,7 @@
  * Polls the Polygon chain every 5 seconds for new payment events.
  * When found, calls confirmPaymentSession() to update the POS state.
  * This closes the gap: previously the POS only polled an in-memory Map.
+ * Master wallet architecture — no per-merchant tracking.
  */
 
 import { createPublicClient, http, parseAbiItem } from "viem";
@@ -37,7 +38,7 @@ const publicClient = createPublicClient({
 // ── Event Signature ────────────────────────────────────────────────────
 
 const PAYMENT_RECEIVED_EVENT = parseAbiItem(
-  "event PaymentReceived(uint256 indexed id, address indexed payer, address token, uint256 amount, address indexed merchant, uint256 timestamp, string sessionId)"
+  "event PaymentReceived(uint256 indexed id, address indexed payer, address token, uint256 amount, uint256 timestamp, string sessionId)"
 );
 
 // ── Watcher State ──────────────────────────────────────────────────────
@@ -121,13 +122,12 @@ async function pollForPayments(): Promise<void> {
     });
 
     for (const log of logs) {
-      const { sessionId, payer, token, amount, merchant } =
+      const { sessionId, payer, token, amount } =
         log.args as unknown as {
           sessionId: string;
           payer: string;
           token: string;
           amount: bigint;
-          merchant: string;
         };
 
       // Deduplicate by transaction hash

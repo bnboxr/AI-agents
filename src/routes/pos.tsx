@@ -1,13 +1,13 @@
 /**
- * POS Crypto Terminal — Merchant Point of Sale
+ * POS Crypto Terminal — Point of Sale
  *
  * Glassmorphism UI for accepting crypto payments.
  * Features: USD amount input → QR code + NFC tap-to-pay → Polygon settlement.
+ * Master wallet architecture — all payments go to the platform contract.
  */
 
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useAccount } from "~/lib/demo-wagmi";
 import QRCode from "qrcode";
 import POSReceipt from "~/components/POSReceipt";
 import {
@@ -39,10 +39,8 @@ export const Route = createFileRoute("/pos")({
 // ── Main Component ───────────────────────────────────────────────────
 
 function POSTerminal() {
-  const { address, isConnected } = useAccount();
   const [amount, setAmount] = useState<string>("");
   const [selectedToken, setSelectedToken] = useState<TokenType>("USDC");
-  const [merchantWallet, setMerchantWallet] = useState<string>("");
   const [session, setSession] = useState<PaymentSession | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [qrUrl, setQrUrl] = useState<string | null>(null);
@@ -55,13 +53,6 @@ function POSTerminal() {
   const [pollCount, setPollCount] = useState(0);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const amountInputRef = useRef<HTMLInputElement>(null);
-
-  // Populate merchant wallet from connected wallet
-  useEffect(() => {
-    if (isConnected && address && !merchantWallet) {
-      setMerchantWallet(address);
-    }
-  }, [isConnected, address]);
 
   // Check NFC support on mount
   useEffect(() => {
@@ -104,10 +95,6 @@ function POSTerminal() {
       setError("Please enter a valid amount");
       return;
     }
-    if (!merchantWallet) {
-      setError("Please connect your wallet or enter a merchant address");
-      return;
-    }
 
     setLoading(true);
     setError(null);
@@ -122,8 +109,6 @@ function POSTerminal() {
       const newSession = createPaymentSession({
         amount: parsedAmount,
         token: selectedToken,
-        merchant: merchantWallet,
-        merchantName: "HSMC POS Merchant",
       });
 
       // Recalculate with live prices
@@ -142,7 +127,6 @@ function POSTerminal() {
         contractAddress,
         token: selectedToken,
         amount: newSession.tokenAmount,
-        merchant: merchantWallet,
         sessionId: newSession.sessionId,
       });
 
@@ -169,7 +153,7 @@ function POSTerminal() {
       setError("Failed to create payment session");
       setLoading(false);
     }
-  }, [amount, merchantWallet, selectedToken]);
+  }, [amount, selectedToken]);
 
   // ── Poll Session Status ───────────────────────────────────────────
 
@@ -219,7 +203,6 @@ function POSTerminal() {
             sessionId: session.sessionId,
             amount: session.tokenAmount,
             token: session.token,
-            merchant: session.merchant,
             contractAddress:
               (typeof process !== "undefined" && process.env?.VITE_POS_CONTRACT_ADDRESS) || "",
             timestamp: Date.now(),
@@ -383,22 +366,6 @@ function POSTerminal() {
         {/* ── New Payment Form ─────────────────────────────────── */}
         {(!session || session.status === "failed") && (
           <div className="space-y-5">
-            {/* Merchant Wallet */}
-            {!isConnected && (
-              <div className="glass-card p-4">
-                <label className="block text-[#546e7a] text-xs uppercase tracking-wider mb-2 font-mono">
-                  Merchant Wallet Address
-                </label>
-                <input
-                  type="text"
-                  value={merchantWallet}
-                  onChange={(e) => setMerchantWallet(e.target.value)}
-                  placeholder="0x..."
-                  className="glass-input w-full"
-                />
-              </div>
-            )}
-
             {/* Amount Input */}
             <div className="glass-card p-8 text-center">
               <label className="block text-[#546e7a] text-xs uppercase tracking-wider mb-3 font-mono">

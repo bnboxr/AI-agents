@@ -1,5 +1,6 @@
 /**
  * POSReceipt — Printable receipt component for crypto payments
+ * Master wallet architecture — funds go to Platform Treasury
  */
 
 import { type PaymentSession } from "~/lib/pos-service";
@@ -32,7 +33,6 @@ export default function POSReceipt({ session, onClose }: POSReceiptProps) {
 
   const handleDownloadPDF = async () => {
     try {
-      // Use browser print to PDF
       const style = document.createElement("style");
       style.textContent = `
         @media print {
@@ -73,16 +73,16 @@ export default function POSReceipt({ session, onClose }: POSReceiptProps) {
         </p>
       </div>
 
-      {/* Merchant Info */}
+      {/* Settlement Info */}
       <div className="mb-4">
         <p className="text-[#546e7a] text-xs uppercase tracking-wider mb-1">
-          Merchant
+          Settlement
         </p>
         <p className="text-[#b0bec5] text-sm font-medium">
-          {session.merchantName}
+          Funds received by Platform Treasury
         </p>
         <p className="text-[#455a64] text-xs font-mono">
-          {session.merchant.slice(0, 10)}...{session.merchant.slice(-6)}
+          Master Wallet · Polygon Network
         </p>
       </div>
 
@@ -144,7 +144,7 @@ export default function POSReceipt({ session, onClose }: POSReceiptProps) {
       {/* Footer */}
       <div className="border-t border-[#1a1f2e] pt-4 text-center">
         <p className="text-[#00e676] text-xs font-semibold mb-2">
-          ✅ Funds available in your wallet
+          ✅ Funds received by Platform Treasury
         </p>
         <p className="text-[#546e7a] text-xs mb-3">
           Settled on Polygon · {date.toISOString()}
@@ -187,7 +187,6 @@ function formatTokenAmount(amount: string, token: "USDC" | "USDT" | "MATIC"): st
     if (fracPart === 0n) return intPart.toString();
 
     const fracStr = fracPart.toString().padStart(decimals, "0").replace(/0+$/, "");
-    // Limit fraction to 6 digits
     const displayFrac = fracStr.slice(0, 6);
     return `${intPart}.${displayFrac}`;
   } catch {

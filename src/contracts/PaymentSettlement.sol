@@ -4,10 +4,11 @@ pragma solidity ^0.8.20;
 /**
  * @title PaymentSettlement
  * @notice On-chain crypto POS settlement contract for Polygon
- * @dev Accepts USDC, USDT, and MATIC payments with session tracking
+ * @dev Master wallet architecture — all payments go to the contract, only owner can withdraw
  */
 interface IERC20 {
     function transferFrom(address sender, address recipient, uint256 amount) external returns (bool);
+    function transfer(address recipient, uint256 amount) external returns (bool);
     function decimals() external view returns (uint8);
 }
 
@@ -27,27 +28,26 @@ contract PaymentSettlement {
         address payer;
         address token;
         uint256 amount;
-        address merchant;
         uint256 timestamp;
         string sessionId;
     }
 
     mapping(uint256 => Payment) public payments;
     mapping(address => bool) public acceptedTokens;
-    mapping(address => mapping(address => uint256)) public merchantBalances;
+    // Master wallet: total received per token
+    mapping(address => uint256) public totalReceived;
 
     event PaymentReceived(
         uint256 indexed id,
         address indexed payer,
         address token,
         uint256 amount,
-        address indexed merchant,
         uint256 timestamp,
         string sessionId
     );
 
     event TokenUpdated(address indexed token, bool accepted);
-    event Withdrawn(address indexed merchant, address indexed token, uint256 amount);
+    event Withdrawn(address indexed token, uint256 amount, address indexed to);
 
     modifier onlyOwner() {
         require(msg.sender == owner, "Only owner");
@@ -63,47 +63,38 @@ contract PaymentSettlement {
     }
 
     /**
-     * @notice Pay with an ERC-20 token (USDC/USDT)
+     * @notice Pay with an ERC-20 token (USDC/USDT) — funds go to the contract
      * @param token The ERC-20 token address
      * @param amount The amount in token's smallest unit
-     * @param merchant The merchant's wallet address
      * @param sessionId Unique session identifier for this payment
      */
     function payWithToken(
         address token,
         uint256 amount,
-        address merchant,
         string calldata sessionId
     ) external {
         require(acceptedTokens[token], "Token not accepted");
         require(token != MATIC, "Use payWithMatic for native token");
-        require(merchant != address(0), "Invalid merchant");
         require(bytes(sessionId).length > 0, "Session ID required");
 
-        bool success = IERC20(token).transferFrom(msg.sender, merchant, amount);
+        bool success = IERC20(token).transferFrom(msg.sender, address(this), amount);
         require(success, "Transfer failed");
 
-        _recordPayment(msg.sender, token, amount, merchant, sessionId);
+        _recordPayment(msg.sender, token, amount, sessionId);
     }
 
     /**
-     * @notice Pay with native MATIC
-     * @param merchant The merchant's wallet address
+     * @notice Pay with native MATIC — funds stay in the contract
      * @param sessionId Unique session identifier for this payment
      */
     function payWithMatic(
-        address merchant,
         string calldata sessionId
     ) external payable {
         require(acceptedTokens[MATIC], "MATIC not accepted");
-        require(merchant != address(0), "Invalid merchant");
         require(bytes(sessionId).length > 0, "Session ID required");
         require(msg.value > 0, "Amount must be > 0");
 
-        (bool sent, ) = merchant.call{value: msg.value}("");
-        require(sent, "MATIC transfer failed");
-
-        _recordPayment(msg.sender, MATIC, msg.value, merchant, sessionId);
+        _recordPayment(msg.sender, MATIC, msg.value, sessionId);
     }
 
     /**
@@ -112,13 +103,12 @@ contract PaymentSettlement {
     function pay(
         address token,
         uint256 amount,
-        address merchant,
         string calldata sessionId
     ) external payable {
         if (token == MATIC) {
-            payWithMatic(merchant, sessionId);
+            payWithMatic(sessionId);
         } else {
-            payWithToken(token, amount, merchant, sessionId);
+            payWithToken(token, amount, sessionId);
         }
     }
 
@@ -126,7 +116,6 @@ contract PaymentSettlement {
         address payer,
         address token,
         uint256 amount,
-        address merchant,
         string memory sessionId
     ) internal {
         paymentCounter++;
@@ -135,20 +124,18 @@ contract PaymentSettlement {
             payer: payer,
             token: token,
             amount: amount,
-            merchant: merchant,
             timestamp: block.timestamp,
             sessionId: sessionId
         });
 
-        // Track merchant balance for withdrawals
-        merchantBalances[merchant][token] += amount;
+        // Track total received per token
+        totalReceived[token] += amount;
 
         emit PaymentReceived(
             paymentCounter,
             payer,
             token,
             amount,
-            merchant,
             block.timestamp,
             sessionId
         );
@@ -185,31 +172,31 @@ contract PaymentSettlement {
     }
 
     /**
-     * @notice Withdraw a specific amount of a token
+     * @notice Withdraw a specific amount of a token — only owner
      * @param token The token address (MATIC for native)
      * @param amount The amount to withdraw
      */
-    function withdraw(address token, uint256 amount) external {
-        require(merchantBalances[msg.sender][token] >= amount, "Insufficient balance");
-        merchantBalances[msg.sender][token] -= amount;
+    function withdraw(address token, uint256 amount) external onlyOwner {
+        require(totalReceived[token] >= amount, "Insufficient balance");
+        totalReceived[token] -= amount;
 
         if (token == MATIC) {
-            (bool sent, ) = payable(msg.sender).call{value: amount}("");
+            (bool sent, ) = payable(owner).call{value: amount}("");
             require(sent, "MATIC withdraw failed");
         } else {
-            bool success = IERC20(token).transfer(msg.sender, amount);
+            bool success = IERC20(token).transfer(owner, amount);
             require(success, "Token withdraw failed");
         }
 
-        emit Withdrawn(msg.sender, token, amount);
+        emit Withdrawn(token, amount, owner);
     }
 
     /**
-     * @notice Withdraw entire balance of a token
+     * @notice Withdraw entire balance of a token — only owner
      * @param token The token address (MATIC for native)
      */
-    function withdrawAll(address token) external {
-        uint256 balance = merchantBalances[msg.sender][token];
+    function withdrawAll(address token) external onlyOwner {
+        uint256 balance = totalReceived[token];
         require(balance > 0, "No balance to withdraw");
         withdraw(token, balance);
     }

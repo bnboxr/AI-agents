@@ -19,6 +19,7 @@ import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as RiskRouteImport } from './routes/risk'
 import { Route as PosRouteImport } from './routes/pos'
 import { Route as PortfolioRouteImport } from './routes/portfolio'
+import { Route as PayPwaRouteImport } from './routes/pay-pwa'
 import { Route as NetworkRouteImport } from './routes/network'
 import { Route as MerchantRouteImport } from './routes/merchant'
 import { Route as GasRouteImport } from './routes/gas'
@@ -89,6 +90,11 @@ const PosRoute = PosRouteImport.update({
 const PortfolioRoute = PortfolioRouteImport.update({
   id: '/portfolio',
   path: '/portfolio',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PayPwaRoute = PayPwaRouteImport.update({
+  id: '/pay-pwa',
+  path: '/pay-pwa',
   getParentRoute: () => rootRouteImport,
 } as any)
 const NetworkRoute = NetworkRouteImport.update({
@@ -213,6 +219,7 @@ export interface FileRoutesByFullPath {
   '/gas': typeof GasRoute
   '/merchant': typeof MerchantRoute
   '/network': typeof NetworkRoute
+  '/pay-pwa': typeof PayPwaRoute
   '/portfolio': typeof PortfolioRoute
   '/pos': typeof PosRouteWithChildren
   '/risk': typeof RiskRoute
@@ -246,6 +253,7 @@ export interface FileRoutesByTo {
   '/gas': typeof GasRoute
   '/merchant': typeof MerchantRoute
   '/network': typeof NetworkRoute
+  '/pay-pwa': typeof PayPwaRoute
   '/portfolio': typeof PortfolioRoute
   '/pos': typeof PosRouteWithChildren
   '/risk': typeof RiskRoute
@@ -280,6 +288,7 @@ export interface FileRoutesById {
   '/gas': typeof GasRoute
   '/merchant': typeof MerchantRoute
   '/network': typeof NetworkRoute
+  '/pay-pwa': typeof PayPwaRoute
   '/portfolio': typeof PortfolioRoute
   '/pos': typeof PosRouteWithChildren
   '/risk': typeof RiskRoute
@@ -315,6 +324,7 @@ export interface FileRouteTypes {
     | '/gas'
     | '/merchant'
     | '/network'
+    | '/pay-pwa'
     | '/portfolio'
     | '/pos'
     | '/risk'
@@ -348,6 +358,7 @@ export interface FileRouteTypes {
     | '/gas'
     | '/merchant'
     | '/network'
+    | '/pay-pwa'
     | '/portfolio'
     | '/pos'
     | '/risk'
@@ -381,6 +392,7 @@ export interface FileRouteTypes {
     | '/gas'
     | '/merchant'
     | '/network'
+    | '/pay-pwa'
     | '/portfolio'
     | '/pos'
     | '/risk'
@@ -415,6 +427,7 @@ export interface RootRouteChildren {
   GasRoute: typeof GasRoute
   MerchantRoute: typeof MerchantRoute
   NetworkRoute: typeof NetworkRoute
+  PayPwaRoute: typeof PayPwaRoute
   PortfolioRoute: typeof PortfolioRoute
   PosRoute: typeof PosRouteWithChildren
   RiskRoute: typeof RiskRoute
@@ -497,6 +510,13 @@ declare module '@tanstack/react-router' {
       path: '/portfolio'
       fullPath: '/portfolio'
       preLoaderRoute: typeof PortfolioRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/pay-pwa': {
+      id: '/pay-pwa'
+      path: '/pay-pwa'
+      fullPath: '/pay-pwa'
+      preLoaderRoute: typeof PayPwaRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/network': {
@@ -694,6 +714,7 @@ const rootRouteChildren: RootRouteChildren = {
   GasRoute: GasRoute,
   MerchantRoute: MerchantRoute,
   NetworkRoute: NetworkRoute,
+  PayPwaRoute: PayPwaRoute,
   PortfolioRoute: PortfolioRoute,
   PosRoute: PosRouteWithChildren,
   RiskRoute: RiskRoute,

@@ -437,6 +437,28 @@ function RootDocument({ children }: { children: ReactNode }) {
     <html lang="en">
       <head>
         <HeadContent />
+        <link rel="manifest" href="/manifest.json" />
+        <meta name="theme-color" content="#080a0f" />
+        <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta name="apple-mobile-web-app-title" content="HSMC Pay" />
+        <link rel="apple-touch-icon" href="/icon-192.png" />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              if ('serviceWorker' in navigator) {
+                window.addEventListener('load', function() {
+                  navigator.serviceWorker.register('/sw.js').then(function(reg) {
+                    console.log('[SW] Registered:', reg.scope);
+                  }).catch(function(err) {
+                    console.warn('[SW] Registration failed:', err);
+                  });
+                });
+              }
+            `,
+          }}
+        />
       </head>
       <body className="relative bg-[#080a0f]">
         <ParticleField />

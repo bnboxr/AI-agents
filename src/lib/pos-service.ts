@@ -9,17 +9,30 @@ import { sql } from "~/db";
 
 // ── Types ────────────────────────────────────────────────────────────
 
+export type PaymentStatus =
+  | "pending"
+  | "confirming"
+  | "confirmed"
+  | "failed"
+  | "insufficient_funds"
+  | "timeout";
+
+export type FailReason = "declined" | "insufficient_funds" | "timeout";
+
 export interface PaymentSession {
   sessionId: string;
   amount: number; // in USD
   tokenAmount: string; // in token decimals (string for bigint precision)
   token: "USDC" | "USDT" | "MATIC";
   tokenAddress: string;
-  status: "pending" | "confirmed" | "failed";
+  status: PaymentStatus;
   txId?: string;
   payerAddress?: string;
   createdAt: number;
   confirmedAt?: number;
+  failReason?: FailReason;
+  /** For PWA pre-authorized payments — the NDEF payload from the POS */
+  ndefPayload?: string;
 }
 
 export interface PaymentRecord {
@@ -177,11 +190,37 @@ export async function confirmPaymentSession(
   return session;
 }
 
-export function failPaymentSession(sessionId: string): PaymentSession | undefined {
+export function failPaymentSession(
+  sessionId: string,
+  reason: FailReason = "declined"
+): PaymentSession | undefined {
   const session = sessions.get(sessionId);
   if (!session) return undefined;
-  session.status = "failed";
+  session.status =
+    reason === "insufficient_funds" ? "insufficient_funds" : reason === "timeout" ? "timeout" : "failed";
+  session.failReason = reason;
+  // Persist the failure
+  updateSessionStatus(sessionId, session.status).catch((err) => {
+    console.warn("[POS] Failed to persist session failure:", err);
+  });
   return session;
+}
+
+/**
+ * Mark a session as confirming (transaction submitted, waiting for confirmation)
+ */
+export function confirmingPaymentSession(sessionId: string): PaymentSession | undefined {
+  const session = sessions.get(sessionId);
+  if (!session) return undefined;
+  session.status = "confirming";
+  return session;
+}
+
+/**
+ * Mark a session as timed out
+ */
+export function timeoutPaymentSession(sessionId: string): PaymentSession | undefined {
+  return failPaymentSession(sessionId, "timeout");
 }
 
 // ── Payment queries (all payments, not filtered by merchant) ─────────

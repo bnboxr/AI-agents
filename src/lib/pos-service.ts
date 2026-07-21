@@ -19,6 +19,9 @@ export type PaymentStatus =
 
 export type FailReason = "declined" | "insufficient_funds" | "timeout";
 
+/** Tokens available for post-payment conversion */
+export type ConvertibleToken = "USDC" | "USDT" | "MATIC" | "ETH" | "SOL" | "BTC";
+
 export interface PaymentSession {
   sessionId: string;
   amount: number; // in USD
@@ -569,3 +572,131 @@ export const PAYMENT_SETTLEMENT_ABI = [
     stateMutability: "nonpayable",
   },
 ] as const;
+
+// ── Payment Conversion ─────────────────────────────────────────────────
+
+/**
+ * Convert a confirmed payment to another token via DEX integration.
+ *
+ * Uses the platform's existing swap infrastructure. After payment confirmation,
+ * the merchant can instantly convert received funds to any supported token.
+ *
+ * Currently a simulated conversion — in production, this routes through
+ * the DEX aggregator (1inch, Paraswap, or Uniswap on Polygon).
+ */
+export async function convertPayment(
+  sessionId: string,
+  fromToken: string,
+  fromAmount: string,
+  toToken: ConvertibleToken,
+  toChain?: string
+): Promise<{ txId: string; amount: string }> {
+  // Validate the session exists and is confirmed
+  const session = sessions.get(sessionId);
+  if (!session) {
+    throw new Error(`Session ${sessionId} not found`);
+  }
+  if (session.status !== "confirmed") {
+    throw new Error(`Cannot convert: payment not yet confirmed (status: ${session.status})`);
+  }
+
+  // Convert amount from raw token units to float for rate calculation
+  const fromDecimals = fromToken === "MATIC" ? 18 : 6;
+  const fromAmountFloat = Number(BigInt(fromAmount)) / 10 ** fromDecimals;
+
+  // Get current prices for rate estimation
+  const prices = await getTokenPrices().catch(() => ({
+    USDC: 1.0,
+    USDT: 1.0,
+    MATIC: 0.5,
+  }));
+
+  // Extended prices for cross-chain tokens (fallback estimates)
+  const extendedPrices: Record<string, number> = {
+    USDC: prices.USDC ?? 1.0,
+    USDT: prices.USDT ?? 1.0,
+    MATIC: prices.MATIC ?? 0.5,
+    ETH: 3400,
+    SOL: 180,
+    BTC: 67000,
+  };
+
+  const fromPrice = extendedPrices[fromToken] || 1;
+  const toPrice = extendedPrices[toToken] || 1;
+
+  // Calculate output amount with 0.3% fee (DEX fee simulation)
+  const effectiveAmount = fromAmountFloat * 0.997; // 0.3% swap fee
+  const outputAmount = (effectiveAmount * fromPrice) / toPrice;
+
+  // Convert to target token decimals
+  const toDecimals = toToken === "MATIC" || toToken === "ETH" || toToken === "SOL" ? 18 : toToken === "BTC" ? 8 : 6;
+  const outputRaw = BigInt(Math.floor(outputAmount * 10 ** toDecimals)).toString();
+
+  // Generate a conversion TXID
+  const txId =
+    "0xconv_" +
+    Array.from({ length: 40 }, () => Math.floor(Math.random() * 16).toString(16)).join("");
+
+  // Log the conversion
+  console.log("[POS] Payment conversion:", {
+    sessionId,
+    from: `${fromAmountFloat} ${fromToken}`,
+    to: `${outputAmount.toFixed(6)} ${toToken}`,
+    chain: toChain || "Polygon",
+    txId,
+  });
+
+  // Persist conversion record
+  try {
+    await sql`
+      INSERT INTO pos_conversions (session_id, from_token, from_amount, to_token, to_amount, to_chain, tx_id, created_at)
+      VALUES (${sessionId}, ${fromToken}, ${fromAmount}, ${toToken}, ${outputRaw}, ${toChain || "Polygon"}, ${txId}, ${Date.now()})
+    `;
+  } catch (err) {
+    console.warn("[POS] Failed to persist conversion to DB:", err);
+    // Non-fatal — conversion still succeeds
+  }
+
+  return {
+    txId,
+    amount: outputRaw,
+  };
+}
+
+/**
+ * Get conversion history for a payment session.
+ */
+export async function getConversions(sessionId: string): Promise<
+  Array<{
+    fromToken: string;
+    fromAmount: string;
+    toToken: string;
+    toAmount: string;
+    toChain: string;
+    txId: string;
+    createdAt: number;
+  }>
+> {
+  try {
+    const result = await sql`
+      SELECT from_token, from_amount, to_token, to_amount, to_chain, tx_id, created_at
+      FROM pos_conversions
+      WHERE session_id = ${sessionId}
+      ORDER BY created_at DESC
+    `;
+    if (result.rows && result.rows.length > 0) {
+      return result.rows.map((r: Record<string, unknown>) => ({
+        fromToken: r.from_token as string,
+        fromAmount: r.from_amount as string,
+        toToken: r.to_token as string,
+        toAmount: r.to_amount as string,
+        toChain: (r.to_chain as string) || "Polygon",
+        txId: r.tx_id as string,
+        createdAt: Number(r.created_at),
+      }));
+    }
+  } catch (err) {
+    console.warn("[POS] Failed to query conversions:", err);
+  }
+  return [];
+}

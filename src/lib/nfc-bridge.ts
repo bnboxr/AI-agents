@@ -1,183 +1,362 @@
 /**
- * NFC Bridge — Desktop NFC support fallback
+ * NFC Bridge — Web NFC + Desktop NFC Reader integration
  *
- * When Web NFC API is not available (desktop browsers),
- * provides instructions and alternatives for NFC payments.
+ * Two-mode NFC support:
+ * 1. Web NFC API (Android Chrome) — browser-native NFC read/write
+ * 2. Desktop NFC Bridge — WebSocket connection to local nfc-bridge service
+ *    for USB NFC readers (ACR122U) on Windows/macOS/Linux
  */
+
+// ── Types ────────────────────────────────────────────────────────────
 
 export interface NFCBridgeStatus {
   supported: boolean;
-  type: "web-nfc" | "usb-reader" | "qr-fallback" | "none";
-  message: string;
+  type: "web-nfc" | "desktop-bridge" | "none";
+  readerName?: string;
+  desktopConnected?: boolean;
 }
 
+export interface NFCWriteResult {
+  success: boolean;
+  error?: string;
+}
+
+export interface NDEFRecordInput {
+  recordType: "text" | "url" | "mime" | "empty";
+  data: string;
+  mediaType?: string;
+}
+
+// ── Web NFC Support Detection ────────────────────────────────────────
+
 /**
- * Check if Web NFC is available in the current browser
+ * Check if the browser supports the Web NFC API.
+ * Web NFC is currently only supported in Chrome on Android.
  */
 export function checkNFCWebSupport(): boolean {
   try {
-    return "NDEFReader" in window;
+    return typeof window !== "undefined" && "NDEFReader" in window;
   } catch {
     return false;
   }
 }
 
 /**
- * Get the current NFC support status
+ * Get the current NFC status — checks Web NFC support and desktop bridge.
  */
 export function getNFCStatus(): NFCBridgeStatus {
   const webSupported = checkNFCWebSupport();
 
   if (webSupported) {
-    return {
-      supported: true,
-      type: "web-nfc",
-      message: "Web NFC is available — tap-to-pay supported on this device.",
-    };
+    return { supported: true, type: "web-nfc" };
   }
 
-  // Check if running on a platform that could support USB NFC
-  const isDesktop =
-    typeof navigator !== "undefined" &&
-    !/Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  // Desktop status will be updated asynchronously — start as none
+  return { supported: false, type: "none" };
+}
 
-  if (isDesktop) {
+// ── Web NFC — Write NDEF Message ─────────────────────────────────────
+
+/**
+ * Write an NDEF message to an NFC tag via Web NFC API.
+ * Only works in Chrome on Android with Web NFC enabled.
+ */
+export async function writeNFCMessage(
+  records: NDEFRecordInput[]
+): Promise<NFCWriteResult> {
+  try {
+    if (!checkNFCWebSupport()) {
+      return {
+        success: false,
+        error: "Web NFC not supported in this browser. Use Chrome on Android.",
+      };
+    }
+
+    // @ts-ignore — NDEFReader is not in standard TypeScript libs yet
+    const ndef = new window.NDEFReader();
+    await ndef.scan();
+
+    const ndefRecords = records.map((r) => {
+      switch (r.recordType) {
+        case "url":
+          return { recordType: "url", data: r.data };
+        case "text":
+          return { recordType: "text", data: r.data };
+        case "mime":
+          return { recordType: "mime-type", data: r.data, mediaType: r.mediaType || "application/json" };
+        default:
+          return { recordType: "empty" };
+      }
+    });
+
+    await ndef.write({ records: ndefRecords });
+    return { success: true };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: err?.message || "NFC write failed",
+    };
+  }
+}
+
+/**
+ * Read an NFC tag via Web NFC API (alias for readNFCTag).
+ * Used by the HSMC Pay PWA for customer-side NFC payment detection.
+ */
+export const readNFCMessage = readNFCTag;
+
+/**
+ * Read an NFC tag via Web NFC API.
+ * Returns the parsed NDEF message from a tapped NFC tag.
+ */
+export async function readNFCTag(): Promise<NFCWriteResult & { ndefMessage?: unknown }> {
+  try {
+    if (!checkNFCWebSupport()) {
+      return {
+        success: false,
+        error: "Web NFC not supported in this browser. Use Chrome on Android.",
+      };
+    }
+
+    // @ts-ignore
+    const ndef = new window.NDEFReader();
+    await ndef.scan();
+
+    return new Promise((resolve) => {
+      // @ts-ignore
+      ndef.addEventListener("reading", ({ message, serialNumber }: any) => {
+        const records: Array<{ recordType: string; data: string }> = [];
+        for (const record of message.records) {
+          if (record.recordType === "text") {
+            const decoder = new TextDecoder(record.encoding || "utf-8");
+            records.push({ recordType: "text", data: decoder.decode(record.data) });
+          } else if (record.recordType === "url") {
+            const decoder = new TextDecoder();
+            records.push({ recordType: "url", data: decoder.decode(record.data) });
+          } else {
+            records.push({ recordType: record.recordType || "unknown", data: "" });
+          }
+        }
+        resolve({ success: true, ndefMessage: { serialNumber, records } });
+      });
+
+      // @ts-ignore
+      ndef.addEventListener("readingerror", () => {
+        resolve({ success: false, error: "Failed to read NFC tag" });
+      });
+    });
+  } catch (err: any) {
+    return {
+      success: false,
+      error: err?.message || "NFC read failed",
+    };
+  }
+}
+
+// ── Desktop NFC Bridge ───────────────────────────────────────────────
+
+/**
+ * Connection state for the desktop NFC bridge WebSocket.
+ */
+let desktopWS: WebSocket | null = null;
+let desktopConnected = false;
+let desktopReaderName: string | null = null;
+
+/** Registered message handlers */
+type NFCTagHandler = (payload: {
+  uid: string;
+  ndefMessage: Array<{ tnf: number; type: string; payload: string }> | null;
+  timestamp: number;
+}) => void;
+
+let nfcTagHandlers: Set<NFCTagHandler> = new Set();
+let desktopStatusHandlers: Set<(connected: boolean, reader: string | null) => void> = new Set();
+
+/**
+ * Check if the desktop NFC bridge is running.
+ * Calls GET http://localhost:9876/status
+ */
+export async function checkDesktopReader(): Promise<boolean> {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 2000);
+    const res = await fetch("http://localhost:9876/status", {
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    if (!res.ok) return false;
+    const data = await res.json();
+    return data.connected === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Get detailed status from the desktop NFC bridge.
+ */
+export async function getDesktopBridgeStatus(): Promise<{
+  connected: boolean;
+  reader: string | null;
+  clients: number;
+  uptime: number;
+} | null> {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 2000);
+    const res = await fetch("http://localhost:9876/status", {
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Connect to the desktop NFC bridge WebSocket.
+ * Returns control objects to interact with the bridge.
+ */
+export function connectDesktopNFCBridge(): {
+  ws: WebSocket;
+  status: Promise<NFCBridgeStatus>;
+} {
+  const ws = new WebSocket("ws://localhost:9876");
+
+  ws.onopen = () => {
+    desktopConnected = true;
+    desktopWS = ws;
+    console.log("[NFC-Bridge] Connected to desktop NFC bridge");
+  };
+
+  ws.onclose = () => {
+    desktopConnected = false;
+    desktopWS = null;
+    console.log("[NFC-Bridge] Disconnected from desktop NFC bridge");
+    // Notify status handlers
+    for (const handler of desktopStatusHandlers) {
+      handler(false, null);
+    }
+  };
+
+  ws.onerror = (err) => {
+    console.warn("[NFC-Bridge] WebSocket error:", err);
+    desktopConnected = false;
+  };
+
+  ws.onmessage = (event) => {
+    try {
+      const msg = JSON.parse(event.data);
+
+      switch (msg.type) {
+        case "status":
+          desktopConnected = msg.connected;
+          desktopReaderName = msg.reader || null;
+          for (const handler of desktopStatusHandlers) {
+            handler(msg.connected, msg.reader || null);
+          }
+          break;
+
+        case "reader-connected":
+          desktopReaderName = msg.reader;
+          for (const handler of desktopStatusHandlers) {
+            handler(true, msg.reader);
+          }
+          break;
+
+        case "reader-disconnected":
+          desktopReaderName = null;
+          for (const handler of desktopStatusHandlers) {
+            handler(false, null);
+          }
+          break;
+
+        case "nfc-tag":
+          for (const handler of nfcTagHandlers) {
+            handler({
+              uid: msg.uid || "unknown",
+              ndefMessage: msg.ndefMessage || null,
+              timestamp: msg.timestamp || Date.now(),
+            });
+          }
+          break;
+
+        case "pong":
+          // Keep-alive response — no action needed
+          break;
+      }
+    } catch {
+      // Ignore non-JSON messages
+    }
+  };
+
+  const statusPromise = getDesktopBridgeStatus().then((status) => {
+    if (status) {
+      return {
+        supported: status.connected,
+        type: "desktop-bridge" as const,
+        desktopConnected: status.connected,
+        readerName: status.reader,
+      };
+    }
     return {
       supported: false,
-      type: "usb-reader",
-      message:
-        "Web NFC not available on desktop. Use a USB NFC reader (ACR122U) or scan the QR code instead.",
+      type: "none" as const,
     };
-  }
+  });
 
-  return {
-    supported: false,
-    type: "qr-fallback",
-    message: "NFC not available — use QR code payment instead.",
+  return { ws, status: statusPromise };
+}
+
+/**
+ * Register a handler for NFC tag detection via desktop bridge.
+ */
+export function onDesktopNFCTag(handler: NFCTagHandler): () => void {
+  nfcTagHandlers.add(handler);
+  return () => {
+    nfcTagHandlers.delete(handler);
   };
 }
 
 /**
- * Write an NDEF message using Web NFC API
+ * Register a handler for desktop bridge status changes.
  */
-export async function writeNFCMessage(
-  records: NDEFRecordInit[]
-): Promise<{ success: true } | { success: false; error: string }> {
-  if (!checkNFCWebSupport()) {
-    return {
-      success: false,
-      error: "Web NFC is not supported in this browser.",
-    };
-  }
-
-  try {
-    const ndef = new (window as any).NDEFReader();
-    await ndef.scan();
-    await ndef.write({ records });
-
-    // Listen for the next read for a brief moment
-    ndef.onreading = () => {
-      console.log("[NFC] Tag read successfully");
-    };
-
-    ndef.onreadingerror = () => {
-      console.warn("[NFC] Tag read error");
-    };
-
-    return { success: true };
-  } catch (err: any) {
-    console.warn("[NFC] Write error:", err);
-    return {
-      success: false,
-      error: err?.message || "Failed to write NFC tag",
-    };
-  }
+export function onDesktopBridgeStatus(
+  handler: (connected: boolean, reader: string | null) => void
+): () => void {
+  desktopStatusHandlers.add(handler);
+  return () => {
+    desktopStatusHandlers.delete(handler);
+  };
 }
 
 /**
- * Read an NDEF message from an NFC tag
+ * Disconnect from the desktop NFC bridge.
  */
-export async function readNFCMessage(): Promise<
-  { success: true; records: NDEFRecord[] } | { success: false; error: string }
-> {
-  if (!checkNFCWebSupport()) {
-    return {
-      success: false,
-      error: "Web NFC is not supported in this browser.",
-    };
+export function disconnectDesktopNFCBridge(): void {
+  if (desktopWS) {
+    try {
+      desktopWS.close();
+    } catch {
+      // ignore
+    }
+    desktopWS = null;
   }
-
-  try {
-    const ndef = new (window as any).NDEFReader();
-    await ndef.scan();
-
-    return new Promise((resolve) => {
-      ndef.onreading = ({ message }: { message: NDEFMessage }) => {
-        resolve({ success: true, records: message.records });
-      };
-
-      ndef.onreadingerror = () => {
-        resolve({ success: false, error: "Failed to read NFC tag" });
-      };
-
-      // Timeout after 30 seconds
-      setTimeout(() => {
-        resolve({ success: false, error: "NFC read timeout — no tag detected" });
-      }, 30_000);
-    });
-  } catch (err: any) {
-    console.warn("[NFC] Read error:", err);
-    return {
-      success: false,
-      error: err?.message || "Failed to read NFC tag",
-    };
-  }
+  desktopConnected = false;
+  desktopReaderName = null;
 }
 
 /**
- * Desktop NFC Reader Bridge Instructions
- * For ACR122U and similar USB NFC readers
+ * Get current desktop bridge connection state (synchronous).
  */
-export const DESKTOP_NFC_SETUP_GUIDE = {
-  title: "Setup USB NFC Reader for Desktop",
-  hardware: [
-    "ACR122U USB NFC Reader (~$40 on Amazon)",
-    "Or: ACS ACR1252U (~$60, newer model)",
-  ],
-  software: [
-    "Install the ACS driver from https://www.acs.com.hk/en/driver/",
-    "Use the NFC Tools desktop app for testing",
-    "Or: install nfc-py (Python) / nfc-pcsc (Node.js)",
-  ],
-  steps: [
-    "1. Connect the USB NFC reader to your computer",
-    "2. Install the driver for your OS",
-    "3. Open a WebHID/USB-compatible browser (Chrome/Edge)",
-    "4. The POS terminal will detect the reader automatically",
-    "5. Customer taps their phone on the reader",
-  ],
-  note: "Currently, Web NFC is only available on Chrome for Android. Desktop support requires a USB NFC reader with WebUSB or a native bridge app. As a simpler alternative, the QR code payment works on all devices.",
-};
-
-// Extend Window type for NDEFReader
-declare global {
-  interface Window {
-    NDEFReader?: any;
-  }
-}
-
-interface NDEFRecordInit {
-  recordType: string;
-  data: string;
-  mediaType?: string;
-}
-
-interface NDEFRecord {
-  recordType: string;
-  data: DataView;
-  mediaType?: string;
-}
-
-interface NDEFMessage {
-  records: NDEFRecord[];
+export function getDesktopBridgeState(): {
+  connected: boolean;
+  readerName: string | null;
+} {
+  return {
+    connected: desktopConnected,
+    readerName: desktopReaderName,
+  };
 }

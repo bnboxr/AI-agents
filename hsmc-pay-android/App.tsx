@@ -8,6 +8,7 @@ import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import LockScreen from './src/screens/LockScreen';
 import WalletScreen from './src/screens/WalletScreen';
 import PayScreen from './src/screens/PayScreen';
+import ATMScreen from './src/screens/ATMScreen';
 import HistoryScreen from './src/screens/HistoryScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 import { Colors, FontSizes } from './src/theme/colors';
@@ -47,6 +48,9 @@ function MainApp() {
                 break;
               case 'Pay':
                 iconName = focused ? 'contactless-payment' : 'contactless-payment';
+                break;
+              case 'ATM':
+                iconName = focused ? 'bank' : 'bank-outline';
                 break;
               case 'History':
                 iconName = focused ? 'clipboard-text-clock' : 'clipboard-text-clock-outline';
@@ -94,6 +98,11 @@ function MainApp() {
           name="Pay"
           component={PayScreen}
           options={{ headerTitle: 'Pay' }}
+        />
+        <Tab.Screen
+          name="ATM"
+          component={ATMScreen}
+          options={{ headerTitle: 'ATM' }}
         />
         <Tab.Screen
           name="History"

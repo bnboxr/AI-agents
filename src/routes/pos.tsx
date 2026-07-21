@@ -24,6 +24,7 @@ import {
   buildNFCPayload,
   type PaymentSession,
 } from "~/lib/pos-service";
+import { startPaymentWatcher } from "~/lib/pos-watcher";
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -84,6 +85,15 @@ function POSTerminal() {
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
     };
+  }, []);
+
+  // Start blockchain watcher on mount (once)
+  const watcherStarted = useRef(false);
+  useEffect(() => {
+    if (!watcherStarted.current) {
+      startPaymentWatcher();
+      watcherStarted.current = true;
+    }
   }, []);
 
   // ── Create Payment Session ────────────────────────────────────────

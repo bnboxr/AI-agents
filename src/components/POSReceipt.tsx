@@ -143,6 +143,9 @@ export default function POSReceipt({ session, onClose }: POSReceiptProps) {
 
       {/* Footer */}
       <div className="border-t border-[#1a1f2e] pt-4 text-center">
+        <p className="text-[#00e676] text-xs font-semibold mb-2">
+          ✅ Funds available in your wallet
+        </p>
         <p className="text-[#546e7a] text-xs mb-3">
           Settled on Polygon · {date.toISOString()}
         </p>

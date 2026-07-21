@@ -22,7 +22,9 @@ import {
   getTokenPrices,
   buildEIP681Url,
   buildNFCPayload,
+  failPaymentSession,
   type PaymentSession,
+  type PaymentStatus,
 } from "~/lib/pos-service";
 import { startPaymentWatcher } from "~/lib/pos-watcher";
 
@@ -160,20 +162,39 @@ function POSTerminal() {
   const startPolling = useCallback((sessionId: string) => {
     if (pollRef.current) clearInterval(pollRef.current);
 
+    // Set a 2-minute timeout for the session
+    const timeoutMs = 120_000;
+    const startTime = Date.now();
+
     const poll = () => {
       setPollCount((c) => c + 1);
       const s = getPaymentSession(sessionId);
       if (!s) return;
 
+      // Check for timeout
+      const elapsed = Date.now() - startTime;
+      if (elapsed > timeoutMs && s.status === "pending") {
+        failPaymentSession(sessionId, "timeout");
+      }
+
       setSession((prev) => {
         if (!prev) return prev;
         if (s.status !== prev.status) {
-          return { ...prev, status: s.status, txId: s.txId, payerAddress: s.payerAddress, confirmedAt: s.confirmedAt };
+          return {
+            ...prev,
+            status: s.status,
+            txId: s.txId,
+            payerAddress: s.payerAddress,
+            confirmedAt: s.confirmedAt,
+            failReason: s.failReason,
+          };
         }
         return prev;
       });
 
-      if (s.status === "confirmed" || s.status === "failed") {
+      // Stop polling on terminal states
+      const terminal: PaymentStatus[] = ["confirmed", "failed", "insufficient_funds", "timeout"];
+      if (terminal.includes(s.status)) {
         if (pollRef.current) {
           clearInterval(pollRef.current);
           pollRef.current = null;
@@ -271,8 +292,8 @@ function POSTerminal() {
           </div>
         )}
 
-        {/* ── Active Payment View ──────────────────────────────── */}
-        {session && session.status === "pending" && (
+        {/* ── Active Payment View (pending / confirming) ─────────── */}
+        {(session && (session.status === "pending" || session.status === "confirming")) && (
           <div className="space-y-6">
             {/* Amount Display */}
             <div className="glass-card p-8 text-center">
@@ -339,17 +360,8 @@ function POSTerminal() {
               {nfcError && <p className="text-[#ff3d00] text-xs mt-3 font-mono">{nfcError}</p>}
             </div>
 
-            {/* Payment Status */}
-            <div className="glass-card p-4 text-center">
-              <div className="flex items-center justify-center gap-3">
-                <span className="w-3 h-3 rounded-full bg-yellow-400 animate-pulse" />
-                <span className="text-[#ffab00] font-mono text-sm font-semibold">Awaiting Payment...</span>
-              </div>
-              <p className="text-[#546e7a] text-xs mt-2 font-mono">
-                Session: {session.sessionId} · Checking every 3s
-                {pollCount > 0 && ` · Poll #${pollCount}`}
-              </p>
-            </div>
+            {/* ── Status Indicator ───────────────────────────────── */}
+            <PaymentStatusIndicator status={session.status} txId={session.txId} sessionId={session.sessionId} pollCount={pollCount} />
 
             {/* Cancel */}
             <div className="text-center">
@@ -363,8 +375,40 @@ function POSTerminal() {
           </div>
         )}
 
+        {/* ── Failed / Insufficient / Timeout States ────────────── */}
+        {(session && (session.status === "failed" || session.status === "insufficient_funds" || session.status === "timeout")) && (
+          <div className="space-y-6 animate-fade-in-up">
+            {/* Amount Display (muted) */}
+            <div className="glass-card p-8 text-center opacity-50">
+              <p className="text-[#546e7a] text-xs uppercase tracking-wider mb-2 font-mono">Amount Due</p>
+              <p className="text-5xl sm:text-6xl font-black text-[#e0e6ed] font-mono tracking-tight">
+                ${session.amount.toFixed(2)}
+              </p>
+            </div>
+
+            {/* Status Indicator */}
+            <PaymentStatusIndicator status={session.status} sessionId={session.sessionId} pollCount={pollCount} />
+
+            {/* Retry + New */}
+            <div className="text-center flex gap-4 justify-center">
+              <button
+                onClick={handleCreateSession}
+                className="glass-button text-sm px-6 py-2 border-[#00e676]/30 text-[#00e676]"
+              >
+                ⟳ Retry Payment
+              </button>
+              <button
+                onClick={handleReset}
+                className="glass-button text-sm px-6 py-2"
+              >
+                New Payment
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* ── New Payment Form ─────────────────────────────────── */}
-        {(!session || session.status === "failed") && (
+        {(!session || session.status === "failed" || session.status === "insufficient_funds" || session.status === "timeout") && (
           <div className="space-y-5">
             {/* Amount Input */}
             <div className="glass-card p-8 text-center">
@@ -464,6 +508,174 @@ function POSTerminal() {
     </div>
   );
 }
+
+// ── Payment Status Indicator Component ─────────────────────────────
+
+function PaymentStatusIndicator({
+  status,
+  txId,
+  sessionId,
+  pollCount,
+}: {
+  status: PaymentStatus;
+  txId?: string;
+  sessionId?: string;
+  pollCount?: number;
+}) {
+  const config = STATUS_CONFIG[status];
+
+  return (
+    <div className={`glass-card p-6 text-center border-2 transition-all duration-500 ${config.border}`}>
+      {/* Icon */}
+      <div className="status-indicator text-5xl mb-3">
+        {status === "pending" && <PulsingYellowDot />}
+        {status === "confirming" && <SpinningLoader />}
+        {status === "confirmed" && <GreenCheckmark />}
+        {status === "failed" && <RedX />}
+        {status === "insufficient_funds" && <WarningTriangle />}
+        {status === "timeout" && <ClockIcon />}
+      </div>
+
+      {/* Main Status Text */}
+      <p className={`text-lg font-bold font-mono ${config.color}`}>
+        {config.label}
+      </p>
+
+      {/* Detail */}
+      <p className="text-[#546e7a] text-xs mt-2 font-mono">
+        {config.detail}
+      </p>
+
+      {/* TXID for confirmed */}
+      {status === "confirmed" && txId && (
+        <p className="text-[#00bcd4] text-xs mt-2 font-mono break-all">
+          TXID: {txId.slice(0, 14)}...{txId.slice(-8)}
+        </p>
+      )}
+
+      {/* Session info for pending */}
+      {(status === "pending" || status === "confirming") && sessionId && (
+        <p className="text-[#455a64] text-xs mt-3 font-mono">
+          Session: {sessionId}
+          {pollCount !== undefined && pollCount > 0 && ` · Poll #${pollCount}`}
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ── Status Icons ─────────────────────────────────────────────────────
+
+function PulsingYellowDot() {
+  return (
+    <span className="inline-flex items-center justify-center">
+      <span className="w-16 h-16 rounded-full bg-yellow-400/20 border-2 border-yellow-400 animate-pulse flex items-center justify-center">
+        <span className="w-8 h-8 rounded-full bg-yellow-400/60 animate-ping" />
+      </span>
+    </span>
+  );
+}
+
+function SpinningLoader() {
+  return (
+    <span className="inline-flex items-center justify-center text-5xl animate-spin text-[#00bcd4]">
+      ⟳
+    </span>
+  );
+}
+
+function GreenCheckmark() {
+  return (
+    <span className="inline-flex items-center justify-center">
+      <span className="w-16 h-16 rounded-full bg-[#00e676]/20 border-2 border-[#00e676] flex items-center justify-center">
+        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#00e676" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+          <polyline points="20 6 9 17 4 12" />
+        </svg>
+      </span>
+    </span>
+  );
+}
+
+function RedX() {
+  return (
+    <span className="inline-flex items-center justify-center">
+      <span className="w-16 h-16 rounded-full bg-[#ff3d00]/20 border-2 border-[#ff3d00] flex items-center justify-center">
+        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#ff3d00" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+          <line x1="18" y1="6" x2="6" y2="18" />
+          <line x1="6" y1="6" x2="18" y2="18" />
+        </svg>
+      </span>
+    </span>
+  );
+}
+
+function WarningTriangle() {
+  return (
+    <span className="inline-flex items-center justify-center">
+      <span className="w-16 h-16 rounded-full bg-[#ffab00]/20 border-2 border-[#ffab00] flex items-center justify-center">
+        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#ffab00" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+          <line x1="12" y1="9" x2="12" y2="13" />
+          <line x1="12" y1="17" x2="12.01" y2="17" />
+        </svg>
+      </span>
+    </span>
+  );
+}
+
+function ClockIcon() {
+  return (
+    <span className="inline-flex items-center justify-center">
+      <span className="w-16 h-16 rounded-full bg-[#546e7a]/20 border-2 border-[#546e7a] flex items-center justify-center">
+        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#546e7a" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="10" />
+          <polyline points="12 6 12 12 16 14" />
+        </svg>
+      </span>
+    </span>
+  );
+}
+
+// ── Status Configuration ─────────────────────────────────────────────
+
+const STATUS_CONFIG: Record<PaymentStatus, { label: string; detail: string; color: string; border: string }> = {
+  pending: {
+    label: "⏳ AWAITING PAYMENT",
+    detail: "Apropie telefonul sau scanează QR",
+    color: "text-[#ffab00]",
+    border: "border-yellow-400/30 bg-yellow-400/5",
+  },
+  confirming: {
+    label: "⟳ CONFIRMING",
+    detail: "Transaction submitted — waiting for blockchain confirmation...",
+    color: "text-[#00bcd4]",
+    border: "border-[#00bcd4]/30 bg-[#00bcd4]/5",
+  },
+  confirmed: {
+    label: "✅ APPROVED",
+    detail: "Payment received successfully",
+    color: "text-[#00e676]",
+    border: "border-[#00e676]/30 bg-[#00e676]/5",
+  },
+  failed: {
+    label: "❌ DECLINED",
+    detail: "Tranzacția a fost refuzată",
+    color: "text-[#ff3d00]",
+    border: "border-[#ff3d00]/30 bg-[#ff3d00]/5",
+  },
+  insufficient_funds: {
+    label: "⚠️ INSUFFICIENT FUNDS",
+    detail: "Clientul nu are suficiente fonduri",
+    color: "text-[#ffab00]",
+    border: "border-[#ffab00]/30 bg-[#ffab00]/5",
+  },
+  timeout: {
+    label: "⏱️ TIMEOUT",
+    detail: "Plata nu s-a efectuat în 2 minute",
+    color: "text-[#546e7a]",
+    border: "border-[#546e7a]/30 bg-[#546e7a]/5",
+  },
+};
 
 // ── Helpers ──────────────────────────────────────────────────────────
 

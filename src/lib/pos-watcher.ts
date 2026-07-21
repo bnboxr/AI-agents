@@ -9,7 +9,7 @@
 
 import { createPublicClient, http, parseAbiItem } from "viem";
 import { polygonAmoy, polygon } from "viem/chains";
-import { confirmPaymentSession } from "./pos-service";
+import { confirmPaymentSession, failPaymentSession } from "./pos-service";
 
 // ── Config ─────────────────────────────────────────────────────────────
 

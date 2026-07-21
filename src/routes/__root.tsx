@@ -10,6 +10,7 @@ import { useState, useEffect } from "react";
 import { WalletProvider, ConnectButton, ChainSelector } from "~/components/WalletProvider";
 import AlertBell from "~/components/AlertBell";
 import AlertToast from "~/components/AlertToast";
+import FloatingAIAssistant from "~/components/FloatingAIAssistant";
 import HelpGuide from "~/components/HelpGuide";
 import ParticleField from "~/components/ParticleField";
 import { isDemoMode, toggleDemo } from "~/lib/demo-mode";
@@ -139,6 +140,7 @@ function RootComponent() {
           <Outlet />
         </main>
         <AlertToast />
+        <FloatingAIAssistant />
         <Footer />
         <HelpGuide />
       </WalletProvider>

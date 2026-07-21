@@ -1506,4 +1506,33 @@ The main navigation now includes:
 
 ---
 
+### Floating AI Assistant
+
+Global draggable AI chat assistant present on all pages. Voice-enabled (Romanian), page-aware context, and multi-provider LLM backend.
+
+**Features:**
+- 💎 **Floating Diamond Icon** — 48px glassmorphism circle with pulse glow animation, draggable anywhere on screen
+- 🗣️ **Voice Input** — Web Speech API with `ro-RO` language; hold mic button to speak, release to send
+- 🔊 **Voice Output** — Speech synthesis with Romanian voice auto-detection; play/stop button per AI response
+- 📄 **Page Context** — Sends current route, page title, and visible text (first 500 chars) for contextual answers
+- 🧠 **Multi-Provider AI** — Queries OpenAI, DeepSeek, Grok, and Gemini simultaneously; fastest response wins
+- 💬 **Chat UI** — Glassmorphism panel (320×480px), slide-in animations, typing indicator, cyan/teal theme
+- 📱 **Responsive** — Mobile: 90% width centered panel
+- 💾 **Position Memory** — Saves icon position to localStorage across sessions
+
+**Files:**
+- `src/components/FloatingAIAssistant.tsx` — Full component (icon + panel + voice + AI)
+- `src/lib/ai-assistant.ts` — Server function for multi-provider AI queries
+- `src/routes/__root.tsx` — Integration point in RootComponent
+
+**System Prompt (Romanian):**
+```
+Ești asistentul HSMC, o platformă fintech DeFi — un AI Hedge Fund OS cu 29 de agenți autonomi.
+Vorbești în română, ești prietenos, concis și de ajutor.
+```
+
+**API Keys Required:** `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`, `GROK_API_KEY`, `GEMINI_API_KEY` (any one works; more = faster response via racing)
+
+---
+
 > **HSMC Platform** — *Autonomous AI Hedge Fund. 29 agents. 4 LLMs. Zero human intervention.*

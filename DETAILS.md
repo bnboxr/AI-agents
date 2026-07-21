@@ -528,6 +528,86 @@ export function calculateQualityMetrics(): SignalQualityMetrics
 - Premium access gating
 - Telegram/Discord bot formatting
 
+### Trading Signals Page (`/signals`)
+
+The **Trading Signals** page is the platform's first live revenue channel. It generates AI-powered daily trading signals and sells premium access via Stripe.
+
+#### Signal Generation
+
+Every day, the signal generator:
+1. **Fetches live prices** from CoinGecko for 8 trading pairs (BTC, ETH, SOL, BNB, MATIC, AVAX, LINK, XRP)
+2. **Selects the most volatile pair** as the signal target
+3. **Runs multi-indicator technical analysis** simulating agent consensus:
+   - RSI (14-period) — overbought/oversold detection
+   - MACD (12/26/9) — momentum and trend confirmation
+   - EMA crossover (12 vs 26) — trend direction
+   - SMA-20 vs current price — support/resistance
+   - 24h momentum — trend strength
+4. **Computes confidence score** from weighted consensus across all indicators
+5. **Calculates stop-loss and take-profit** based on volatility (ATR-based)
+6. **Caches the result** for 1 hour to respect API rate limits
+
+```typescript
+// Signal generation
+export async function generateSignal(): Promise<TradingSignal>
+export async function getDailySignal(): Promise<TradingSignal | null>
+export async function getSignalHistory(limit?: number): Promise<TradingSignal[]>
+export function hasUnlockedPremium(sessionId?: string): boolean
+```
+
+#### Free Preview & Premium Unlock
+
+The `/signals` page shows a free preview (pair + direction + truncated analysis) with blurred premium content:
+
+```
+┌─────────────────────────────────────┐
+│  🔒 PREMIUM — Free Preview          │
+│  BTC/USDT 🟢 LONG                   │
+│  Market shows bullish accumulation  │
+│  [UNLOCK FULL SIGNAL — 25 RON]     │
+└─────────────────────────────────────┘
+```
+
+After payment via Stripe Checkout (`price_1TvhyEDMSAUyHlnSAFC30qKp`), the full signal is revealed:
+
+```
+┌─────────────────────────────────────┐
+│  🔓 UNLOCKED                        │
+│  BTC/USDT 🟢 LONG                   │
+│  Entry: $67,420    Stop Loss: $66,800│
+│  Take Profit: $69,100               │
+│  Confidence: 78%                    │
+│  AI Analysis: Multi-indicator...     │
+│  [Copy to Clipboard] [Share]        │
+└─────────────────────────────────────┘
+```
+
+#### Signal History & Performance Tracking
+
+Past signals are displayed in a table with hit/miss tracking:
+
+| Feature | Description |
+|---------|-------------|
+| **Win Rate** | Percentage of signals that hit take-profit |
+| **Signal Table** | All past signals with status, pair, direction, confidence |
+| **Performance Stats** | Total signals, hit count, miss count, win rate |
+| **Time Ago** | Relative timestamps for each signal |
+
+#### Stripe Integration
+
+- **Price ID**: `price_1TvhyEDMSAUyHlnSAFC30qKp` (25 RON)
+- **Checkout**: Redirects to Stripe, returns to `/signals?session_id={CHECKOUT_SESSION_ID}`
+- **Unlock State**: Stored in `localStorage` for persistent access
+- **Signal Validity**: 24 hours from generation
+
+#### Key Files
+
+| File | Purpose |
+|------|---------|
+| `src/lib/trading-signals.ts` | Signal generator, daily cache, premium access logic |
+| `src/routes/signals.tsx` | Full signals page with preview, unlock, history |
+| `src/lib/revenue/trading-data.ts` | Shared signal store, quality metrics, bot formatting |
+
 #### Airdrop Farming
 - Automated multi-wallet interaction with new protocols
 - Faucet aggregator for testnet tokens

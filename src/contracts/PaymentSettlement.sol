@@ -34,6 +34,7 @@ contract PaymentSettlement {
 
     mapping(uint256 => Payment) public payments;
     mapping(address => bool) public acceptedTokens;
+    mapping(address => mapping(address => uint256)) public merchantBalances;
 
     event PaymentReceived(
         uint256 indexed id,
@@ -46,6 +47,7 @@ contract PaymentSettlement {
     );
 
     event TokenUpdated(address indexed token, bool accepted);
+    event Withdrawn(address indexed merchant, address indexed token, uint256 amount);
 
     modifier onlyOwner() {
         require(msg.sender == owner, "Only owner");
@@ -138,6 +140,9 @@ contract PaymentSettlement {
             sessionId: sessionId
         });
 
+        // Track merchant balance for withdrawals
+        merchantBalances[merchant][token] += amount;
+
         emit PaymentReceived(
             paymentCounter,
             payer,
@@ -177,6 +182,36 @@ contract PaymentSettlement {
      */
     function totalPayments() external view returns (uint256) {
         return paymentCounter;
+    }
+
+    /**
+     * @notice Withdraw a specific amount of a token
+     * @param token The token address (MATIC for native)
+     * @param amount The amount to withdraw
+     */
+    function withdraw(address token, uint256 amount) external {
+        require(merchantBalances[msg.sender][token] >= amount, "Insufficient balance");
+        merchantBalances[msg.sender][token] -= amount;
+
+        if (token == MATIC) {
+            (bool sent, ) = payable(msg.sender).call{value: amount}("");
+            require(sent, "MATIC withdraw failed");
+        } else {
+            bool success = IERC20(token).transfer(msg.sender, amount);
+            require(success, "Token withdraw failed");
+        }
+
+        emit Withdrawn(msg.sender, token, amount);
+    }
+
+    /**
+     * @notice Withdraw entire balance of a token
+     * @param token The token address (MATIC for native)
+     */
+    function withdrawAll(address token) external {
+        uint256 balance = merchantBalances[msg.sender][token];
+        require(balance > 0, "No balance to withdraw");
+        withdraw(token, balance);
     }
 
     // Allow receiving MATIC directly

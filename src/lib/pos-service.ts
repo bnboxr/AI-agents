@@ -50,6 +50,16 @@ const POLYGON_MAINNET_USDC = "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359";
 const POLYGON_MAINNET_USDT = "0xc2132D05D31c914a87C6611C10748AEb04B58e8F";
 const MATIC_NATIVE = "0x0000000000000000000000000000000000000000";
 
+/** The PaymentSettlement contract address (from env or default) */
+export const POS_CONTRACT_ADDRESS: string =
+  (typeof process !== "undefined" && process.env?.VITE_POS_CONTRACT_ADDRESS) ||
+  "0x0000000000000000000000000000000000000000";
+
+/** Polygon Amoy testnet RPC URL */
+export const POS_RPC_URL: string =
+  (typeof process !== "undefined" && process.env?.VITE_POLYGON_RPC) ||
+  "https://polygon-amoy.g.alchemy.com/v2/demo";
+
 function getTokenAddress(token: "USDC" | "USDT" | "MATIC"): string {
   if (token === "USDC") return process.env.VITE_POS_NETWORK === "mainnet" ? POLYGON_MAINNET_USDC : POLYGON_AMOY_USDC;
   if (token === "USDT") return POLYGON_MAINNET_USDT;
@@ -275,6 +285,99 @@ function mapRowToPayment(row: Record<string, unknown>): MerchantPayment {
   };
 }
 
+// ── Merchant On-Chain Balance ─────────────────────────────────────────
+
+export interface TokenBalance {
+  token: "USDC" | "USDT" | "MATIC";
+  tokenAddress: string;
+  balance: string; // raw wei/smallest unit as string
+  formatted: string; // human-readable
+}
+
+/**
+ * Read merchant balances from the PaymentSettlement contract.
+ * This reads the `merchantBalances` mapping on-chain.
+ */
+export async function getMerchantOnChainBalances(
+  merchantAddress: string
+): Promise<TokenBalance[]> {
+  const tokens: Array<{ symbol: "USDC" | "USDT" | "MATIC"; address: string; decimals: number }> = [
+    { symbol: "USDC", address: getTokenAddress("USDC"), decimals: 6 },
+    { symbol: "USDT", address: getTokenAddress("USDT"), decimals: 6 },
+    { symbol: "MATIC", address: MATIC_NATIVE, decimals: 18 },
+  ];
+
+  // Dynamic import viem to avoid SSR issues
+  const { createPublicClient, http } = await import("viem");
+  const { polygonAmoy, polygon: polygonMainnet } = await import("viem/chains");
+
+  const chain =
+    process.env.VITE_POS_NETWORK === "mainnet" ? polygonMainnet : polygonAmoy;
+
+  const rpcUrl =
+    (typeof process !== "undefined" && process.env?.VITE_POLYGON_RPC) ||
+    "https://polygon-amoy.g.alchemy.com/v2/demo";
+
+  const client = createPublicClient({
+    chain,
+    transport: http(rpcUrl),
+  });
+
+  const contractAddr = POS_CONTRACT_ADDRESS as `0x${string}`;
+
+  const balances: TokenBalance[] = [];
+
+  for (const t of tokens) {
+    try {
+      const rawBalance = (await client.readContract({
+        address: contractAddr,
+        abi: PAYMENT_SETTLEMENT_ABI,
+        functionName: "merchantBalances",
+        args: [merchantAddress as `0x${string}`, t.address as `0x${string}`],
+      })) as bigint;
+
+      const formatted =
+        t.decimals === 18
+          ? formatEther(rawBalance)
+          : formatUnits(rawBalance, t.decimals);
+
+      balances.push({
+        token: t.symbol,
+        tokenAddress: t.address,
+        balance: rawBalance.toString(),
+        formatted,
+      });
+    } catch (err) {
+      console.warn(`[POS] Failed to read balance for ${t.symbol}:`, err);
+      balances.push({
+        token: t.symbol,
+        tokenAddress: t.address,
+        balance: "0",
+        formatted: "0",
+      });
+    }
+  }
+
+  return balances;
+}
+
+// Helper: format token units for display
+function formatUnits(value: bigint, decimals: number): string {
+  if (value === 0n) return "0";
+  const divisor = 10n ** BigInt(decimals);
+  const intPart = value / divisor;
+  const fracPart = value % divisor;
+  if (fracPart === 0n) return intPart.toString();
+  let fracStr = fracPart.toString().padStart(decimals, "0");
+  // Trim trailing zeros
+  fracStr = fracStr.replace(/0+$/, "");
+  return `${intPart}.${fracStr.slice(0, 6)}`;
+}
+
+function formatEther(value: bigint): string {
+  return formatUnits(value, 18);
+}
+
 // ── EIP-681 URL Builder ──────────────────────────────────────────────
 
 export function buildEIP681Url(params: {
@@ -384,6 +487,33 @@ export const PAYMENT_SETTLEMENT_ABI = [
     name: "acceptedTokens",
     inputs: [{ name: "token", type: "address" }],
     outputs: [{ name: "", type: "bool" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "withdraw",
+    inputs: [
+      { name: "token", type: "address" },
+      { name: "amount", type: "uint256" },
+    ],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "withdrawAll",
+    inputs: [{ name: "token", type: "address" }],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "merchantBalances",
+    inputs: [
+      { name: "merchant", type: "address" },
+      { name: "token", type: "address" },
+    ],
+    outputs: [{ name: "", type: "uint256" }],
     stateMutability: "view",
   },
 ] as const;

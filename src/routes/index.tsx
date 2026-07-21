@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState, useEffect, useMemo } from "react";
 import { useAccount, useBalance, useReadContracts } from "~/lib/demo-wagmi";
 import { formatUnits, type Address } from "viem";
+import { isDemoMode } from "~/lib/demo-mode";
 import {
   getPrices,
   getFearGreed,
@@ -86,6 +87,7 @@ function HomePage() {
   const [mounted, setMounted] = useState(false);
   const [portfolioPrices, setPortfolioPrices] = useState<Record<string, { usd: number; change24h: number } | null>>({});
   const [pfolioLoading, setPfolioLoading] = useState(true);
+  const demo = isDemoMode();
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -161,16 +163,26 @@ function HomePage() {
       <div className="mx-auto max-w-7xl space-y-6">
         {/* ── Wallet Status Hero ─────────────────────────────── */}
         <section className="animate-fade-in">
-          {mounted && isConnected ? (
+          {isConnected ? (
             <div className="glass-card p-6 text-center">
+              {demo && (
+                <div className="mb-2">
+                  <span className="text-xs font-mono text-yellow-400 bg-yellow-500/10 px-2 py-0.5 rounded-full border border-yellow-500/30">
+                    DEMO
+                  </span>
+                </div>
+              )}
               <div className="flex items-center justify-center gap-2 mb-2">
                 <span className="status-dot-online"></span>
                 <span className="text-sm text-gray-300 text-mono-sm">{address?.slice(0, 6)}...{address?.slice(-4)}</span>
               </div>
               <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Portfolio Value</p>
               <p className="text-3xl font-bold text-white text-mono">
-                {pfolioLoading ? "Loading..." : fmtPrice(portfolioValue)}
+                {demo ? fmtPrice(12847.32) : pfolioLoading ? "Loading..." : fmtPrice(portfolioValue)}
               </p>
+              {demo && (
+                <p className="text-xs text-[#546e7a] mt-1 font-mono">Simulated balance for demonstration</p>
+              )}
               <div className="flex items-center justify-center gap-3 mt-3">
                 <Link to="/swap" className="px-4 py-2 rounded-lg bg-accent-blue text-white text-sm font-medium hover:bg-accent-blue/80 transition-colors">
                   Swap
@@ -183,7 +195,7 @@ function HomePage() {
                 </Link>
               </div>
             </div>
-          ) : (
+          ) : mounted ? (
             <div className="glass-card p-8 text-center">
               <h1 className="text-2xl sm:text-3xl font-bold text-[#e0e6ed] mb-2 font-mono tracking-tight">
                 <span className="text-[#00e676]">{">"}</span> PĂUN_AI — FinTech Terminal
@@ -193,7 +205,7 @@ function HomePage() {
               </p>
               <p className="text-xs text-[#455a64] font-mono">Use the <span className="text-[#00e676]">Connect Wallet</span> button in the top-right corner</p>
             </div>
-          )}
+          ) : null}
         </section>
 
         {/* ── Header Stats Bar ──────────────────────────────── */}

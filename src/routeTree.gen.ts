@@ -17,8 +17,10 @@ import { Route as SwapRouteImport } from './routes/swap'
 import { Route as StakeRouteImport } from './routes/stake'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as RiskRouteImport } from './routes/risk'
+import { Route as PosRouteImport } from './routes/pos'
 import { Route as PortfolioRouteImport } from './routes/portfolio'
 import { Route as NetworkRouteImport } from './routes/network'
+import { Route as MerchantRouteImport } from './routes/merchant'
 import { Route as GasRouteImport } from './routes/gas'
 import { Route as EarnRouteImport } from './routes/earn'
 import { Route as DepositRouteImport } from './routes/deposit'
@@ -37,6 +39,7 @@ import { Route as ChainsTronRouteImport } from './routes/chains.tron'
 import { Route as ChainsSolanaRouteImport } from './routes/chains.solana'
 import { Route as ChainsCosmosRouteImport } from './routes/chains.cosmos'
 import { Route as ChainsChainIdRouteImport } from './routes/chains.$chainId'
+import { Route as PosPaySessionIdRouteImport } from './routes/pos/pay.$sessionId'
 
 const WithdrawRoute = WithdrawRouteImport.update({
   id: '/withdraw',
@@ -78,6 +81,11 @@ const RiskRoute = RiskRouteImport.update({
   path: '/risk',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PosRoute = PosRouteImport.update({
+  id: '/pos',
+  path: '/pos',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PortfolioRoute = PortfolioRouteImport.update({
   id: '/portfolio',
   path: '/portfolio',
@@ -86,6 +94,11 @@ const PortfolioRoute = PortfolioRouteImport.update({
 const NetworkRoute = NetworkRouteImport.update({
   id: '/network',
   path: '/network',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MerchantRoute = MerchantRouteImport.update({
+  id: '/merchant',
+  path: '/merchant',
   getParentRoute: () => rootRouteImport,
 } as any)
 const GasRoute = GasRouteImport.update({
@@ -178,6 +191,11 @@ const ChainsChainIdRoute = ChainsChainIdRouteImport.update({
   path: '/$chainId',
   getParentRoute: () => ChainsRoute,
 } as any)
+const PosPaySessionIdRoute = PosPaySessionIdRouteImport.update({
+  id: '/pay/$sessionId',
+  path: '/pay/$sessionId',
+  getParentRoute: () => PosRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -193,8 +211,10 @@ export interface FileRoutesByFullPath {
   '/deposit': typeof DepositRoute
   '/earn': typeof EarnRoute
   '/gas': typeof GasRoute
+  '/merchant': typeof MerchantRoute
   '/network': typeof NetworkRoute
   '/portfolio': typeof PortfolioRoute
+  '/pos': typeof PosRouteWithChildren
   '/risk': typeof RiskRoute
   '/settings': typeof SettingsRoute
   '/stake': typeof StakeRoute
@@ -208,6 +228,7 @@ export interface FileRoutesByFullPath {
   '/chains/solana': typeof ChainsSolanaRoute
   '/chains/tron': typeof ChainsTronRoute
   '/chains/xrp': typeof ChainsXrpRoute
+  '/pos/pay/$sessionId': typeof PosPaySessionIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -223,8 +244,10 @@ export interface FileRoutesByTo {
   '/deposit': typeof DepositRoute
   '/earn': typeof EarnRoute
   '/gas': typeof GasRoute
+  '/merchant': typeof MerchantRoute
   '/network': typeof NetworkRoute
   '/portfolio': typeof PortfolioRoute
+  '/pos': typeof PosRouteWithChildren
   '/risk': typeof RiskRoute
   '/settings': typeof SettingsRoute
   '/stake': typeof StakeRoute
@@ -238,6 +261,7 @@ export interface FileRoutesByTo {
   '/chains/solana': typeof ChainsSolanaRoute
   '/chains/tron': typeof ChainsTronRoute
   '/chains/xrp': typeof ChainsXrpRoute
+  '/pos/pay/$sessionId': typeof PosPaySessionIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -254,8 +278,10 @@ export interface FileRoutesById {
   '/deposit': typeof DepositRoute
   '/earn': typeof EarnRoute
   '/gas': typeof GasRoute
+  '/merchant': typeof MerchantRoute
   '/network': typeof NetworkRoute
   '/portfolio': typeof PortfolioRoute
+  '/pos': typeof PosRouteWithChildren
   '/risk': typeof RiskRoute
   '/settings': typeof SettingsRoute
   '/stake': typeof StakeRoute
@@ -269,6 +295,7 @@ export interface FileRoutesById {
   '/chains/solana': typeof ChainsSolanaRoute
   '/chains/tron': typeof ChainsTronRoute
   '/chains/xrp': typeof ChainsXrpRoute
+  '/pos/pay/$sessionId': typeof PosPaySessionIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -286,8 +313,10 @@ export interface FileRouteTypes {
     | '/deposit'
     | '/earn'
     | '/gas'
+    | '/merchant'
     | '/network'
     | '/portfolio'
+    | '/pos'
     | '/risk'
     | '/settings'
     | '/stake'
@@ -301,6 +330,7 @@ export interface FileRouteTypes {
     | '/chains/solana'
     | '/chains/tron'
     | '/chains/xrp'
+    | '/pos/pay/$sessionId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -316,8 +346,10 @@ export interface FileRouteTypes {
     | '/deposit'
     | '/earn'
     | '/gas'
+    | '/merchant'
     | '/network'
     | '/portfolio'
+    | '/pos'
     | '/risk'
     | '/settings'
     | '/stake'
@@ -331,6 +363,7 @@ export interface FileRouteTypes {
     | '/chains/solana'
     | '/chains/tron'
     | '/chains/xrp'
+    | '/pos/pay/$sessionId'
   id:
     | '__root__'
     | '/'
@@ -346,8 +379,10 @@ export interface FileRouteTypes {
     | '/deposit'
     | '/earn'
     | '/gas'
+    | '/merchant'
     | '/network'
     | '/portfolio'
+    | '/pos'
     | '/risk'
     | '/settings'
     | '/stake'
@@ -361,6 +396,7 @@ export interface FileRouteTypes {
     | '/chains/solana'
     | '/chains/tron'
     | '/chains/xrp'
+    | '/pos/pay/$sessionId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -377,8 +413,10 @@ export interface RootRouteChildren {
   DepositRoute: typeof DepositRoute
   EarnRoute: typeof EarnRoute
   GasRoute: typeof GasRoute
+  MerchantRoute: typeof MerchantRoute
   NetworkRoute: typeof NetworkRoute
   PortfolioRoute: typeof PortfolioRoute
+  PosRoute: typeof PosRouteWithChildren
   RiskRoute: typeof RiskRoute
   SettingsRoute: typeof SettingsRoute
   StakeRoute: typeof StakeRoute
@@ -447,6 +485,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RiskRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/pos': {
+      id: '/pos'
+      path: '/pos'
+      fullPath: '/pos'
+      preLoaderRoute: typeof PosRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/portfolio': {
       id: '/portfolio'
       path: '/portfolio'
@@ -459,6 +504,13 @@ declare module '@tanstack/react-router' {
       path: '/network'
       fullPath: '/network'
       preLoaderRoute: typeof NetworkRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/merchant': {
+      id: '/merchant'
+      path: '/merchant'
+      fullPath: '/merchant'
+      preLoaderRoute: typeof MerchantRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/gas': {
@@ -587,6 +639,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ChainsChainIdRouteImport
       parentRoute: typeof ChainsRoute
     }
+    '/pos/pay/$sessionId': {
+      id: '/pos/pay/$sessionId'
+      path: '/pay/$sessionId'
+      fullPath: '/pos/pay/$sessionId'
+      preLoaderRoute: typeof PosPaySessionIdRouteImport
+      parentRoute: typeof PosRoute
+    }
   }
 }
 
@@ -609,6 +668,16 @@ const ChainsRouteChildren: ChainsRouteChildren = {
 const ChainsRouteWithChildren =
   ChainsRoute._addFileChildren(ChainsRouteChildren)
 
+interface PosRouteChildren {
+  PosPaySessionIdRoute: typeof PosPaySessionIdRoute
+}
+
+const PosRouteChildren: PosRouteChildren = {
+  PosPaySessionIdRoute: PosPaySessionIdRoute,
+}
+
+const PosRouteWithChildren = PosRoute._addFileChildren(PosRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AgentsRoute: AgentsRoute,
@@ -623,8 +692,10 @@ const rootRouteChildren: RootRouteChildren = {
   DepositRoute: DepositRoute,
   EarnRoute: EarnRoute,
   GasRoute: GasRoute,
+  MerchantRoute: MerchantRoute,
   NetworkRoute: NetworkRoute,
   PortfolioRoute: PortfolioRoute,
+  PosRoute: PosRouteWithChildren,
   RiskRoute: RiskRoute,
   SettingsRoute: SettingsRoute,
   StakeRoute: StakeRoute,

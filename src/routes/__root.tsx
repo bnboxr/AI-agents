@@ -63,8 +63,8 @@ function LiveTicker() {
           };
         }).filter((p) => p.price > 0);
         setPrices(result);
-      } catch {
-        // silent
+      } catch (err) {
+        console.warn("ticker fetch failed:", err);
       }
     };
 

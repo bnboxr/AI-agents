@@ -1,4 +1,0 @@
-{
-  "description": "HSMC deployed contract addresses. Populated after running deploy/deploy-all.ts or deploy/deploy-contract.ts.",
-  "networks": {}
-}

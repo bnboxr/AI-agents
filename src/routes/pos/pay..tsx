@@ -4,12 +4,11 @@
  * Opens when customer scans QR code or taps NFC.
  * Shows merchant info, amount, and "Pay with Wallet" button.
  */
-
 import { createFileRoute, useParams } from "@tanstack/react-router";
 import { useState, useEffect, useCallback } from "react";
 import { useAccount, useWriteContract } from "wagmi";
-import { PAYMENT_SETTLEMENT_ABI, PAYMENT_SETTLEMENT_ADDRESS, getTokenAddress } from "~/lib/pos-service";
-import { getPaymentSession, type PaymentSession } from "~/lib/pos-service";
+import { getPaymentSession, confirmPaymentSession, PAYMENT_SETTLEMENT_ABI, PAYMENT_SETTLEMENT_ADDRESS, getTokenAddress } from "~/lib/pos-service";
+import type { PaymentSession } from "~/lib/pos-service";
 
 // ── Route ────────────────────────────────────────────────────────────
 
@@ -21,8 +20,8 @@ export const Route = createFileRoute("/pos/pay/$sessionId")({
 
 function CustomerPaymentPage() {
   const { sessionId } = useParams({ from: "/pos/pay/$sessionId" });
-  const { isConnected } = useAccount();
-
+  const { isConnected, address } = useAccount();
+  const { writeContract } = useWriteContract();
   const [session, setSession] = useState<PaymentSession | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -44,25 +43,30 @@ function CustomerPaymentPage() {
   // ── Handle Payment ────────────────────────────────────────────────
 
   const handlePay = useCallback(async () => {
-    if (!session || !isConnected) return;
+    if (!session || !isConnected || !address) return;
     setPaying(true);
     setError(null);
     try {
       const tokenAddress = getTokenAddress(session.token);
-      const txHash = await writeContract({
-        address: PAYMENT_SETTLEMENT_ADDRESS,
+      const hash = await writeContract({
+        address: PAYMENT_SETTLEMENT_ADDRESS as `0x${string}`,
         abi: PAYMENT_SETTLEMENT_ABI,
         functionName: "pay",
-        args: [tokenAddress, session.tokenAmount, session.merchant, session.sessionId],
+        args: [tokenAddress as `0x${string}`, session.tokenAmount, session.merchant as `0x${string}`, session.sessionId],
         value: session.token === "MATIC" ? BigInt(session.tokenAmount) : undefined,
       });
-      setTxHash(txHash);
+      setTxHash(hash);
+
+      // Mark session as confirmed
+      confirmPaymentSession(session.sessionId, hash, address).catch((err) => {
+        console.warn("[Pay] Failed to update session:", err);
+      });
     } catch (err) {
       console.warn("[Pay] Transaction error:", err);
       setError("Payment failed — please try again");
       setPaying(false);
     }
-  }, [session, isConnected, writeContract]);
+  }, [session, isConnected, writeContract, address]);
 
   // ── Loading State ─────────────────────────────────────────────────
 
@@ -102,9 +106,9 @@ function CustomerPaymentPage() {
           <p className="text-[#b0bec5] font-mono text-sm mb-4">
             ${session.amount.toFixed(2)} paid successfully
           </p>
-          {txHash && (
+          {(txHash || session.txId) && (
             <a
-              href={\}
+              href={`https://amoy.polygonscan.com/tx/${txHash || session.txId}`}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-block mt-2 text-[#00e676] hover:text-[#00bcd4] font-mono text-xs underline"
@@ -199,7 +203,8 @@ function formatTokenAmount(amount: string, token: "USDC" | "USDT" | "MATIC"): st
     if (fracPart === 0n) return intPart.toString();
     const fracStr = fracPart.toString().padStart(decimals, "0").replace(/0+$/, "");
     return `${intPart}.${fracStr.slice(0, 6)}`;
-  } catch (err) { console.warn("formatTokenAmount failed:", err);
+  } catch (err) {
+    console.warn("formatTokenAmount failed:", err);
     return amount;
   }
 }

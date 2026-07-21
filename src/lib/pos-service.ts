@@ -341,7 +341,9 @@ export function buildNFCPayload(params: {
   };
 }
 
-// ── Contract ABI (minimal for event monitoring) ──────────────────────
+// ── Contract ABI (minimal for event monitoring + pay) ─────────────────
+
+export const PAYMENT_SETTLEMENT_ADDRESS = "0x0000000000000000000000000000000000000000"; // ✅ Replace with deployed contract address
 
 export const PAYMENT_SETTLEMENT_ABI = [
   {
@@ -356,6 +358,18 @@ export const PAYMENT_SETTLEMENT_ABI = [
       { indexed: false, name: "timestamp", type: "uint256" },
       { indexed: false, name: "sessionId", type: "string" },
     ],
+  },
+  {
+    type: "function",
+    name: "pay",
+    inputs: [
+      { name: "token", type: "address" },
+      { name: "amount", type: "uint256" },
+      { name: "merchant", type: "address" },
+      { name: "sessionId", type: "string" },
+    ],
+    outputs: [],
+    stateMutability: "payable",
   },
   {
     type: "function",

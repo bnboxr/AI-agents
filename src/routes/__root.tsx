@@ -248,6 +248,7 @@ function NavBar() {
           <div className="hidden md:flex items-center gap-0.5">
             <NavLink to="/">HOME</NavLink>
             <NavLink to="/dashboard">DASH</NavLink>
+            <NavLink to="/signals">SIGNALS</NavLink>
             <NavLink to="/swap">SWAP</NavLink>
             <NavLink to="/earn">EARN</NavLink>
             <NavLink to="/trade">TRADE</NavLink>
@@ -289,6 +290,7 @@ function NavBar() {
             <div className="px-4 py-3 flex flex-col gap-0.5 max-h-[70vh] overflow-y-auto">
               <MobileNavLink to="/" onClick={() => setMobileOpen(false)}>HOME</MobileNavLink>
               <MobileNavLink to="/dashboard" onClick={() => setMobileOpen(false)}>DASH</MobileNavLink>
+              <MobileNavLink to="/signals" onClick={() => setMobileOpen(false)}>SIGNALS</MobileNavLink>
               <MobileNavLink to="/swap" onClick={() => setMobileOpen(false)}>SWAP</MobileNavLink>
               <MobileNavLink to="/earn" onClick={() => setMobileOpen(false)}>EARN</MobileNavLink>
               <MobileNavLink to="/trade" onClick={() => setMobileOpen(false)}>TRADE</MobileNavLink>

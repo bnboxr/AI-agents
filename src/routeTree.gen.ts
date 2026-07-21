@@ -15,6 +15,7 @@ import { Route as TrainingRouteImport } from './routes/training'
 import { Route as TradeRouteImport } from './routes/trade'
 import { Route as SwapRouteImport } from './routes/swap'
 import { Route as StakeRouteImport } from './routes/stake'
+import { Route as SignalsRouteImport } from './routes/signals'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as RiskRouteImport } from './routes/risk'
 import { Route as PosRouteImport } from './routes/pos'
@@ -70,6 +71,11 @@ const SwapRoute = SwapRouteImport.update({
 const StakeRoute = StakeRouteImport.update({
   id: '/stake',
   path: '/stake',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SignalsRoute = SignalsRouteImport.update({
+  id: '/signals',
+  path: '/signals',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SettingsRoute = SettingsRouteImport.update({
@@ -224,6 +230,7 @@ export interface FileRoutesByFullPath {
   '/pos': typeof PosRouteWithChildren
   '/risk': typeof RiskRoute
   '/settings': typeof SettingsRoute
+  '/signals': typeof SignalsRoute
   '/stake': typeof StakeRoute
   '/swap': typeof SwapRoute
   '/trade': typeof TradeRoute
@@ -258,6 +265,7 @@ export interface FileRoutesByTo {
   '/pos': typeof PosRouteWithChildren
   '/risk': typeof RiskRoute
   '/settings': typeof SettingsRoute
+  '/signals': typeof SignalsRoute
   '/stake': typeof StakeRoute
   '/swap': typeof SwapRoute
   '/trade': typeof TradeRoute
@@ -293,6 +301,7 @@ export interface FileRoutesById {
   '/pos': typeof PosRouteWithChildren
   '/risk': typeof RiskRoute
   '/settings': typeof SettingsRoute
+  '/signals': typeof SignalsRoute
   '/stake': typeof StakeRoute
   '/swap': typeof SwapRoute
   '/trade': typeof TradeRoute
@@ -329,6 +338,7 @@ export interface FileRouteTypes {
     | '/pos'
     | '/risk'
     | '/settings'
+    | '/signals'
     | '/stake'
     | '/swap'
     | '/trade'
@@ -363,6 +373,7 @@ export interface FileRouteTypes {
     | '/pos'
     | '/risk'
     | '/settings'
+    | '/signals'
     | '/stake'
     | '/swap'
     | '/trade'
@@ -397,6 +408,7 @@ export interface FileRouteTypes {
     | '/pos'
     | '/risk'
     | '/settings'
+    | '/signals'
     | '/stake'
     | '/swap'
     | '/trade'
@@ -432,6 +444,7 @@ export interface RootRouteChildren {
   PosRoute: typeof PosRouteWithChildren
   RiskRoute: typeof RiskRoute
   SettingsRoute: typeof SettingsRoute
+  SignalsRoute: typeof SignalsRoute
   StakeRoute: typeof StakeRoute
   SwapRoute: typeof SwapRoute
   TradeRoute: typeof TradeRoute
@@ -482,6 +495,13 @@ declare module '@tanstack/react-router' {
       path: '/stake'
       fullPath: '/stake'
       preLoaderRoute: typeof StakeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/signals': {
+      id: '/signals'
+      path: '/signals'
+      fullPath: '/signals'
+      preLoaderRoute: typeof SignalsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/settings': {
@@ -719,6 +739,7 @@ const rootRouteChildren: RootRouteChildren = {
   PosRoute: PosRouteWithChildren,
   RiskRoute: RiskRoute,
   SettingsRoute: SettingsRoute,
+  SignalsRoute: SignalsRoute,
   StakeRoute: StakeRoute,
   SwapRoute: SwapRoute,
   TradeRoute: TradeRoute,

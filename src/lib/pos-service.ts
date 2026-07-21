@@ -2,8 +2,7 @@
  * POS Service — Payment session management
  *
  * Manages payment sessions for the crypto POS terminal.
- * Each session tracks: amount (USD), token, merchant wallet,
- * status (pending/confirmed/failed), and transaction details.
+ * Master wallet architecture: all payments go to the platform contract.
  */
 
 import { sql } from "~/db";
@@ -16,8 +15,6 @@ export interface PaymentSession {
   tokenAmount: string; // in token decimals (string for bigint precision)
   token: "USDC" | "USDT" | "MATIC";
   tokenAddress: string;
-  merchant: string; // merchant wallet address
-  merchantName: string;
   status: "pending" | "confirmed" | "failed";
   txId?: string;
   payerAddress?: string;
@@ -25,7 +22,7 @@ export interface PaymentSession {
   confirmedAt?: number;
 }
 
-export interface MerchantPayment {
+export interface PaymentRecord {
   sessionId: string;
   amount: number;
   token: string;
@@ -54,6 +51,10 @@ const MATIC_NATIVE = "0x0000000000000000000000000000000000000000";
 export const POS_CONTRACT_ADDRESS: string =
   (typeof process !== "undefined" && process.env?.VITE_POS_CONTRACT_ADDRESS) ||
   "0x0000000000000000000000000000000000000000";
+
+/** The platform owner address (from env) */
+export const POS_OWNER_ADDRESS: string =
+  (typeof process !== "undefined" && process.env?.VITE_POS_OWNER_ADDRESS) || "";
 
 /** Polygon Amoy testnet RPC URL */
 export const POS_RPC_URL: string =
@@ -124,8 +125,6 @@ export async function getTokenPrices(): Promise<PriceFeed> {
 export function createPaymentSession(params: {
   amount: number;
   token: "USDC" | "USDT" | "MATIC";
-  merchant: string;
-  merchantName?: string;
 }): PaymentSession {
   const sessionId = generateSessionId();
   const prices = { USDC: 1.0, USDT: 1.0, MATIC: 0.5 }; // Will be populated async
@@ -139,8 +138,6 @@ export function createPaymentSession(params: {
     tokenAmount,
     token: params.token,
     tokenAddress: getTokenAddress(params.token),
-    merchant: params.merchant,
-    merchantName: params.merchantName || params.merchant.slice(0, 6) + "..." + params.merchant.slice(-4),
     status: "pending",
     createdAt: Date.now(),
   };
@@ -187,19 +184,17 @@ export function failPaymentSession(sessionId: string): PaymentSession | undefine
   return session;
 }
 
-// ── Merchant queries ─────────────────────────────────────────────────
+// ── Payment queries (all payments, not filtered by merchant) ─────────
 
-export async function getMerchantPayments(
-  merchantAddress: string,
+export async function getAllPayments(
   limit = 50,
   offset = 0
-): Promise<MerchantPayment[]> {
+): Promise<PaymentRecord[]> {
   // Try DB first
   try {
     const result = await sql`
       SELECT session_id, amount, token, token_amount, status, tx_id, payer_address, created_at, confirmed_at
       FROM pos_payments
-      WHERE merchant = ${merchantAddress}
       ORDER BY created_at DESC
       LIMIT ${limit} OFFSET ${offset}
     `;
@@ -207,36 +202,43 @@ export async function getMerchantPayments(
       return result.rows.map(mapRowToPayment);
     }
   } catch (err) {
-    console.warn("[POS] DB query failed for merchant payments:", err);
+    console.warn("[POS] DB query failed for payments:", err);
   }
 
   // Fallback: from in-memory sessions
-  const merchantSessions: MerchantPayment[] = [];
+  const allSessions: PaymentRecord[] = [];
   for (const session of sessions.values()) {
-    if (session.merchant.toLowerCase() === merchantAddress.toLowerCase()) {
-      merchantSessions.push({
-        sessionId: session.sessionId,
-        amount: session.amount,
-        token: session.token,
-        tokenAmount: session.tokenAmount,
-        status: session.status,
-        txId: session.txId,
-        payerAddress: session.payerAddress,
-        createdAt: session.createdAt,
-        confirmedAt: session.confirmedAt,
-      });
-    }
+    allSessions.push({
+      sessionId: session.sessionId,
+      amount: session.amount,
+      token: session.token,
+      tokenAmount: session.tokenAmount,
+      status: session.status,
+      txId: session.txId,
+      payerAddress: session.payerAddress,
+      createdAt: session.createdAt,
+      confirmedAt: session.confirmedAt,
+    });
   }
-  return merchantSessions.slice(offset, offset + limit);
+  return allSessions.slice(offset, offset + limit);
 }
 
-export async function getMerchantStats(merchantAddress: string): Promise<{
+/** @deprecated — use getAllPayments() instead */
+export async function getMerchantPayments(
+  _merchantAddress?: string,
+  limit = 50,
+  offset = 0
+): Promise<PaymentRecord[]> {
+  return getAllPayments(limit, offset);
+}
+
+export async function getPlatformStats(): Promise<{
   totalPayments: number;
   totalRevenue: number;
   confirmedPayments: number;
   pendingPayments: number;
 }> {
-  const payments = await getMerchantPayments(merchantAddress, 1000);
+  const payments = await getAllPayments(1000);
   const confirmed = payments.filter((p) => p.status === "confirmed");
   return {
     totalPayments: payments.length,
@@ -251,7 +253,7 @@ export async function getMerchantStats(merchantAddress: string): Promise<{
 async function persistSession(session: PaymentSession): Promise<void> {
   await sql`
     INSERT INTO pos_payments (session_id, amount, token, token_amount, token_address, merchant, merchant_name, status, created_at)
-    VALUES (${session.sessionId}, ${session.amount}, ${session.token}, ${session.tokenAmount}, ${session.tokenAddress}, ${session.merchant}, ${session.merchantName}, ${session.status}, ${session.createdAt})
+    VALUES (${session.sessionId}, ${session.amount}, ${session.token}, ${session.tokenAmount}, ${session.tokenAddress}, ${POS_CONTRACT_ADDRESS}, 'Platform Treasury', ${session.status}, ${session.createdAt})
     ON CONFLICT (session_id) DO NOTHING
   `;
 }
@@ -271,7 +273,7 @@ async function updateSessionStatus(
   `;
 }
 
-function mapRowToPayment(row: Record<string, unknown>): MerchantPayment {
+function mapRowToPayment(row: Record<string, unknown>): PaymentRecord {
   return {
     sessionId: row.session_id as string,
     amount: Number(row.amount),
@@ -285,7 +287,7 @@ function mapRowToPayment(row: Record<string, unknown>): MerchantPayment {
   };
 }
 
-// ── Merchant On-Chain Balance ─────────────────────────────────────────
+// ── Platform On-Chain Balances ───────────────────────────────────────
 
 export interface TokenBalance {
   token: "USDC" | "USDT" | "MATIC";
@@ -295,19 +297,16 @@ export interface TokenBalance {
 }
 
 /**
- * Read merchant balances from the PaymentSettlement contract.
- * This reads the `merchantBalances` mapping on-chain.
+ * Read platform balances from the PaymentSettlement contract.
+ * Reads the `totalReceived` mapping on-chain (master wallet).
  */
-export async function getMerchantOnChainBalances(
-  merchantAddress: string
-): Promise<TokenBalance[]> {
+export async function getPlatformBalances(): Promise<TokenBalance[]> {
   const tokens: Array<{ symbol: "USDC" | "USDT" | "MATIC"; address: string; decimals: number }> = [
     { symbol: "USDC", address: getTokenAddress("USDC"), decimals: 6 },
     { symbol: "USDT", address: getTokenAddress("USDT"), decimals: 6 },
     { symbol: "MATIC", address: MATIC_NATIVE, decimals: 18 },
   ];
 
-  // Dynamic import viem to avoid SSR issues
   const { createPublicClient, http } = await import("viem");
   const { polygonAmoy, polygon: polygonMainnet } = await import("viem/chains");
 
@@ -332,8 +331,8 @@ export async function getMerchantOnChainBalances(
       const rawBalance = (await client.readContract({
         address: contractAddr,
         abi: PAYMENT_SETTLEMENT_ABI,
-        functionName: "merchantBalances",
-        args: [merchantAddress as `0x${string}`, t.address as `0x${string}`],
+        functionName: "totalReceived",
+        args: [t.address as `0x${string}`],
       })) as bigint;
 
       const formatted =
@@ -361,6 +360,13 @@ export async function getMerchantOnChainBalances(
   return balances;
 }
 
+/** @deprecated — use getPlatformBalances() instead */
+export async function getMerchantOnChainBalances(
+  _merchantAddress: string
+): Promise<TokenBalance[]> {
+  return getPlatformBalances();
+}
+
 // Helper: format token units for display
 function formatUnits(value: bigint, decimals: number): string {
   if (value === 0n) return "0";
@@ -369,7 +375,6 @@ function formatUnits(value: bigint, decimals: number): string {
   const fracPart = value % divisor;
   if (fracPart === 0n) return intPart.toString();
   let fracStr = fracPart.toString().padStart(decimals, "0");
-  // Trim trailing zeros
   fracStr = fracStr.replace(/0+$/, "");
   return `${intPart}.${fracStr.slice(0, 6)}`;
 }
@@ -384,7 +389,6 @@ export function buildEIP681Url(params: {
   contractAddress: string;
   token: "USDC" | "USDT" | "MATIC";
   amount: string; // in token decimals
-  merchant: string;
   sessionId: string;
 }): string {
   const chainId = process.env.VITE_POS_NETWORK === "mainnet" ? 137 : 80002;
@@ -392,11 +396,11 @@ export function buildEIP681Url(params: {
 
   if (params.token === "MATIC") {
     // Native MATIC payment
-    return `ethereum:${contractAddr}@${chainId}/payWithMatic?address=${params.merchant}&sessionId=${params.sessionId}`;
+    return `ethereum:${contractAddr}@${chainId}/payWithMatic?string=${params.sessionId}`;
   }
 
-  // ERC-20 payment: first approve, then pay — use the pay function
-  return `ethereum:${contractAddr}@${chainId}/pay?address=${params.token}&uint256=${params.amount}&address=${params.merchant}&string=${params.sessionId}`;
+  // ERC-20 payment
+  return `ethereum:${contractAddr}@${chainId}/pay?address=${params.token}&uint256=${params.amount}&string=${params.sessionId}`;
 }
 
 // ── NFC Payload Builder ──────────────────────────────────────────────
@@ -405,7 +409,6 @@ export function buildNFCPayload(params: {
   contractAddress: string;
   token: "USDC" | "USDT" | "MATIC";
   amount: string;
-  merchant: string;
   sessionId: string;
 }): {
   url: string;
@@ -434,7 +437,6 @@ export function buildNFCPayload(params: {
             sessionId: params.sessionId,
             amount: params.amount,
             token: params.token,
-            merchant: params.merchant,
             contractAddress: params.contractAddress,
             timestamp: Date.now(),
           }),
@@ -444,7 +446,7 @@ export function buildNFCPayload(params: {
   };
 }
 
-// ── Contract ABI (minimal for event monitoring) ──────────────────────
+// ── Contract ABI (minimal for event monitoring + platform interaction) ─
 
 export const PAYMENT_SETTLEMENT_ABI = [
   {
@@ -455,9 +457,17 @@ export const PAYMENT_SETTLEMENT_ABI = [
       { indexed: true, name: "payer", type: "address" },
       { indexed: false, name: "token", type: "address" },
       { indexed: false, name: "amount", type: "uint256" },
-      { indexed: true, name: "merchant", type: "address" },
       { indexed: false, name: "timestamp", type: "uint256" },
       { indexed: false, name: "sessionId", type: "string" },
+    ],
+  },
+  {
+    type: "event",
+    name: "Withdrawn",
+    inputs: [
+      { indexed: true, name: "token", type: "address" },
+      { indexed: false, name: "amount", type: "uint256" },
+      { indexed: true, name: "to", type: "address" },
     ],
   },
   {
@@ -469,7 +479,6 @@ export const PAYMENT_SETTLEMENT_ABI = [
       { name: "payer", type: "address" },
       { name: "token", type: "address" },
       { name: "amount", type: "uint256" },
-      { name: "merchant", type: "address" },
       { name: "timestamp", type: "uint256" },
       { name: "sessionId", type: "string" },
     ],
@@ -491,6 +500,20 @@ export const PAYMENT_SETTLEMENT_ABI = [
   },
   {
     type: "function",
+    name: "totalReceived",
+    inputs: [{ name: "token", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "owner",
+    inputs: [],
+    outputs: [{ name: "", type: "address" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
     name: "withdraw",
     inputs: [
       { name: "token", type: "address" },
@@ -505,15 +528,5 @@ export const PAYMENT_SETTLEMENT_ABI = [
     inputs: [{ name: "token", type: "address" }],
     outputs: [],
     stateMutability: "nonpayable",
-  },
-  {
-    type: "function",
-    name: "merchantBalances",
-    inputs: [
-      { name: "merchant", type: "address" },
-      { name: "token", type: "address" },
-    ],
-    outputs: [{ name: "", type: "uint256" }],
-    stateMutability: "view",
   },
 ] as const;

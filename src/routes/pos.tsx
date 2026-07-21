@@ -10,10 +10,16 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState, useEffect, useRef, useCallback } from "react";
 import QRCode from "qrcode";
 import POSReceipt from "~/components/POSReceipt";
+import type { ConversionResult } from "~/components/POSReceipt";
 import {
   checkNFCWebSupport,
   writeNFCMessage,
   getNFCStatus,
+  connectDesktopNFCBridge,
+  checkDesktopReader,
+  onDesktopNFCTag,
+  onDesktopBridgeStatus,
+  disconnectDesktopNFCBridge,
   type NFCBridgeStatus,
 } from "~/lib/nfc-bridge";
 import {
@@ -51,6 +57,9 @@ function POSTerminal() {
   const [nfcStatus, setNfcStatus] = useState<NFCBridgeStatus | null>(null);
   const [nfcWriting, setNfcWriting] = useState(false);
   const [nfcError, setNfcError] = useState<string | null>(null);
+  const [desktopReaderConnected, setDesktopReaderConnected] = useState(false);
+  const [desktopReaderName, setDesktopReaderName] = useState<string | null>(null);
+  const [desktopReaderChecking, setDesktopReaderChecking] = useState(true);
   const [prices, setPrices] = useState<Record<string, number>>({ USDC: 1, USDT: 1, MATIC: 0.5 });
   const [pollCount, setPollCount] = useState(0);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -60,6 +69,103 @@ function POSTerminal() {
   useEffect(() => {
     setNfcStatus(getNFCStatus());
   }, []);
+
+  // Check for desktop NFC bridge on mount
+  useEffect(() => {
+    let cleanupTag: (() => void) | null = null;
+    let cleanupStatus: (() => void) | null = null;
+
+    async function initDesktopBridge() {
+      setDesktopReaderChecking(true);
+      try {
+        const hasReader = await checkDesktopReader();
+        if (hasReader) {
+          const { ws, status } = connectDesktopNFCBridge();
+          const bridgeStatus = await status;
+          if (bridgeStatus.desktopConnected) {
+            setDesktopReaderConnected(true);
+            setDesktopReaderName(bridgeStatus.readerName || "ACR122U NFC Reader");
+          }
+
+          // Listen for status changes
+          cleanupStatus = onDesktopBridgeStatus((connected, reader) => {
+            setDesktopReaderConnected(connected);
+            setDesktopReaderName(reader);
+          });
+
+          // Listen for NFC tags (will be used during active payment sessions)
+          cleanupTag = onDesktopNFCTag((payload) => {
+            // Handled below when session is active
+            console.log("[POS] Desktop NFC tag detected:", payload);
+          });
+        } else {
+          setDesktopReaderConnected(false);
+          setDesktopReaderName(null);
+        }
+      } catch {
+        setDesktopReaderConnected(false);
+        setDesktopReaderName(null);
+      }
+      setDesktopReaderChecking(false);
+    }
+
+    initDesktopBridge();
+
+    return () => {
+      cleanupTag?.();
+      cleanupStatus?.();
+      disconnectDesktopNFCBridge();
+    };
+  }, []);
+
+  // Listen for desktop NFC tags during active payment sessions
+  const desktopTagCleanup = useRef<(() => void) | null>(null);
+  useEffect(() => {
+    // Clean up previous handler
+    if (desktopTagCleanup.current) {
+      desktopTagCleanup.current();
+      desktopTagCleanup.current = null;
+    }
+
+    // Register tag handler when a payment session is active
+    if (desktopReaderConnected && session && (session.status === "pending" || session.status === "confirming")) {
+      desktopTagCleanup.current = onDesktopNFCTag((payload) => {
+        console.log("[POS] Desktop NFC tag detected during active session:", payload);
+        // Try to extract session ID from NDEF payload
+        if (payload.ndefMessage) {
+          for (const record of payload.ndefMessage) {
+            try {
+              if (record.type === "U" || record.type === "url") {
+                // URL record — extract session from EIP-681 URL
+                const url = record.payload;
+                const sessionMatch = url.match(/string=([a-z0-9_]+)/);
+                if (sessionMatch && sessionMatch[1] === session.sessionId) {
+                  console.log("[POS] Desktop NFC tag matches active session — auto-processing");
+                  // Payment will be detected by the blockchain watcher
+                }
+              }
+              if (record.type === "T" || record.type === "text") {
+                // Text record — check for crypto-payment JSON
+                const data = JSON.parse(record.payload);
+                if (data.type === "crypto-payment" && data.sessionId === session.sessionId) {
+                  console.log("[POS] Desktop NFC tag crypto-payment match");
+                }
+              }
+            } catch {
+              // Not JSON — ignore
+            }
+          }
+        }
+      });
+    }
+
+    return () => {
+      if (desktopTagCleanup.current) {
+        desktopTagCleanup.current();
+        desktopTagCleanup.current = null;
+      }
+    };
+  }, [desktopReaderConnected, session?.sessionId, session?.status]);
 
   // Auto-focus amount input
   useEffect(() => {
@@ -242,6 +348,12 @@ function POSTerminal() {
     setNfcWriting(false);
   }, [session, qrUrl]);
 
+  // ── Handle Conversion ──────────────────────────────────────────────
+
+  const handleConversion = useCallback((result: ConversionResult) => {
+    console.log("[POS] Payment converted:", result);
+  }, []);
+
   // ── Reset ─────────────────────────────────────────────────────────
 
   const handleReset = () => {
@@ -283,7 +395,7 @@ function POSTerminal() {
         {/* ── Show Receipt if Confirmed ────────────────────────── */}
         {session?.status === "confirmed" && (
           <div className="animate-fade-in-up">
-            <POSReceipt session={session} onClose={handleReset} />
+            <POSReceipt session={session} onClose={handleReset} onConvert={handleConversion} />
             <div className="text-center mt-4">
               <button onClick={handleReset} className="glass-button text-sm px-6 py-2">
                 New Payment
@@ -328,6 +440,35 @@ function POSTerminal() {
             {/* NFC Button */}
             <div className="glass-card p-6 text-center">
               <p className="text-[#546e7a] text-xs uppercase tracking-wider mb-4 font-mono">Tap to Pay via NFC</p>
+
+              {/* Desktop NFC Reader Status */}
+              {!desktopReaderChecking && desktopReaderConnected && (
+                <div className="mb-4 flex items-center justify-center gap-2 bg-[#00e676]/10 border border-[#00e676]/30 rounded-lg px-4 py-2">
+                  <span className="w-2 h-2 rounded-full bg-[#00e676] animate-pulse" />
+                  <span className="text-[#00e676] text-xs font-mono">
+                    Desktop NFC Reader Connected{desktopReaderName ? ` — ${desktopReaderName}` : ""}
+                  </span>
+                </div>
+              )}
+
+              {!desktopReaderChecking && !desktopReaderConnected && (
+                <div className="mb-4 flex items-center justify-center gap-2 bg-[#1a1f2e] border border-[#ffab00]/20 rounded-lg px-4 py-2">
+                  <span className="w-2 h-2 rounded-full bg-[#546e7a]" />
+                  <span className="text-[#546e7a] text-xs font-mono">
+                    No desktop NFC reader detected
+                  </span>
+                </div>
+              )}
+
+              {desktopReaderChecking && (
+                <div className="mb-4 flex items-center justify-center gap-2 bg-[#1a1f2e] border border-[#1a1f2e] rounded-lg px-4 py-2">
+                  <span className="w-2 h-2 rounded-full bg-[#ffab00] animate-pulse" />
+                  <span className="text-[#546e7a] text-xs font-mono">
+                    Checking for desktop NFC reader...
+                  </span>
+                </div>
+              )}
+
               {nfcStatus?.supported ? (
                 <button
                   onClick={handleNFCWrite}

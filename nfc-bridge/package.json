@@ -1,0 +1,14 @@
+{
+  "name": "hsmc-nfc-bridge",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "HSMC Desktop NFC Bridge — WebSocket server for ACR122U USB NFC reader",
+  "scripts": {
+    "start": "node server.js",
+    "install-deps": "npm install nfc-pcsc"
+  },
+  "dependencies": {
+    "nfc-pcsc": "^0.8.1",
+    "ws": "^8.16.0"
+  }
+}

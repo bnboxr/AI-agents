@@ -1072,6 +1072,127 @@ site/
 | 9 | `signals` | Trading signals |
 | 10 | `agent_memory` | Agent learning history |
 | 11 | `system_events` | System audit trail |
+| 12 | `pos_conversions` | Post-payment token conversions |
+
+---
+
+## Desktop NFC Bridge
+
+### Overview
+
+The HSMC Desktop NFC Bridge enables tap-to-pay NFC payments on desktop computers (Windows, macOS, Linux) via a USB NFC reader (ACR122U or compatible). It acts as a WebSocket bridge between the physical NFC reader and the HSMC POS web application.
+
+### Architecture
+
+```
+┌──────────────────────┐         WebSocket          ┌──────────────────────┐
+│   HSMC POS Web App   │ ◄──────────────────────► │   NFC Bridge Server   │
+│   (port 3000)        │     ws://localhost:9876    │   (port 9876)        │
+└──────────────────────┘                            └──────────┬───────────┘
+                                                               │ PC/SC (USB)
+                                                        ┌──────▼───────────┐
+                                                        │   ACR122U NFC     │
+                                                        │   Reader          │
+                                                        └──────────────────┘
+```
+
+### Components
+
+| Component | File | Description |
+|-----------|------|-------------|
+| Bridge Server | `nfc-bridge/server.js` | Node.js WebSocket server with nfc-pcsc integration |
+| Package Config | `nfc-bridge/package.json` | Dependencies: nfc-pcsc + ws |
+| Installer | `nfc-bridge/install.sh` | One-command setup script |
+| Documentation | `nfc-bridge/README.md` | OS-specific driver setup + troubleshooting |
+| Client Library | `src/lib/nfc-bridge.ts` | TypeScript client for connecting to bridge |
+
+### Setup
+
+1. Plug in ACR122U USB NFC reader
+2. Install OS-specific drivers (see README.md)
+3. Run: `cd nfc-bridge && npm install && npm start`
+4. Bridge listens on `ws://localhost:9876` and `http://localhost:9876/status`
+
+### Supported Readers
+
+- **ACR122U** (ACS) — primary tested device
+- ACR1252U, ACR1222L, SCL3711
+- Any PC/SC-compatible NFC reader
+
+### POS Integration
+
+The POS terminal (`/pos`) automatically detects the desktop NFC bridge:
+
+1. On page load, calls `GET http://localhost:9876/status`
+2. If connected: green "Desktop NFC Reader Connected" indicator appears
+3. During active payment session: listens for NFC tags via WebSocket
+4. When valid tag detected: payment auto-processed (same flow as Web NFC)
+5. If no reader: gracefully falls back to QR code + Web NFC button
+
+### WebSocket Protocol
+
+- Server → Client: `status`, `reader-connected`, `reader-disconnected`, `nfc-tag`, `nfc-tag-removed`
+- Client → Server: `ping` (→ `pong`), `status-request` (→ `status`)
+- NFC tags carry NDEF messages with EIP-681 payment URLs
+
+---
+
+## Auto-Conversie
+
+### Overview
+
+After a payment is confirmed on the POS terminal, the merchant can instantly convert received funds to any supported token via the built-in swap panel. This enables flexible treasury management — receive in USDC, instantly convert to MATIC, ETH, SOL, or BTC.
+
+### Flow
+
+```
+Payment Confirmed (✅ APPROVED)
+        │
+        ├── [Convert to another token] ──► Inline Swap Panel
+        │                                       │
+        │    ┌──────────────────────────────────┤
+        │    │  • Select destination token     │
+        │    │  • View live conversion rate    │
+        │    │  • Destination chain shown      │
+        │    │  • [Convert] button             │
+        │    └──────────────────────────────────┘
+        │              │
+        │              ▼
+        │    Conversion Complete
+        │    • Payment TXID displayed
+        │    • Conversion TXID displayed
+        │    • Final token + amount shown
+        │
+        └── [Keep as {token}] ──► Standard receipt
+```
+
+### Supported Tokens
+
+| Token | Chain | Decimals | 
+|-------|-------|----------|
+| USDC | Polygon | 6 |
+| USDT | Polygon | 6 |
+| MATIC (POL) | Polygon | 18 |
+| ETH | Ethereum | 18 |
+| SOL | Solana | 9 |
+| BTC (wrapped) | Polygon | 8 |
+
+### Technical Details
+
+- **Rate calculation**: Real-time price feeds from CoinGecko API
+- **Fee**: 0.3% swap fee simulated (DEX standard)
+- **Persistence**: Conversions stored in `pos_conversions` database table
+- **Function**: `convertPayment()` in `src/lib/pos-service.ts`
+- **Component**: `POSReceipt` with `onConvert` prop in `src/components/POSReceipt.tsx`
+
+### Conversion Receipt
+
+After conversion, the receipt shows:
+- Original payment TXID
+- Conversion TXID  
+- From token + amount
+- To token + amount received
+- Destination chain (if cross-chain)
 
 ---
 

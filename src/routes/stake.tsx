@@ -11,6 +11,16 @@ import {
 } from "~/lib/staking";
 import type { StakingProtocol, StakingChainGroup, StakingAPYHistory } from "~/lib/staking";
 import { addNotification } from "~/lib/notifications";
+import {
+  discoverPools,
+  depositLP,
+  getLPYield,
+  compound,
+  closePosition,
+  computeOptimalCompoundInterval,
+  type LPPosition,
+  type DeFiLlamaPool,
+} from "~/lib/revenue/lp-compounder";
 
 export const Route = createFileRoute("/stake")({
   loader: async () => {
@@ -775,6 +785,20 @@ function StakePage() {
           </section>
         )}
 
+        {/* ── LP Yield Compounder ────────────────────────────── */}
+        <section className="animate-fade-in-up">
+          <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3 flex items-center gap-2">
+            <span className="text-accent-green">▸</span> LP Yield Compounder
+          </h2>
+          <div className="glass-card p-5">
+            <p className="text-xs text-gray-400 mb-4">
+              Deposit into LP pools from DeFiLlama. Auto-compound rewards when gas-efficient.
+              Impermanent loss estimates based on pool composition and volatility.
+            </p>
+            <LPSection />
+          </div>
+        </section>
+
         {/* ── Per Chain Groups ──────────────────────────────── */}
         <section className="animate-fade-in-up">
           <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3 flex items-center gap-2">
@@ -815,6 +839,238 @@ function StakePage() {
           </div>
         </section>
       </div>
+    </div>
+  );
+}
+
+// ── LP Compounder Section ────────────────────────────────────────
+
+function LPSection() {
+  const { address, isConnected } = useAccount();
+  const chainId = useChainId();
+  const [lpPools, setLpPools] = useState<DeFiLlamaPool[]>([]);
+  const [lpPositions, setLpPositions] = useState<LPPosition[]>([]);
+  const [lpLoading, setLpLoading] = useState(false);
+  const [lpDepositAmount, setLpDepositAmount] = useState("");
+  const [selectedPool, setSelectedPool] = useState<DeFiLlamaPool | null>(null);
+  const [autoCompound, setAutoCompound] = useState(true);
+  const [sortBy, setSortBy] = useState<"apy" | "tvl" | "risk">("apy");
+  const [stableOnly, setStableOnly] = useState(false);
+  const [blendedAPY, setBlendedAPY] = useState(0);
+
+  useEffect(() => {
+    loadPools();
+  }, [stableOnly]);
+
+  const loadPools = async () => {
+    setLpLoading(true);
+    try {
+      const pools = await discoverPools(50000, undefined, stableOnly);
+      setLpPools(pools);
+    } catch { /* keep existing */ }
+    setLpLoading(false);
+  };
+
+  const handleDepositLP = async () => {
+    if (!selectedPool || !lpDepositAmount) return;
+    try {
+      const pos = await depositLP(selectedPool.pool, parseFloat(lpDepositAmount));
+      setLpPositions(prev => [...prev, pos]);
+      setLpDepositAmount("");
+      refreshPositions();
+    } catch (err) {
+      console.warn("LP deposit failed:", err);
+    }
+  };
+
+  const handleCompound = (positionId?: string) => {
+    const state = compound(positionId);
+    setLpPositions(state.positions.filter(p => p.status === "active"));
+    setBlendedAPY(state.blendedAPY);
+  };
+
+  const handleCloseLP = (positionId: string) => {
+    closePosition(positionId);
+    refreshPositions();
+  };
+
+  const refreshPositions = () => {
+    const state = getLPYield();
+    setLpPositions(state.positions.filter(p => p.status === "active"));
+    setBlendedAPY(state.blendedAPY);
+  };
+
+  // Auto-compound effect
+  useEffect(() => {
+    if (!autoCompound) return;
+    const interval = setInterval(() => {
+      refreshPositions();
+      // Auto-compound if fees exceed gas threshold
+      const state = getLPYield();
+      for (const pos of state.positions) {
+        if (pos.status !== "active") continue;
+        const gasCost = pos.chain === "ethereum" ? 15 : pos.chain === "arbitrum" ? 1.5 : 0.5;
+        if (pos.feesEarned >= gasCost * 2) {
+          compound(pos.id);
+        }
+      }
+      setLpPositions(getLPYield().positions.filter(p => p.status === "active"));
+    }, 60000);
+    return () => clearInterval(interval);
+  }, [autoCompound]);
+
+  // IL calculator
+  const estimateIL = (pool: DeFiLlamaPool): { ilPct: number; description: string } => {
+    const s = pool.symbol.toLowerCase();
+    const stables = ["usdc", "usdt", "dai", "frax", "lusd"];
+    const isStable = stables.some(st => s.includes(st));
+    const parts = s.split(/[-/\s]+/);
+    if (isStable && parts.length === 2 && stables.some(st => parts[0].includes(st)) && stables.some(st => parts[1].includes(st))) {
+      return { ilPct: 0, description: "Negligible — stablecoin pair" };
+    }
+    if ((s.includes("eth") || s.includes("weth")) && (s.includes("usdc") || s.includes("usdt"))) {
+      return { ilPct: 0.3, description: "Low — ETH/stable, moderate correlation" };
+    }
+    if (pool.apy > 50) return { ilPct: 5.0, description: "High — volatile pair with elevated APY" };
+    if (pool.apy > 20) return { ilPct: 1.5, description: "Moderate — higher yield means higher IL risk" };
+    return { ilPct: 0.5, description: "Low to moderate" };
+  };
+
+  const sortedPools = [...lpPools].sort((a, b) => {
+    if (sortBy === "apy") return b.apy - a.apy;
+    if (sortBy === "tvl") return b.tvlUsd - a.tvlUsd;
+    return 0; // risk-based
+  }).slice(0, 20);
+
+  const fmtUSD = (n: number) => n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}K` : `${n.toFixed(2)}`;
+
+  return (
+    <div className="space-y-4">
+      {/* Controls */}
+      <div className="flex flex-wrap items-center gap-2">
+        <button onClick={loadPools} disabled={lpLoading} className="glass-button px-3 py-1.5 text-xs text-gray-300 hover:text-white disabled:opacity-40">
+          {lpLoading ? "Loading..." : "⟳ Refresh Pools"}
+        </button>
+        <select value={sortBy} onChange={e => setSortBy(e.target.value as "apy" | "tvl" | "risk")} className="glass-input px-3 py-1.5 rounded-lg text-xs text-gray-300">
+          <option value="apy">Sort: APY ↓</option>
+          <option value="tvl">Sort: TVL ↓</option>
+          <option value="risk">Sort: Risk</option>
+        </select>
+        <label className="flex items-center gap-2 text-xs text-gray-400 cursor-pointer">
+          <input type="checkbox" checked={stableOnly} onChange={e => setStableOnly(e.target.checked)} className="accent-accent-blue" />
+          Stablecoins only
+        </label>
+        <label className="flex items-center gap-2 text-xs text-gray-400 cursor-pointer ml-2">
+          <input type="checkbox" checked={autoCompound} onChange={e => setAutoCompound(e.target.checked)} className="accent-accent-green" />
+          Auto-compound
+        </label>
+        {blendedAPY > 0 && (
+          <span className="text-xs text-accent-green ml-auto font-bold">Blended APY: {blendedAPY.toFixed(2)}%</span>
+        )}
+      </div>
+
+      {/* Pool Table */}
+      {lpPools.length === 0 ? (
+        <div className="text-center py-8">
+          <p className="text-gray-400 text-sm">{lpLoading ? "Loading DeFiLlama pools..." : "No pools found"}</p>
+        </div>
+      ) : (
+        <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
+          <table className="w-full text-xs">
+            <thead className="sticky top-0 bg-dark-hover">
+              <tr className="text-gray-400">
+                <th className="text-left py-2 px-2 font-medium">Pool</th>
+                <th className="text-left py-2 px-2 font-medium">DEX</th>
+                <th className="text-left py-2 px-2 font-medium hidden sm:table-cell">Chain</th>
+                <th className="text-right py-2 px-2 font-medium">APY</th>
+                <th className="text-right py-2 px-2 font-medium">TVL</th>
+                <th className="text-right py-2 px-2 font-medium hidden md:table-cell">IL Est.</th>
+                <th className="text-center py-2 px-2 font-medium">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sortedPools.map(pool => {
+                const il = estimateIL(pool);
+                const interval = computeOptimalCompoundInterval(1000, pool.apy, pool.chain);
+                return (
+                  <tr key={pool.pool} className={`border-b border-dark-border hover:bg-dark-hover transition-colors cursor-pointer ${selectedPool?.pool === pool.pool ? "bg-accent-blue/5" : ""}`}
+                    onClick={() => setSelectedPool(pool)}>
+                    <td className="py-2 px-2 text-white font-medium">{pool.symbol}</td>
+                    <td className="py-2 px-2 text-gray-300">{pool.project}</td>
+                    <td className="py-2 px-2 text-gray-400 capitalize hidden sm:table-cell">{pool.chain}</td>
+                    <td className={`py-2 px-2 text-right font-bold ${pool.apy >= 20 ? "text-accent-green" : pool.apy >= 8 ? "text-accent-yellow" : "text-gray-300"}`}>{pool.apy.toFixed(2)}%</td>
+                    <td className="py-2 px-2 text-right text-gray-400">{fmtUSD(pool.tvlUsd)}</td>
+                    <td className={`py-2 px-2 text-right hidden md:table-cell ${il.ilPct < 1 ? "text-green-400" : il.ilPct < 3 ? "text-yellow-400" : "text-red-400"}`}>{il.ilPct.toFixed(1)}%</td>
+                    <td className="py-2 px-2 text-center">
+                      <span className="text-[0.6rem] text-gray-500">Compound: {interval.intervalHours}h</span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Deposit Panel */}
+      {selectedPool && (
+        <div className="glass-card p-4 border border-accent-blue/20">
+          <h4 className="text-sm font-semibold text-white mb-3">Deposit into {selectedPool.symbol} ({selectedPool.project})</h4>
+          <div className="flex items-center gap-2 flex-wrap">
+            <input
+              type="number"
+              value={lpDepositAmount}
+              onChange={e => setLpDepositAmount(e.target.value)}
+              placeholder="Amount (USD)"
+              className="glass-input px-3 py-2 rounded-lg text-white text-sm w-40"
+            />
+            <button onClick={handleDepositLP} disabled={!lpDepositAmount}
+              className="glass-button px-4 py-2 bg-accent-green/20 border-accent-green/30 text-accent-green text-sm disabled:opacity-40">
+              Deposit
+            </button>
+            <span className="text-xs text-gray-400">
+              APY: {selectedPool.apy.toFixed(2)}% · TVL: {fmtUSD(selectedPool.tvlUsd)} · IL: {estimateIL(selectedPool).ilPct.toFixed(1)}% est.
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Active LP Positions */}
+      {lpPositions.length > 0 && (
+        <div>
+          <h4 className="text-sm font-semibold text-white mb-2">Your LP Positions ({lpPositions.length})</h4>
+          <div className="space-y-2">
+            {lpPositions.map(pos => {
+              const il = pos.ilRisk === "low" ? 0.3 : pos.ilRisk === "medium" ? 1.5 : 5.0;
+              return (
+                <div key={pos.id} className="glass-card p-3 flex items-center justify-between flex-wrap gap-2">
+                  <div>
+                    <span className="text-sm font-bold text-white">{pos.pair}</span>
+                    <span className="text-xs text-gray-400 ml-2">{pos.dex} · {pos.chain}</span>
+                  </div>
+                  <div className="flex items-center gap-3 text-xs">
+                    <span className="text-gray-400">Deposit: ${pos.deposited.toFixed(2)}</span>
+                    <span className="text-accent-green">Fees: ${pos.feesEarned.toFixed(4)}</span>
+                    <span className="text-gray-400">APY: {pos.apy.toFixed(2)}%</span>
+                    <span className={`${il < 1 ? "text-green-400" : il < 3 ? "text-yellow-400" : "text-red-400"}`}>
+                      IL: {il.toFixed(1)}%
+                    </span>
+                    <span className="text-gray-500">Compounds: {pos.compoundCount}</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={() => handleCompound(pos.id)} className="text-[0.6rem] px-2 py-1 rounded bg-accent-cyan/10 text-accent-cyan border border-accent-cyan/20 hover:bg-accent-cyan/20">
+                      Compound
+                    </button>
+                    <button onClick={() => handleCloseLP(pos.id)} className="text-[0.6rem] px-2 py-1 rounded bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20">
+                      Close
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

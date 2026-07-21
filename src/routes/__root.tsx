@@ -222,7 +222,6 @@ function NavBar() {
     { label: "PORT", to: "/portfolio" },
     { label: "SEND", to: "/withdraw" },
     { label: "DEPO", to: "/deposit" },
-    { label: "STAKE", to: "/stake" },
     { label: "VAULT", to: "/vault" },
     { label: "CHAT", to: "/chat" },
     { label: "AGENTS", to: "/agents" },
@@ -251,6 +250,7 @@ function NavBar() {
             <NavLink to="/signals">SIGNALS</NavLink>
             <NavLink to="/swap">SWAP</NavLink>
             <NavLink to="/earn">EARN</NavLink>
+            <NavLink to="/stake">STAKE</NavLink>
             <NavLink to="/trade">TRADE</NavLink>
             <NavLink to="/pos">POS</NavLink>
             <NavDropdown label="CHAINS" items={chainsItems} />
@@ -293,6 +293,7 @@ function NavBar() {
               <MobileNavLink to="/signals" onClick={() => setMobileOpen(false)}>SIGNALS</MobileNavLink>
               <MobileNavLink to="/swap" onClick={() => setMobileOpen(false)}>SWAP</MobileNavLink>
               <MobileNavLink to="/earn" onClick={() => setMobileOpen(false)}>EARN</MobileNavLink>
+              <MobileNavLink to="/stake" onClick={() => setMobileOpen(false)}>STAKE</MobileNavLink>
               <MobileNavLink to="/trade" onClick={() => setMobileOpen(false)}>TRADE</MobileNavLink>
               <MobileNavLink to="/pos" onClick={() => setMobileOpen(false)}>POS</MobileNavLink>
               <MobileNavLink to="/merchant" onClick={() => setMobileOpen(false)}>MERCHANT</MobileNavLink>

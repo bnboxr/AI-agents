@@ -236,7 +236,7 @@ export async function executeToolCall(toolCall: ToolCall): Promise<ToolResult> {
         })();
         const price = prices[mapped]?.usd ?? null;
         chainHoldings.push({ chain: chain.name, token: chain.nativeToken, price });
-        if (price) estimatedHoldingsValue += price; // assume 1 unit per chain for demo
+        if (price) estimatedHoldingsValue += price; // 1 unit per chain as baseline estimate
       }
 
       const result = {

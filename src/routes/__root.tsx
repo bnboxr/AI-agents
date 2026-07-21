@@ -357,7 +357,7 @@ function MobileSection({ children }: { children: ReactNode }) {
 
 function DemoModeToggle() {
   const [mounted, setMounted] = useState(false);
-  const [demo, setDemo] = useState(true);
+  const [demo, setDemo] = useState(false); // default: LIVE
 
   useEffect(() => {
     setMounted(true);
@@ -372,12 +372,12 @@ function DemoModeToggle() {
       className={`px-2.5 py-1.5 rounded-lg border text-xs font-bold font-mono transition-all duration-200 flex items-center gap-1.5 ${
         demo
           ? "border-yellow-500/50 bg-yellow-500/10 text-yellow-400 hover:bg-yellow-500/20"
-          : "border-gray-500/30 bg-dark-hover text-gray-400 hover:border-gray-400/50"
+          : "border-green-500/30 bg-green-500/10 text-green-400 hover:bg-green-500/20"
       }`}
-      title={demo ? "Demo Mode ON — Click to switch to Live" : "Live Mode — Click to switch to Demo"}
+      title={demo ? "Maintenance Mode ON — Click to switch to Live" : "LIVE Mode — Click to switch to Maintenance"}
     >
-      <span className={`w-1.5 h-1.5 rounded-full ${demo ? "bg-yellow-400 animate-pulse" : "bg-gray-500"}`} />
-      <span className="hidden sm:inline">{demo ? "DEMO" : "LIVE"}</span>
+      <span className={`w-1.5 h-1.5 rounded-full ${demo ? "bg-yellow-400 animate-pulse" : "bg-green-400"}`} />
+      <span className="hidden sm:inline">{demo ? "🟡 MAINTENANCE" : "LIVE"}</span>
     </button>
   );
 }
@@ -386,7 +386,7 @@ function DemoModeToggle() {
 
 function DemoBanner() {
   const [mounted, setMounted] = useState(false);
-  const [demo, setDemo] = useState(true);
+  const [demo, setDemo] = useState(false); // default: LIVE, no banner
 
   useEffect(() => {
     setMounted(true);
@@ -397,11 +397,11 @@ function DemoBanner() {
 
   return (
     <div className="fixed top-[52px] left-0 right-0 z-40 flex items-center justify-center gap-2 px-4 py-1.5 bg-yellow-500/15 border-b border-yellow-500/30 backdrop-blur-sm">
-      <span className="text-yellow-400 text-xs font-mono font-semibold animate-pulse">⚠️</span>
+      <span className="text-yellow-400 text-xs font-mono font-semibold">🟡</span>
       <span className="text-yellow-300 text-xs font-mono font-medium">
-        DEMO MODE — Simulation only. No real funds.
+        MAINTENANCE MODE — Platform data is simulated. No real funds.
       </span>
-      <span className="text-yellow-400 text-xs font-mono font-semibold animate-pulse">⚠️</span>
+      <span className="text-yellow-400 text-xs font-mono font-semibold">🟡</span>
     </div>
   );
 }

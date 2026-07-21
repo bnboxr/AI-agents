@@ -1,0 +1,6 @@
+ M src/lib/chat-tools.ts
+ M src/lib/demo-mode.ts
+ M src/routes/__root.tsx
+?? build-log.txt
+?? src/components/DataError.tsx
+sh: 1: vite: not found

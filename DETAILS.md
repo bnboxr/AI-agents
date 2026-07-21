@@ -1378,4 +1378,132 @@ Glassmorphism dark theme matching HSMC platform:
 
 ---
 
+## Revenue Channels — Faza 4 (Complete)
+
+### 1. Airdrop Farmer (`/earn`)
+
+**Architecture:**
+- `src/lib/airdrop-farmer.ts` — Core airdrop farming logic
+- `src/routes/earn.tsx` — Airdrop dashboard UI
+- Data sources: DeFiLlama airdrops API (`https://api.llama.fi/airdrops`) + curated active airdrop list
+
+**Features:**
+- Active airdrop discovery from DeFiLlama + curated list of real protocols
+- Multi-wallet management (add, remove, pause wallets)
+- Eligibility checking per wallet
+- Claim tracking with transaction hash recording
+- Dashboard: total claimed value, pending claims, claims history
+- Filtering by status (active/claimable/upcoming/ended), category (DeFi/L2/Infra/NFT/Gaming), and search
+
+**Setup:**
+- Configure `FARM_WALLETS` env var (comma-separated wallet addresses) for auto-loading
+- No API key needed — uses public DeFiLlama API
+
+**Real Data Sources:**
+- Curated list: Scroll, zkSync Era, StarkNet, LayerZero, EigenLayer, Wormhole, Jupiter, Berachain, Monad, Hyperlane, Pendle, Mode
+- DeFiLlama airdrops API for additional/updated data
+- Estimated values based on market analysis
+
+---
+
+### 2. LP Yield Compounder (`/stake` + LP section)
+
+**Architecture:**
+- `src/lib/staking/` — Staking protocols data (DeFiLlama + protocol-specific APIs)
+- `src/lib/revenue/lp-compounder.ts` — LP deposit, compound, position tracking
+- `src/routes/stake.tsx` — Staking page with LP compounder integration
+- Data sources: DeFiLlama Yields API (`https://yields.llama.fi/pools`), Lido API, Rocket Pool API, Marinade API, Meta Pool API, Benqi API
+
+**Features:**
+- Real APY from DeFiLlama Yields API (15-min cache)
+- Protocol-specific APIs for higher accuracy (Lido, RocketPool, Marinade, MetaPool, Benqi)
+- Best APY per asset comparison
+- APY history charts (30-day, Recharts)
+- LP pool discovery with sorting (by APY, TVL, risk)
+- Auto-compound toggle — automatically reinvests rewards when gas-efficient
+- Compound interval calculator (gas-cost vs reward breakeven analysis)
+- Impermanent loss estimator per pool
+- Stablecoin-only filter
+- Deposit/compound/close position flows
+- On-chain staking for Lido (ETH→stETH) and AAVE V3 pools
+
+**Setup:**
+- No API key needed — uses public DeFiLlama Yields API
+- Optional: `BASE_RPC_URL` env var for live LP deposits on Base chain
+- Optional: `SOLANA_RPC_URL` + `SOLANA_WALLET_PUBKEY` for live Solana staking
+
+**Real Data Sources:**
+- DeFiLlama Yields: 1000+ pools across Ethereum, Solana, NEAR, Aptos, Sui, BNB, Polygon, Avalanche
+- Protocol-specific: Lido stETH APR, RocketPool rETH, Marinade mSOL, MetaPool stNEAR, Benqi sAVAX
+
+---
+
+### 3. Copy Trading (`/trade` → Copy Trading tab)
+
+**Architecture:**
+- `src/lib/revenue/copy-trade.ts` — Wallet tracking, trade mirroring, Etherscan integration
+- `src/routes/trade.tsx` — Trading page with Copy Trading tab
+- Data sources: Etherscan API (free, no auth), Arbiscan, Basescan
+
+**Features:**
+- Track any Ethereum/Arbitrum/Base wallet address
+- Auto-detect DEX swaps via transaction scanning on Etherscan
+- Mirror trades with proportional sizing (configurable copy %)
+- Risk controls: max copy amount, copy percentage (1–100%)
+- Manual scan + auto-refresh
+- DEX router detection (Uniswap V2/V3, 1inch, 0x, KyberSwap, Metamask Swap)
+- Known token decoding (WETH, USDC, USDT, DAI, WBTC, LINK, UNI, AAVE, SHIB, AXS)
+- Dashboard: tracked wallets, open copies, closed copies, total P&L
+- Wallet management: follow/unfollow, pause/resume
+
+**Setup:**
+- Configure `COPY_TRADE_WALLETS` env var (comma-separated addresses) for auto-tracking
+- No API key needed — uses Etherscan free public API
+
+**Real Data Sources:**
+- Etherscan API: `https://api.etherscan.io/api?module=account&action=txlist`
+- Arbiscan: `https://api.arbiscan.io/api`
+- Basescan: `https://api.basescan.org/api`
+
+---
+
+### 4. NFT Arbitrage Scanner (`/arbitrage` → NFT tab)
+
+**Architecture:**
+- `src/lib/revenue/nft-arbitrage.ts` — NFT floor price fetching, cross-marketplace arbitrage detection
+- `src/routes/arbitrage.tsx` — Dual-tab arbitrage scanner (CEX + NFT)
+- Data sources: OpenSea API v2 (`https://api.opensea.io/api/v2`), Reservoir API (optional)
+
+**Features:**
+- Real floor prices from OpenSea API v2 (free, no auth)
+- Cross-marketplace price comparison: OpenSea ↔ Blur ↔ LooksRare ↔ X2Y2
+- Profitability threshold: 5% spread minimum (covers marketplace fees + gas)
+- Market-specific fee rates: OpenSea 2.5%, Blur 0.5%, LooksRare 2%, X2Y2 0.5%
+- Marketplace floor offset modeling based on historical data
+- Paper trading: execute simulated arbitrage trades, track P&L
+- Collection filtering: by slug, floor price range
+- Trending indicators: 24h volume, 7d volume, market cap, price change %
+- Real gas estimates (~0.003 ETH for Ethereum NFT trades)
+- 10-minute expiry on opportunities
+
+**Setup:**
+- No API key needed for OpenSea API v2 (public endpoint)
+- Optional: `RESERVOIR_API_KEY` for enriched data via Reservoir API
+
+**Real Data Sources:**
+- OpenSea API v2 collections + stats endpoints
+- Top collections tracked: BAYC, MAYC, Azuki, Pudgy Penguins, DeGods, CloneX, Doodles, Cool Cats, Milady, CryptoPunks
+
+---
+
+### Navbar Update
+
+The main navigation now includes:
+- **EARN** — Airdrop Farmer (was AAVE lending, now airdrops)
+- **STAKE** — Staking + LP Yield Compounder (promoted from MORE dropdown)
+- **TRADE** — Manual Trading + Copy Trading (dual-tab)
+- **ARB** (under TOOLS) — CEX Arbitrage + NFT Arbitrage (dual-tab)
+
+---
+
 > **HSMC Platform** — *Autonomous AI Hedge Fund. 29 agents. 4 LLMs. Zero human intervention.*

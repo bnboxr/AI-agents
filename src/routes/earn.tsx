@@ -1,324 +1,539 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useEffect } from "react";
-import { useAccount, useChainId, useReadContract, useWriteContract, useBalance } from "~/lib/demo-wagmi";
-import { parseUnits, formatUnits, type Address } from "viem";
-import type { TokenInfo } from "~/lib/web3";
-
-// ── AAVE V3 Pool ABI (minimal) ────────────────────────────────────
-const AAVE_POOL_ABI = [
-  {
-    inputs: [
-      { name: "asset", type: "address" },
-      { name: "amount", type: "uint256" },
-      { name: "onBehalfOf", type: "address" },
-      { name: "referralCode", type: "uint16" },
-    ],
-    name: "supply",
-    outputs: [],
-    stateMutability: "nonpayable",
-    type: "function",
-  },
-  {
-    inputs: [
-      { name: "asset", type: "address" },
-      { name: "amount", type: "uint256" },
-      { name: "to", type: "address" },
-    ],
-    name: "withdraw",
-    outputs: [{ name: "", type: "uint256" }],
-    stateMutability: "nonpayable",
-    type: "function",
-  },
-  {
-    inputs: [{ name: "asset", type: "address" }],
-    name: "getReserveData",
-    outputs: [
-      { name: "configuration", type: "uint256" },
-      { name: "liquidityIndex", type: "uint128" },
-      { name: "currentLiquidityRate", type: "uint128" },
-      { name: "variableBorrowIndex", type: "uint128" },
-      { name: "currentVariableBorrowRate", type: "uint128" },
-      { name: "currentStableBorrowRate", type: "uint128" },
-      { name: "lastUpdateTimestamp", type: "uint40" },
-      { name: "id", type: "uint16" },
-      { name: "aTokenAddress", type: "address" },
-      { name: "stableDebtTokenAddress", type: "address" },
-      { name: "variableDebtTokenAddress", type: "address" },
-      { name: "interestRateStrategyAddress", type: "address" },
-      { name: "accruedToTreasury", type: "uint128" },
-    ],
-    stateMutability: "view",
-    type: "function",
-  },
-] as const;
-
-// ── AAVE V3 Pool addresses ────────────────────────────────────────
-const AAVE_POOL_ADDRESSES: Record<number, `0x${string}`> = {
-  1: "0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2",       // Ethereum Mainnet
-  42161: "0x794a61358D6845594F94dc1DB02A252b5b4814aD",    // Arbitrum
-  10: "0x794a61358D6845594F94dc1DB02A252b5b4814aD",       // Optimism
-  137: "0x794a61358D6845594F94dc1DB02A252b5b4814aD",       // Polygon
-  8453: "0xA238Dd80C259a72e81d7e4664a9801593F98d1c5",     // Base
-  43114: "0x794a61358D6845594F94dc1DB02A252b5b4814aD",    // Avalanche
-};
-
-// ── Supported assets for deposit ──────────────────────────────────
-interface EarnAsset {
-  symbol: string;
-  name: string;
-  address: `0x${string}`;
-  decimals: number;
-}
-
-const EARN_ASSETS: Record<number, EarnAsset[]> = {
-  1: [
-    { symbol: "USDC", name: "USD Coin", address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", decimals: 6 },
-    { symbol: "USDT", name: "Tether USD", address: "0xdAC17F958D2ee523a2206206994597C13D831ec7", decimals: 6 },
-    { symbol: "DAI", name: "Dai Stablecoin", address: "0x6B175474E89094C44Da98b954EedeAC495271d0F", decimals: 18 },
-    { symbol: "WETH", name: "Wrapped Ether", address: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", decimals: 18 },
-    { symbol: "WBTC", name: "Wrapped Bitcoin", address: "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599", decimals: 8 },
-  ],
-  42161: [
-    { symbol: "USDC", name: "USD Coin", address: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831", decimals: 6 },
-    { symbol: "USDT", name: "Tether USD", address: "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9", decimals: 6 },
-    { symbol: "DAI", name: "Dai Stablecoin", address: "0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1", decimals: 18 },
-    { symbol: "WETH", name: "Wrapped Ether", address: "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1", decimals: 18 },
-  ],
-  137: [
-    { symbol: "USDC", name: "USD Coin", address: "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359", decimals: 6 },
-    { symbol: "USDT", name: "Tether USD", address: "0xc2132D05D31c914a87C6611C10748AEb04B58e8F", decimals: 6 },
-    { symbol: "DAI", name: "Dai Stablecoin", address: "0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063", decimals: 18 },
-  ],
-  10: [
-    { symbol: "USDC", name: "USD Coin", address: "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85", decimals: 6 },
-    { symbol: "USDT", name: "Tether USD", address: "0x94b008aA00579c1307B0EF2c499aD98a8ce58e58", decimals: 6 },
-    { symbol: "DAI", name: "Dai Stablecoin", address: "0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1", decimals: 18 },
-  ],
-  8453: [
-    { symbol: "USDC", name: "USD Coin", address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", decimals: 6 },
-  ],
-};
+import { useState, useEffect, useCallback } from "react";
+import { useAccount } from "~/lib/demo-wagmi";
+import {
+  getActiveAirdrops,
+  getAirdropState,
+  addWallet,
+  removeWallet,
+  pauseWallet,
+  checkEligibility,
+  recordClaim,
+  type Airdrop,
+  type FarmedWallet,
+  type AirdropFarmingState,
+} from "~/lib/airdrop-farmer";
 
 export const Route = createFileRoute("/earn")({
+  loader: async () => {
+    const [airdrops, state] = await Promise.all([
+      getActiveAirdrops(),
+      Promise.resolve(getAirdropState()),
+    ]);
+    return { airdrops, state };
+  },
   component: EarnPage,
 });
 
+const STATUS_COLORS: Record<string, string> = {
+  active: "bg-green-500/20 text-green-400 border-green-500/30",
+  upcoming: "bg-blue-500/20 text-blue-400 border-blue-500/30",
+  claimable: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
+  ended: "bg-gray-500/20 text-gray-400 border-gray-500/30",
+};
+
+const CATEGORY_ICONS: Record<string, string> = {
+  defi: "💰",
+  l2: "⚡",
+  infra: "🔗",
+  nft: "🎨",
+  gaming: "🎮",
+  wallet: "👛",
+  other: "📦",
+};
+
 function EarnPage() {
   const { address, isConnected } = useAccount();
-  const chainId = useChainId();
-  const [mounted, setMounted] = useState(false);
-  const [selectedAsset, setSelectedAsset] = useState<EarnAsset | null>(null);
-  const [amount, setAmount] = useState("");
-  const [mode, setMode] = useState<"deposit" | "withdraw">("deposit");
+  const { airdrops: initialAirdrops, state: initialState } = Route.useLoaderData();
+  const [airdrops, setAirdrops] = useState<Airdrop[]>(initialAirdrops);
+  const [state, setState] = useState<AirdropFarmingState>(initialState);
+  const [loading, setLoading] = useState(false);
+  const [eligibilityLoading, setEligibilityLoading] = useState(false);
 
-  useEffect(() => { setMounted(true); }, []);
+  // Filters
+  const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [filterCategory, setFilterCategory] = useState<string>("all");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [showAddWallet, setShowAddWallet] = useState(false);
 
-  const assets = EARN_ASSETS[chainId] || [];
-  const poolAddress = AAVE_POOL_ADDRESSES[chainId];
+  // New wallet form
+  const [newWalletAddress, setNewWalletAddress] = useState("");
+  const [newWalletLabel, setNewWalletLabel] = useState("");
+  const [newWalletChain, setNewWalletChain] = useState("ethereum");
 
-  // Get AAVE reserve data for APY
-  const { data: reserveData } = useReadContract({
-    address: poolAddress,
-    abi: AAVE_POOL_ABI,
-    functionName: "getReserveData",
-    args: selectedAsset ? [selectedAsset.address] : undefined,
-    query: { enabled: !!poolAddress && !!selectedAsset },
-  });
+  // Claim form
+  const [claiming, setClaiming] = useState<string | null>(null);
+  const [claimAmount, setClaimAmount] = useState("");
+  const [claimTxHash, setClaimTxHash] = useState("");
 
-  const supplyAPY = reserveData
-    ? (Number(reserveData[2]) / 1e27) * 100
-    : null;
+  // Refresh
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      try {
+        const fresh = await getActiveAirdrops();
+        setAirdrops(fresh);
+        setState(getAirdropState());
+      } catch { /* keep stale */ }
+    }, 120_000); // 2 min
+    return () => clearInterval(interval);
+  }, []);
 
-  // Wallet balance
-  const { data: balance } = useBalance({
-    address,
-    token: selectedAsset?.address,
-    query: { enabled: !!selectedAsset },
-  });
+  const handleCheckEligibility = useCallback(async () => {
+    setEligibilityLoading(true);
+    try {
+      const results = await checkEligibility();
+      setState(getAirdropState());
+      // Refresh airdrops
+      const fresh = await getActiveAirdrops();
+      setAirdrops(fresh);
+    } catch (err) {
+      console.warn("Eligibility check failed:", err);
+    }
+    setEligibilityLoading(false);
+  }, []);
 
-  // Write contracts
-  const { writeContract: supply, isPending: supplyPending } = useWriteContract();
-  const { writeContract: withdraw, isPending: withdrawPending } = useWriteContract();
-
-  const handleDeposit = () => {
-    if (!selectedAsset || !amount || !address || !poolAddress) return;
-    const parsed = parseUnits(amount, selectedAsset.decimals);
-    supply({
-      address: poolAddress,
-      abi: AAVE_POOL_ABI,
-      functionName: "supply",
-      args: [selectedAsset.address, parsed, address, 0],
-    });
+  const handleAddWallet = () => {
+    if (!newWalletAddress.trim()) return;
+    addWallet(newWalletAddress.trim(), newWalletLabel || undefined, newWalletChain);
+    setNewWalletAddress("");
+    setNewWalletLabel("");
+    setState(getAirdropState());
+    setShowAddWallet(false);
   };
 
-  const handleWithdraw = () => {
-    if (!selectedAsset || !amount || !address || !poolAddress) return;
-    const parsed = parseUnits(amount, selectedAsset.decimals);
-    withdraw({
-      address: poolAddress,
-      abi: AAVE_POOL_ABI,
-      functionName: "withdraw",
-      args: [selectedAsset.address, parsed, address],
-    });
+  const handleRemoveWallet = (addr: string) => {
+    removeWallet(addr);
+    setState(getAirdropState());
   };
 
-  if (!mounted) {
-    return (
-      <div className="pt-14 pb-12 px-4 sm:px-6 lg:px-8">
-        <div className="mx-auto max-w-lg mt-16 glass-card p-8 text-center">
-          <p className="text-gray-400">Loading...</p>
-        </div>
-      </div>
-    );
-  }
+  const handlePauseWallet = (addr: string) => {
+    pauseWallet(addr);
+    setState(getAirdropState());
+  };
+
+  const handleRecordClaim = (walletAddress: string, airdropId: string) => {
+    const amount = parseFloat(claimAmount);
+    const airdrop = airdrops.find(a => a.id === airdropId);
+    if (!airdrop || isNaN(amount) || !claimTxHash.trim()) return;
+    recordClaim(walletAddress, airdropId, amount, amount * (airdrop.estimatedValue > 0 ? airdrop.estimatedValue / 1000 : 1), claimTxHash.trim());
+    setClaiming(null);
+    setClaimAmount("");
+    setClaimTxHash("");
+    setState(getAirdropState());
+  };
+
+  // Filters
+  const filteredAirdrops = airdrops.filter(a => {
+    if (filterStatus !== "all" && a.status !== filterStatus) return false;
+    if (filterCategory !== "all" && a.category !== filterCategory) return false;
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      const match = a.protocol.toLowerCase().includes(q) ||
+        a.token.toLowerCase().includes(q) ||
+        a.chain.toLowerCase().includes(q);
+      if (!match) return false;
+    }
+    return true;
+  });
+
+  const categories = [...new Set(airdrops.map(a => a.category))];
+
+  const fmtUSD = (n: number) =>
+    n >= 1e6 ? `$${(n / 1e6).toFixed(2)}M` :
+    n >= 1e3 ? `$${(n / 1e3).toFixed(1)}K` :
+    `$${n.toFixed(2)}`;
+
+  const fmtDate = (ts: number) => new Date(ts).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 
   return (
     <div className="pt-14 pb-12 px-4 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-lg space-y-6 mt-8">
+      <div className="mx-auto max-w-7xl space-y-6">
         {/* Header */}
-        <section className="animate-fade-in text-center">
-          <h1 className="text-2xl sm:text-3xl font-bold text-white flex items-center justify-center gap-2">
-            <span>📈</span> Earn Yield
-          </h1>
-          <p className="text-gray-400 text-sm mt-1">
-            Deposit assets into AAVE V3 and earn real yield
-          </p>
+        <section className="animate-fade-in">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div>
+              <h1 className="text-2xl sm:text-3xl font-bold text-white flex items-center gap-2">
+                <span>🪂</span> Airdrop Farmer
+              </h1>
+              <p className="text-gray-400 text-sm mt-1">
+                Track active airdrops, check wallet eligibility, and manage multi-wallet farming
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-400">{airdrops.length} airdrops tracked</span>
+              <span className="text-xs text-accent-green">● Live</span>
+            </div>
+          </div>
         </section>
 
-        {!isConnected ? (
-          <div className="glass-card p-8 text-center animate-fade-in-up">
-            <p className="text-gray-400 text-lg mb-4">Connect your wallet to earn yield</p>
-            <p className="text-xs text-gray-500">Use the Connect Wallet button in the navbar</p>
+        {/* Stats Cards */}
+        <section className="grid grid-cols-2 sm:grid-cols-4 gap-3 animate-fade-in-up">
+          <div className="glass-card p-4 text-center">
+            <p className="text-2xl font-bold text-white text-mono">{state.farmedWallets.length}</p>
+            <p className="text-xs text-gray-400 mt-1">Wallets</p>
           </div>
-        ) : !poolAddress ? (
-          <div className="glass-card p-8 text-center animate-fade-in-up">
-            <p className="text-gray-400 text-lg mb-4">AAVE V3 not available on this chain</p>
-            <p className="text-xs text-gray-500">Switch to Ethereum, Arbitrum, Optimism, Polygon, Base, or Avalanche</p>
+          <div className="glass-card p-4 text-center">
+            <p className="text-2xl font-bold text-accent-blue text-mono">
+              {airdrops.filter(a => a.status === "active" || a.status === "claimable").length}
+            </p>
+            <p className="text-xs text-gray-400 mt-1">Active Airdrops</p>
           </div>
-        ) : (
-          <div className="glass-card p-5 space-y-4 animate-fade-in-up">
-            {/* Mode Toggle */}
-            <div className="flex rounded-xl bg-dark-hover border border-dark-border p-1">
+          <div className="glass-card p-4 text-center">
+            <p className="text-2xl font-bold text-accent-green text-mono">{fmtUSD(state.totalClaimedValue)}</p>
+            <p className="text-xs text-gray-400 mt-1">Total Claimed</p>
+          </div>
+          <div className="glass-card p-4 text-center">
+            <p className="text-2xl font-bold text-accent-yellow text-mono">{fmtUSD(state.totalPendingValue)}</p>
+            <p className="text-xs text-gray-400 mt-1">Pending Claims</p>
+          </div>
+        </section>
+
+        {/* Wallets Section */}
+        <section className="animate-fade-in-up">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wider flex items-center gap-2">
+              <span className="text-accent-blue">▸</span> Farmed Wallets ({state.farmedWallets.length})
+            </h2>
+            <div className="flex gap-2">
               <button
-                onClick={() => setMode("deposit")}
-                className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  mode === "deposit" ? "bg-accent-blue text-white" : "text-gray-400 hover:text-white"
-                }`}
+                onClick={handleCheckEligibility}
+                disabled={eligibilityLoading || state.farmedWallets.length === 0}
+                className="glass-button px-3 py-1.5 text-xs text-gray-300 hover:text-white disabled:opacity-40"
               >
-                Deposit
+                {eligibilityLoading ? "Checking..." : "🔍 Check Eligibility"}
               </button>
               <button
-                onClick={() => setMode("withdraw")}
-                className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  mode === "withdraw" ? "bg-accent-blue text-white" : "text-gray-400 hover:text-white"
-                }`}
+                onClick={() => setShowAddWallet(!showAddWallet)}
+                className="glass-button px-3 py-1.5 text-xs bg-accent-blue/10 border-accent-blue/30 text-accent-blue hover:bg-accent-blue/20"
               >
-                Withdraw
+                + Add Wallet
               </button>
             </div>
+          </div>
 
-            {/* Asset Selector */}
-            <div>
-              <label className="text-xs text-gray-400 uppercase tracking-wider mb-2 block">Asset</label>
-              <div className="grid grid-cols-2 gap-2">
-                {assets.map((asset) => (
-                  <button
-                    key={asset.symbol}
-                    onClick={() => { setSelectedAsset(asset); setAmount(""); }}
-                    className={`px-3 py-2.5 rounded-xl border text-sm font-medium transition-all ${
-                      selectedAsset?.symbol === asset.symbol
-                        ? "border-accent-blue bg-accent-blue/10 text-white"
-                        : "border-dark-border bg-dark-hover text-gray-300 hover:border-dark-border-light"
-                    }`}
-                  >
-                    {asset.symbol}
-                  </button>
-                ))}
+          {showAddWallet && (
+            <div className="glass-card p-4 mb-3 animate-fade-in-up">
+              <div className="flex flex-wrap gap-2">
+                <input
+                  type="text"
+                  placeholder="Wallet address (0x...)"
+                  value={newWalletAddress}
+                  onChange={e => setNewWalletAddress(e.target.value)}
+                  className="glass-input flex-1 min-w-[200px] px-3 py-2 rounded-lg text-white text-sm font-mono"
+                />
+                <input
+                  type="text"
+                  placeholder="Label (optional)"
+                  value={newWalletLabel}
+                  onChange={e => setNewWalletLabel(e.target.value)}
+                  className="glass-input w-32 px-3 py-2 rounded-lg text-white text-sm"
+                />
+                <select
+                  value={newWalletChain}
+                  onChange={e => setNewWalletChain(e.target.value)}
+                  className="glass-input px-3 py-2 rounded-lg text-white text-sm"
+                >
+                  <option value="ethereum">Ethereum</option>
+                  <option value="arbitrum">Arbitrum</option>
+                  <option value="optimism">Optimism</option>
+                  <option value="base">Base</option>
+                  <option value="polygon">Polygon</option>
+                  <option value="solana">Solana</option>
+                </select>
+                <button onClick={handleAddWallet} className="glass-button px-4 py-2 bg-accent-green/20 border-accent-green/30 text-accent-green text-sm">
+                  Add
+                </button>
               </div>
             </div>
+          )}
 
-            {selectedAsset && (
-              <>
-                {/* APY Display */}
-                <div className="bg-dark-hover/50 rounded-xl p-3 border border-dark-border">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-gray-400">AAVE V3 Supply APY</span>
-                    <span className={`text-lg font-bold text-mono ${supplyAPY !== null ? 'text-accent-green' : 'text-gray-400'}`}>
-                      {supplyAPY !== null ? `${supplyAPY.toFixed(2)}%` : "Loading..."}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Balance */}
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-gray-400">
-                    Wallet Balance: {balance ? `${parseFloat(balance.formatted).toFixed(4)} ${selectedAsset.symbol}` : "..."}
-                  </span>
-                  {mode === "deposit" && balance && (
-                    <button
-                      onClick={() => setAmount(balance.formatted)}
-                      className="text-accent-blue hover:text-accent-cyan transition-colors"
-                    >
-                      MAX
-                    </button>
-                  )}
-                </div>
-
-                {/* Amount Input */}
-                <div>
-                  <label className="text-xs text-gray-400 uppercase tracking-wider mb-2 block">
-                    {mode === "deposit" ? "Amount to Deposit" : "Amount to Withdraw"}
-                  </label>
-                  <div className="flex gap-2">
-                    <input
-                      type="number"
-                      placeholder="0.0"
-                      value={amount}
-                      onChange={(e) => setAmount(e.target.value)}
-                      className="flex-1 bg-dark-hover border border-dark-border rounded-xl px-4 py-3 text-white text-lg text-mono outline-none focus:border-accent-blue/50 transition-colors"
-                    />
-                    <div className="px-3 py-3 rounded-xl border border-dark-border bg-dark-hover text-sm font-medium text-white flex items-center">
-                      {selectedAsset.symbol}
+          {state.farmedWallets.length === 0 ? (
+            <div className="glass-card p-8 text-center">
+              <p className="text-gray-400 text-lg mb-2">No wallets added yet</p>
+              <p className="text-gray-500 text-sm">
+                Add wallets to start farming airdrops. Use the "Add Wallet" button above.
+              </p>
+              <p className="text-gray-500 text-xs mt-2">
+                Tip: Connect from navbar to auto-add your connected wallet
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {state.farmedWallets.map(wallet => {
+                const claimableCount = wallet.eligibleAirdrops.filter(e => !e.claimed).length;
+                const claimedCount = wallet.eligibleAirdrops.filter(e => e.claimed).length;
+                return (
+                  <div key={wallet.address} className={`glass-card p-4 ${wallet.status === "paused" ? "opacity-60" : ""}`}>
+                    <div className="flex items-start justify-between mb-2">
+                      <div>
+                        <p className="text-sm font-bold text-white">{wallet.label}</p>
+                        <p className="text-xs text-gray-400 font-mono truncate max-w-[200px]">{wallet.address}</p>
+                      </div>
+                      <span className={`text-[0.6rem] px-2 py-0.5 rounded-full border ${wallet.status === "active" ? "bg-green-500/10 text-green-400 border-green-500/30" : "bg-gray-500/10 text-gray-400 border-gray-500/30"}`}>
+                        {wallet.status}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-gray-400">
+                        {claimableCount} pending · {claimedCount} claimed
+                      </span>
+                      <span className="text-accent-green font-medium">{fmtUSD(wallet.totalClaimed)} claimed</span>
+                    </div>
+                    {wallet.eligibleAirdrops.filter(e => !e.claimed).length > 0 && (
+                      <div className="mt-2 pt-2 border-t border-dark-border">
+                        <p className="text-xs text-gray-400 mb-1">Claimable:</p>
+                        {wallet.eligibleAirdrops.filter(e => !e.claimed).slice(0, 3).map(e => {
+                          const ad = airdrops.find(a => a.id === e.airdropId);
+                          return (
+                            <div key={e.airdropId} className="flex items-center justify-between text-xs py-1">
+                              <span className="text-white">{ad?.protocol ?? e.airdropId}</span>
+                              <div className="flex items-center gap-2">
+                                <span className="text-accent-yellow">{ad ? fmtUSD(ad.estimatedValue) : "?"}</span>
+                                <button
+                                  onClick={() => setClaiming(`${wallet.address}:${e.airdropId}`)}
+                                  className="text-[0.6rem] px-1.5 py-0.5 rounded bg-accent-blue/10 text-accent-blue border border-accent-blue/20 hover:bg-accent-blue/20"
+                                >
+                                  Claim
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                        {wallet.eligibleAirdrops.filter(e => !e.claimed).length > 3 && (
+                          <p className="text-xs text-gray-500 mt-1">+{wallet.eligibleAirdrops.filter(e => !e.claimed).length - 3} more</p>
+                        )}
+                      </div>
+                    )}
+                    <div className="flex gap-2 mt-3">
+                      <button
+                        onClick={() => handlePauseWallet(wallet.address)}
+                        className="text-[0.6rem] text-gray-400 hover:text-white transition-colors"
+                      >
+                        {wallet.status === "active" ? "⏸ Pause" : "▶ Resume"}
+                      </button>
+                      <button
+                        onClick={() => handleRemoveWallet(wallet.address)}
+                        className="text-[0.6rem] text-red-400 hover:text-red-300 transition-colors"
+                      >
+                        ✕ Remove
+                      </button>
                     </div>
                   </div>
-                </div>
+                );
+              })}
+            </div>
+          )}
 
-                {/* Action Button */}
-                {mode === "deposit" ? (
-                  <button
-                    onClick={handleDeposit}
-                    disabled={!amount || supplyPending || parseFloat(amount) <= 0}
-                    className="w-full py-3 rounded-xl bg-accent-green text-white font-semibold hover:bg-accent-green/80 transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed shadow-lg shadow-accent-green/20"
-                  >
-                    {supplyPending ? "Confirming..." : `Deposit ${selectedAsset.symbol}`}
-                  </button>
-                ) : (
-                  <button
-                    onClick={handleWithdraw}
-                    disabled={!amount || withdrawPending || parseFloat(amount) <= 0}
-                    className="w-full py-3 rounded-xl bg-accent-yellow text-black font-semibold hover:bg-accent-yellow/80 transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed shadow-lg shadow-accent-yellow/20"
-                  >
-                    {withdrawPending ? "Confirming..." : `Withdraw ${selectedAsset.symbol}`}
-                  </button>
-                )}
-              </>
+          {/* Claim Modal */}
+          {claiming && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+              <div className="glass-card p-6 max-w-md w-full mx-4 animate-fade-in-up">
+                <h3 className="text-lg font-bold text-white mb-4">Record Claim</h3>
+                <div className="space-y-3">
+                  <p className="text-sm text-gray-400">
+                    {airdrops.find(a => a.id === claiming.split(":")[1])?.protocol ?? "Unknown"} —{" "}
+                    {airdrops.find(a => a.id === claiming.split(":")[1])?.token ?? "TBA"}
+                  </p>
+                  <div>
+                    <label className="text-xs text-gray-400 block mb-1">Token Amount</label>
+                    <input
+                      type="number"
+                      value={claimAmount}
+                      onChange={e => setClaimAmount(e.target.value)}
+                      placeholder="0.0"
+                      className="glass-input w-full px-3 py-2 rounded-lg text-white text-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-400 block mb-1">Transaction Hash</label>
+                    <input
+                      type="text"
+                      value={claimTxHash}
+                      onChange={e => setClaimTxHash(e.target.value)}
+                      placeholder="0x..."
+                      className="glass-input w-full px-3 py-2 rounded-lg text-white text-mono text-xs"
+                    />
+                  </div>
+                  <div className="flex gap-2 pt-2">
+                    <button
+                      onClick={() => setClaiming(null)}
+                      className="flex-1 glass-button py-2 text-gray-400"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => {
+                        const [walletAddr, airdropId] = claiming.split(":");
+                        handleRecordClaim(walletAddr, airdropId);
+                      }}
+                      disabled={!claimAmount || !claimTxHash.trim()}
+                      className="flex-1 glass-button py-2 bg-accent-green/20 border-accent-green/30 text-accent-green disabled:opacity-40"
+                    >
+                      Confirm Claim
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </section>
+
+        {/* Airdrops Table */}
+        <section className="animate-fade-in-up">
+          <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3 flex items-center gap-2">
+            <span className="text-accent-green">▸</span> Active Airdrops
+          </h2>
+
+          {/* Filters */}
+          <div className="flex flex-wrap items-center gap-2 mb-3">
+            <select
+              value={filterStatus}
+              onChange={e => setFilterStatus(e.target.value)}
+              className="glass-input px-3 py-1.5 rounded-lg text-xs text-gray-300"
+            >
+              <option value="all">All Status</option>
+              <option value="active">Active</option>
+              <option value="claimable">Claimable</option>
+              <option value="upcoming">Upcoming</option>
+              <option value="ended">Ended</option>
+            </select>
+            <select
+              value={filterCategory}
+              onChange={e => setFilterCategory(e.target.value)}
+              className="glass-input px-3 py-1.5 rounded-lg text-xs text-gray-300"
+            >
+              <option value="all">All Categories</option>
+              {categories.map(c => (
+                <option key={c} value={c}>{CATEGORY_ICONS[c] ?? ""} {c}</option>
+              ))}
+            </select>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder="Search..."
+              className="glass-input px-3 py-1.5 rounded-lg text-xs text-gray-300 w-40"
+            />
+            <span className="text-xs text-gray-500 ml-auto">{filteredAirdrops.length} results</span>
+          </div>
+
+          <div className="glass-card overflow-hidden">
+            {airdrops.length === 0 ? (
+              <div className="text-center py-16">
+                <p className="text-gray-400">Loading airdrop data...</p>
+              </div>
+            ) : filteredAirdrops.length === 0 ? (
+              <div className="text-center py-16">
+                <p className="text-gray-400">No airdrops match your filters</p>
+                <p className="text-xs text-gray-500 mt-1">Try adjusting the filters above</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-dark-border text-gray-400">
+                      <th className="text-left py-3 px-4 font-medium">Protocol</th>
+                      <th className="text-left py-3 px-4 font-medium">Token</th>
+                      <th className="text-left py-3 px-4 font-medium hidden sm:table-cell">Chain</th>
+                      <th className="text-left py-3 px-4 font-medium hidden md:table-cell">Category</th>
+                      <th className="text-center py-3 px-4 font-medium">Status</th>
+                      <th className="text-right py-3 px-4 font-medium">Est. Value</th>
+                      <th className="text-right py-3 px-4 font-medium hidden sm:table-cell">Total</th>
+                      <th className="text-center py-3 px-4 font-medium">Link</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredAirdrops.map(a => (
+                      <tr key={a.id} className="border-b border-dark-border hover:bg-dark-hover transition-colors">
+                        <td className="py-3 px-4">
+                          <span className="text-white font-medium">{a.protocol}</span>
+                        </td>
+                        <td className="py-3 px-4 text-gray-200">{a.token}</td>
+                        <td className="py-3 px-4 text-gray-400 capitalize hidden sm:table-cell">{a.chain}</td>
+                        <td className="py-3 px-4 text-gray-400 hidden md:table-cell">
+                          {CATEGORY_ICONS[a.category] ?? ""} {a.category}
+                        </td>
+                        <td className="py-3 px-4 text-center">
+                          <span className={`text-[0.6rem] px-2 py-0.5 rounded-full border ${STATUS_COLORS[a.status] ?? ""}`}>
+                            {a.status}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-right text-accent-green font-bold">
+                          {a.estimatedValue > 0 ? fmtUSD(a.estimatedValue) : "—"}
+                        </td>
+                        <td className="py-3 px-4 text-right text-gray-400 hidden sm:table-cell">
+                          {a.totalValue > 0 ? fmtUSD(a.totalValue) : "—"}
+                        </td>
+                        <td className="py-3 px-4 text-center">
+                          <a href={a.url} target="_blank" rel="noopener noreferrer" className="text-accent-blue hover:text-accent-cyan text-xs transition-colors">
+                            Site ↗
+                          </a>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
+        </section>
+
+        {/* Claims History */}
+        {state.claims.length > 0 && (
+          <section className="animate-fade-in-up">
+            <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3 flex items-center gap-2">
+              <span className="text-accent-yellow">▸</span> Claims History
+            </h2>
+            <div className="glass-card overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-dark-border text-gray-400">
+                      <th className="text-left py-2 px-4 font-medium">Protocol</th>
+                      <th className="text-right py-2 px-4 font-medium">Amount</th>
+                      <th className="text-right py-2 px-4 font-medium">Value</th>
+                      <th className="text-left py-2 px-4 font-medium hidden sm:table-cell">Tx Hash</th>
+                      <th className="text-right py-2 px-4 font-medium hidden md:table-cell">Date</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {state.claims.slice(-10).reverse().map(c => (
+                      <tr key={c.id} className="border-b border-dark-border hover:bg-dark-hover">
+                        <td className="py-2 px-4">
+                          <span className="text-white">{c.protocol}</span>
+                          <span className="text-gray-400 ml-1">({c.token})</span>
+                        </td>
+                        <td className="py-2 px-4 text-right text-gray-200 font-mono text-[0.65rem]">{c.amount.toLocaleString()}</td>
+                        <td className="py-2 px-4 text-right text-accent-green font-bold">{fmtUSD(c.valueUsd)}</td>
+                        <td className="py-2 px-4 text-gray-400 font-mono text-[0.6rem] hidden sm:table-cell truncate max-w-[120px]">{c.txHash}</td>
+                        <td className="py-2 px-4 text-right text-gray-400 hidden md:table-cell">{fmtDate(c.claimedAt)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
         )}
 
-        {/* Info Cards */}
-        <section className="grid grid-cols-1 sm:grid-cols-2 gap-3 animate-fade-in-up">
-          <div className="glass-card p-4">
-            <h3 className="text-sm font-semibold text-white mb-1">AAVE V3</h3>
-            <p className="text-xs text-gray-400">
-              Industry-leading lending protocol with billions in TVL. Non-custodial, audited, and battle-tested.
-            </p>
-          </div>
-          <div className="glass-card p-4">
-            <h3 className="text-sm font-semibold text-white mb-1">Compound V3</h3>
-            <p className="text-xs text-gray-400">
-              Also available on supported chains. Connect your wallet to see Compound rates alongside AAVE.
-            </p>
+        {/* Info */}
+        <section className="animate-fade-in-up">
+          <div className="glass-card p-6">
+            <h3 className="text-sm font-semibold text-white mb-3">How Airdrop Farming Works</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs text-gray-400">
+              <div>
+                <p className="text-accent-cyan font-medium mb-1">1. Add Wallets</p>
+                <p>Add the wallet addresses you want to farm with. Each wallet tracks its own eligibility separately.</p>
+              </div>
+              <div>
+                <p className="text-accent-cyan font-medium mb-1">2. Check Eligibility</p>
+                <p>We check each wallet against active airdrops using on-chain activity heuristics and protocol APIs.</p>
+              </div>
+              <div>
+                <p className="text-accent-cyan font-medium mb-1">3. Claim & Track</p>
+                <p>Record claims with transaction hashes. Track total claimed value and pending claims across all wallets.</p>
+              </div>
+            </div>
           </div>
         </section>
       </div>

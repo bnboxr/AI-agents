@@ -39,7 +39,108 @@ export interface HCEPaymentResponse {
   sessionId: string;
 }
 
+export type POSType = 'hsmc' | 'visa' | 'mastercard' | 'generic_emv' | 'unknown';
+
+// HSMC custom AID: F0010203040506
+const HSMC_AID = [0xF0, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06];
+// Standard PPSE AID: "2PAY.SYS.DDF01" → 325041592E5359532E4444463031
+const PPSE_AID_HEX = '325041592E5359532E4444463031';
+
+/**
+ * Detect POS terminal type from APDU command data.
+ * Analyzes the SELECT AID command to determine what payment network
+ * the terminal is requesting.
+ */
+export function detectPOSType(apduData: number[]): POSType {
+  if (apduData.length < 5) return 'unknown';
+
+  // APDU SELECT command structure:
+  // CLA(1) + INS(1) + P1(1) + P2(1) + Lc(1) + AID(Lc bytes)
+  // CLA=0x00, INS=0xA4 indicates SELECT
+
+  // Extract the AID from the SELECT command data
+  const dataStart = 5;
+  if (apduData.length <= dataStart) return 'unknown';
+
+  const aidBytes = apduData.slice(dataStart);
+
+  // Check HSMC custom AID: F0 01 02 03 04 05 06
+  if (
+    aidBytes.length >= HSMC_AID.length &&
+    HSMC_AID.every((b, i) => aidBytes[i] === b)
+  ) {
+    return 'hsmc';
+  }
+
+  // Check Visa AID: starts with A0 00 00 00 03
+  if (
+    aidBytes.length >= 5 &&
+    aidBytes[0] === 0xA0 &&
+    aidBytes[1] === 0x00 &&
+    aidBytes[2] === 0x00 &&
+    aidBytes[3] === 0x00 &&
+    aidBytes[4] === 0x03
+  ) {
+    return 'visa';
+  }
+
+  // Check Mastercard AID: starts with A0 00 00 00 04
+  if (
+    aidBytes.length >= 5 &&
+    aidBytes[0] === 0xA0 &&
+    aidBytes[1] === 0x00 &&
+    aidBytes[2] === 0x00 &&
+    aidBytes[3] === 0x00 &&
+    aidBytes[4] === 0x04
+  ) {
+    return 'mastercard';
+  }
+
+  // Check PPSE AID: "2PAY.SYS.DDF01"
+  const ppseBytes = PPSE_AID_HEX.match(/.{1,2}/g)?.map((h) => parseInt(h, 16)) || [];
+  if (
+    aidBytes.length >= ppseBytes.length &&
+    ppseBytes.every((b, i) => aidBytes[i] === b)
+  ) {
+    return 'generic_emv';
+  }
+
+  return 'unknown';
+}
+
 let onPaymentCallback: ((request: HCEPaymentRequest) => Promise<HCEPaymentResponse>) | null = null;
+
+// Callbacks for POS type detection events
+let onPOSTypeDetected: ((type: POSType, apduData: number[]) => void) | null = null;
+
+export function setOnPOSTypeDetected(callback: (type: POSType, apduData: number[]) => void): void {
+  onPOSTypeDetected = callback;
+}
+
+export function clearOnPOSTypeDetected(): void {
+  onPOSTypeDetected = null;
+}
+
+// Callback for standard POS events (when virtual card is needed)
+let onStandardPOSDetected: ((info: { type: POSType; message: string }) => void) | null = null;
+
+export function setOnStandardPOSDetected(
+  callback: (info: { type: POSType; message: string }) => void,
+): void {
+  onStandardPOSDetected = callback;
+}
+
+export function clearOnStandardPOSDetected(): void {
+  onStandardPOSDetected = null;
+}
+
+// Track the last detected AID data for payment method selection
+let lastDetectedAID: number[] = [];
+let lastDetectedPOSType: POSType = 'unknown';
+
+export function getLastDetectedPOS(): { type: POSType; aid: number[] } {
+  return { type: lastDetectedPOSType, aid: lastDetectedAID };
+}
 
 export function initializeHCE(): void {
   if (!hceEventEmitter) {
@@ -61,8 +162,43 @@ export function initializeHCE(): void {
           signedPayload: '',
           declineReason: error.message || 'Unknown error',
           sessionId: request.sessionId,
-        })
+        }),
       );
+    }
+  });
+
+  // Listen for raw APDU data from native layer (for POS type detection)
+  hceEventEmitter.addListener('onRawAPDU', (event: { apduHex: string }) => {
+    try {
+      const apduBytes = event.apduHex.match(/.{1,2}/g)?.map((h) => parseInt(h, 16)) || [];
+      const posType = detectPOSType(apduBytes);
+
+      lastDetectedAID = apduBytes;
+      lastDetectedPOSType = posType;
+
+      console.log(`[HSMC Pay] POS type detected: ${posType}`);
+
+      if (onPOSTypeDetected) {
+        onPOSTypeDetected(posType, apduBytes);
+      }
+
+      // For standard POS (Visa, MC, EMV), notify that virtual card is needed
+      if (posType !== 'hsmc' && posType !== 'unknown') {
+        const messages: Record<string, string> = {
+          visa: 'This terminal accepts Visa. Use Virtual Card to pay.',
+          mastercard: 'This terminal accepts Mastercard. Use Virtual Card to pay.',
+          generic_emv: 'This terminal accepts card payments. Use Virtual Card.',
+        };
+
+        if (onStandardPOSDetected) {
+          onStandardPOSDetected({
+            type: posType,
+            message: messages[posType] || 'This terminal accepts card payments.',
+          });
+        }
+      }
+    } catch (e) {
+      console.warn('[HSMC Pay] Error parsing APDU:', e);
     }
   });
 
@@ -162,6 +298,9 @@ export async function processHCERequest(request: HCEPaymentRequest): Promise<HCE
 export function stopHCE(): void {
   if (hceEventEmitter) {
     hceEventEmitter.removeAllListeners('onHCERequest');
+    hceEventEmitter.removeAllListeners('onRawAPDU');
+    clearOnPOSTypeDetected();
+    clearOnStandardPOSDetected();
     console.log('[HSMC Pay] HCE stopped');
   }
 }

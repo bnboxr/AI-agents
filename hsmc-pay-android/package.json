@@ -21,7 +21,9 @@
     "react-native-vector-icons": "^10.0.3",
     "@react-native-community/slider": "^4.5.0",
     "ethers": "^6.13.0",
-    "viem": "^2.17.0"
+    "viem": "^2.17.0",
+    "react-native-keychain": "^8.2.0",
+    "react-native-push-notification": "^8.1.1"
   },
   "devDependencies": {
     "@babel/core": "^7.24.0",

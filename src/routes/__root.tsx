@@ -252,6 +252,7 @@ function NavBar() {
             <NavLink to="/swap">SWAP</NavLink>
             <NavLink to="/earn">EARN</NavLink>
             <NavLink to="/trade">TRADE</NavLink>
+            <NavLink to="/pos">POS</NavLink>
             <NavDropdown label="CHAINS" items={chainsItems} />
             <NavDropdown label="TOOLS" items={toolsItems} />
             <NavDropdown label="MORE" items={moreItems} />
@@ -292,6 +293,8 @@ function NavBar() {
               <MobileNavLink to="/swap" onClick={() => setMobileOpen(false)}>SWAP</MobileNavLink>
               <MobileNavLink to="/earn" onClick={() => setMobileOpen(false)}>EARN</MobileNavLink>
               <MobileNavLink to="/trade" onClick={() => setMobileOpen(false)}>TRADE</MobileNavLink>
+              <MobileNavLink to="/pos" onClick={() => setMobileOpen(false)}>POS</MobileNavLink>
+              <MobileNavLink to="/merchant" onClick={() => setMobileOpen(false)}>MERCHANT</MobileNavLink>
               <MobileSection>CHAINS</MobileSection>
               {chainsItems.map((item) => (
                 <MobileNavLink key={item.to} to={item.to} onClick={() => setMobileOpen(false)} indent>

@@ -5,7 +5,7 @@
  * Master wallet architecture: all payments go to the platform contract.
  */
 
-import { sql } from "~/db";
+import { sql } from "~/lib/db";
 
 // ── Types ────────────────────────────────────────────────────────────
 

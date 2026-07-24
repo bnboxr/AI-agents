@@ -8,3 +8,8 @@ if (!existsSync(".env") && existsSync(".env.example")) {
   copyFileSync(".env.example", ".env");
   console.log("Created .env from .env.example — edit with your keys");
 }
+
+// ── Startup: scan for local AI servers ──────────────────────────────
+import { scanLocalAI } from "./src/lib/local-ai-scanner";
+const localAI = await scanLocalAI();
+console.log("[HSMC] Local AI scan:", localAI);

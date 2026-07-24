@@ -3,9 +3,11 @@
 // Returns fastest valid response. Falls back through providers on failure.
 // All 29 agents + chat + orchestrator use this unified pipeline.
 
+import { findAvailableLocalSource } from "../local-ai-scanner";
+
 // ── Types ──────────────────────────────────────────────────────────
 
-export type LLMProvider = "openai" | "deepseek" | "grok" | "gemini";
+export type LLMProvider = "openai" | "deepseek" | "grok" | "gemini" | "local";
 
 export interface LLMMessage {
   role: "user" | "assistant" | "system";
@@ -131,11 +133,14 @@ const PROVIDER_CONFIGS: Record<LLMProvider, ProviderConfig> = {
 // ── API Key Access ──────────────────────────────────────────────────
 
 function getProviderApiKey(provider: LLMProvider): string | null {
+    // Local provider does not need an API key - return sentinel
+    if (provider === "local") return "__local__";
   const envMap: Record<LLMProvider, string> = {
     openai: "OPENAI_API_KEY",
     deepseek: "DEEPSEEK_API_KEY",
     grok: "GROK_API_KEY",
     gemini: "GEMINI_API_KEY",
+    local: null, // local AI servers - no API key needed
   };
   const envVar = envMap[provider];
   const fromEnv = process.env[envVar];
@@ -151,6 +156,80 @@ export interface LLMQueryOptions {
   timeoutMs?: number;
 }
 
+  // ── Local Provider Query ──
+
+  async function queryLocalProvider(
+    messages: LLMMessage[],
+    options: LLMQueryOptions,
+  ): Promise<LLMResponse | null> {
+    const startTime = Date.now();
+    try {
+      const localSource = await findAvailableLocalSource();
+      if (localSource === null) return null;
+
+      const port = localSource.port;
+      const controller = new AbortController();
+      const timeoutMs = options.timeoutMs ?? 15_000;
+      const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+      const body = {
+        model: "local-model",
+        messages,
+        temperature: options.temperature ?? 0.3,
+        max_tokens: options.maxTokens ?? 300,
+        stream: false,
+      };
+
+      const endpoint = "http://127.0.0.1:" + port + "/v1/chat/completions";
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeout);
+
+      if (!res.ok) {
+        const errBody = await res.text().catch(() => "");
+        console.warn(
+          "[MultiProvider] local (" + localSource.source + ":" + port +
+          ") returned " + res.status + ": " + errBody.slice(0, 200),
+        );
+        return null;
+      }
+
+      const data = await res.json();
+      const responseContent = data.choices?.[0]?.message?.content ?? "";
+      const latencyMs = Date.now() - startTime;
+
+      if (!responseContent) return null;
+
+      return {
+        content: responseContent,
+        provider: "local",
+        model: "local-" + localSource.source,
+        latencyMs,
+      };
+    } catch (err) {
+      const latencyMs = Date.now() - startTime;
+      const errMsg = err instanceof Error ? err.message : "Unknown";
+      if (
+        errMsg.includes("abort") ||
+        errMsg.includes("AbortError")
+      ) {
+        console.warn(
+          "[MultiProvider] local timed out after " + latencyMs + "ms",
+        );
+      } else {
+        console.warn(
+          "[MultiProvider] local error: " + errMsg,
+        );
+      }
+      return null;
+    }
+  }
+
 // ── Single Provider Query ──────────────────────────────────────────
 
 async function queryProvider(
@@ -160,6 +239,11 @@ async function queryProvider(
 ): Promise<LLMResponse | null> {
   const apiKey = getProviderApiKey(provider);
   if (!apiKey) return null;
+
+  // Local provider: try ollama -> lmstudio -> llama.cpp
+  if (provider === "local") {
+    return queryLocalProvider(messages, options);
+  }
 
   const config = PROVIDER_CONFIGS[provider];
   const timeoutMs = options.timeoutMs ?? 10_000;
@@ -225,7 +309,7 @@ export async function queryAllProviders(
   messages: LLMMessage[],
   options: LLMQueryOptions = {},
 ): Promise<MultiProviderResult> {
-  const providers: LLMProvider[] = ["openai", "deepseek", "grok", "gemini"];
+  const providers: LLMProvider[] = ["openai", "deepseek", "grok", "gemini", "local"];
 
   // Fire all providers simultaneously
   const promises = providers.map((p) =>
@@ -334,7 +418,7 @@ export async function queryFirstResponse(
  */
 export function getAvailableProviders(): LLMProvider[] {
   const available: LLMProvider[] = [];
-  for (const provider of ["openai", "deepseek", "grok", "gemini"] as LLMProvider[]) {
+  for (const provider of ["openai", "deepseek", "grok", "gemini", "local"] as LLMProvider[]) {
     if (getProviderApiKey(provider)) {
       available.push(provider);
     }

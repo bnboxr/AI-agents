@@ -25,6 +25,11 @@ export interface AuditReport {
   timestamp: number;
 }
 
+// ── Retry guard (stops infinite console spam on repeated failure) ────
+
+let auditRetryCount = 0;
+const MAX_AUDIT_RETRIES = 3;
+
 // ── Lazy singleton ──────────────────────────────────────────────────
 
 let auditAgent: any = null;
@@ -33,8 +38,15 @@ let lastScanTime = 0;
 
 async function getAgent(): Promise<any> {
   if (!auditAgent) {
-    const { SystemAuditAgent } = await import("./agents/system-audit");
-    auditAgent = new SystemAuditAgent();
+    const mod = await import("./agents/system-audit");
+    // Handle both named export and default export (Vite SSR bundling quirk)
+    const AgentClass = mod.SystemAuditAgent ?? mod.default;
+    if (typeof AgentClass !== "function") {
+      throw new Error(
+        `SystemAuditAgent not constructable. Available exports: ${Object.keys(mod).join(", ")}`,
+      );
+    }
+    auditAgent = new AgentClass();
   }
   return auditAgent;
 }
@@ -63,9 +75,17 @@ setTimeout(() => {
 
 // ── Scheduled: re-run every 60 seconds ───────────────────────────────
 
-setInterval(() => {
+const auditInterval = setInterval(() => {
+  if (auditRetryCount >= MAX_AUDIT_RETRIES) {
+    console.warn("[SystemAudit] Max retries reached, stopping audit scheduler");
+    clearInterval(auditInterval);
+    return;
+  }
+  auditRetryCount++;
   runSystemAudit()
     .then((report) => {
+      // Reset retry count on success
+      auditRetryCount = 0;
       const criticalCount = report.issues.filter((i) => i.severity === "CRITICAL").length;
       if (criticalCount > 0 || report.score < 80) {
         console.warn(

@@ -7,8 +7,9 @@ import {
 } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { useState, useEffect } from "react";
-import { WalletProvider, ConnectButton, ChainSelector } from "~/components/WalletProvider";
-import { SolanaWalletProvider, SolanaConnectButton } from "~/components/SolanaWalletProvider";
+import { WalletProvider, ChainSelector } from "~/components/WalletProvider";
+import { SolanaWalletProvider } from "~/components/SolanaWalletProvider";
+import { MultiChainWalletButton } from "~/components/MultiChainWalletModal";
 import AlertBell from "~/components/AlertBell";
 import AlertToast from "~/components/AlertToast";
 import FloatingAIAssistant from "~/components/FloatingAIAssistant";
@@ -295,10 +296,10 @@ function NavBar() {
           {/* Right side */}
           <div className="shrink-0 ml-2 flex items-center gap-1">
             <ChainSelector />
-            <SolanaConnectButton />
+            
             <DemoModeToggle />
             <AlertBell />
-            <ConnectButton />
+            <MultiChainWalletButton />
 
             {/* Mobile hamburger */}
             <button

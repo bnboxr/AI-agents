@@ -8,6 +8,7 @@ import {
 import type { ReactNode } from "react";
 import { useState, useEffect } from "react";
 import { WalletProvider, ConnectButton, ChainSelector } from "~/components/WalletProvider";
+import { SolanaWalletProvider, SolanaConnectButton } from "~/components/SolanaWalletProvider";
 import AlertBell from "~/components/AlertBell";
 import AlertToast from "~/components/AlertToast";
 import FloatingAIAssistant from "~/components/FloatingAIAssistant";
@@ -146,7 +147,8 @@ function RootComponent() {
   }
   return (
     <RootDocument>
-      <WalletProvider>
+      <SolanaWalletProvider>
+        <WalletProvider>
         <NavBar />
         <DemoBanner />
         <LiveTicker />
@@ -173,6 +175,7 @@ function RootComponent() {
           }}
         />
       </WalletProvider>
+        </SolanaWalletProvider>
     </RootDocument>
   );
 }
@@ -292,6 +295,7 @@ function NavBar() {
           {/* Right side */}
           <div className="shrink-0 ml-2 flex items-center gap-1">
             <ChainSelector />
+            <SolanaConnectButton />
             <DemoModeToggle />
             <AlertBell />
             <ConnectButton />

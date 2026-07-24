@@ -381,6 +381,67 @@ export const getAgentProfitHistory = createServerFn({ method: 'GET' }).handler(a
 
 // ── Startup: load agent states from DB ─────────────────────────────
 
+// ── Autonomous Agent Controller ─────────────────────────────────────
+
+let autonomousRunning = false;
+let autonomousInterval: ReturnType<typeof setInterval> | null = null;
+
+/**
+ * Start all autonomous trading agents for the given wallet address.
+ * This initializes agent scanning and runs periodic scans across all chains.
+ * Idempotent — calling multiple times is safe.
+ */
+export function startAutonomousAgents(address: string): void {
+  if (autonomousRunning) {
+    console.log("[AutonomousAgents] Already running for", address.slice(0, 6) + "..." + address.slice(-4));
+    return;
+  }
+
+  autonomousRunning = true;
+  console.log("[AutonomousAgents] Starting for wallet", address.slice(0, 6) + "..." + address.slice(-4));
+
+  // Run initial scan immediately
+  runAllScans().catch((err) => {
+    console.warn("[AutonomousAgents] Initial scan failed:", err);
+  });
+
+  // Periodic scan every 60 seconds
+  autonomousInterval = setInterval(() => {
+    runAllScans().catch((err) => {
+      console.warn("[AutonomousAgents] Periodic scan failed:", err);
+    });
+  }, 60_000);
+}
+
+/**
+ * Stop all autonomous trading agents.
+ */
+export function stopAutonomousAgents(): void {
+  if (autonomousInterval) {
+    clearInterval(autonomousInterval);
+    autonomousInterval = null;
+  }
+  autonomousRunning = false;
+  console.log("[AutonomousAgents] Stopped");
+}
+
+/**
+ * Check if autonomous agents are currently running.
+ */
+export function isAutonomousRunning(): boolean {
+  return autonomousRunning;
+}
+
+async function runAllScans(): Promise<void> {
+  for (const chain of CHAINS) {
+    try {
+      await internalScan(chain.id);
+    } catch (err) {
+      console.warn(`[AutonomousAgents] Scan failed for ${chain.id}:`, err);
+    }
+  }
+}
+
 setTimeout(() => {
   loadAgentStates()
     .then(() => {

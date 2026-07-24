@@ -3,6 +3,7 @@ import {
   mainnet,
   bsc,
   polygon,
+  polygonAmoy,
   arbitrum,
   optimism,
   base,
@@ -23,8 +24,9 @@ const WALLETCONNECT_PROJECT_ID = "18a7b642a20b0d109a8de743b53ccb0b";
 
 export const config = createConfig({
   chains: [
-    mainnet, bsc, polygon, arbitrum, optimism, base, avalanche,
-    fantom, gnosis, zksync, linea, scroll, mantle, celo, moonbeam,
+    mainnet, bsc, polygon, polygonAmoy, arbitrum, optimism, base,
+    avalanche, fantom, gnosis, zksync, linea, scroll, mantle, celo,
+    moonbeam,
   ],
   connectors: [
     injected(),           // EIP-6963 multi-injected provider discovery (handles MetaMask, Rabby, Phantom, etc.)
@@ -39,6 +41,7 @@ export const config = createConfig({
     [mainnet.id]: http("https://eth.drpc.org"),
     [bsc.id]: http("https://bsc-dataseed1.binance.org"),
     [polygon.id]: http("https://polygon-rpc.com"),
+    [polygonAmoy.id]: http("https://rpc-amoy.polygon.technology"),
     [arbitrum.id]: http("https://arb1.arbitrum.io/rpc"),
     [optimism.id]: http("https://mainnet.optimism.io"),
     [base.id]: http("https://mainnet.base.org"),

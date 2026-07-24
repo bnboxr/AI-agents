@@ -15,6 +15,8 @@ import {
   getAgentActivityLog,
   initializeAgentScanning,
 } from "~/lib/agent-activity";
+import { startPaymentWatcher } from "~/lib/pos-watcher";
+import { startAutonomousAgents } from "~/lib/agent-runner";
 import { PortfolioChart } from "~/components/PortfolioChart";
 import { AgentFeed } from "~/components/AgentFeed";
 import type { AgentActivity } from "~/lib/agent-activity";
@@ -88,6 +90,17 @@ function HomePage() {
   const [pfolioLoading, setPfolioLoading] = useState(true);
 
   useEffect(() => { setMounted(true); }, []);
+
+  // Auto-start agents when wallet connects
+  useEffect(() => {
+    if (mounted && isConnected && address) {
+      initializeAgentScanning().catch((err) =>
+        console.warn("[Home] initializeAgentScanning failed:", err)
+      );
+      startPaymentWatcher();
+      startAutonomousAgents(address);
+    }
+  }, [mounted, isConnected, address]);
 
   // Blockchain data refresh
   useEffect(() => {
@@ -186,11 +199,53 @@ function HomePage() {
           ) : (
             <div className="glass-card p-8 text-center">
               <h1 className="text-2xl sm:text-3xl font-bold text-[#e0e6ed] mb-2 font-mono tracking-tight">
-                <span className="text-[#00e676]">{">"}</span> PĂUN_AI — FinTech Terminal
+                Welcome to HSMC
               </h1>
               <p className="text-[#546e7a] max-w-md mx-auto mb-6 text-sm font-mono">
-                Connect your wallet to start earning yield, swapping tokens, and managing your portfolio across 20+ blockchains.
+                Your autonomous AI trading platform — 29 agents analyze markets 24/7 to find and execute profitable opportunities.
               </p>
+
+              {/* Onboarding Steps */}
+              <div className="max-w-sm mx-auto mb-6 space-y-3">
+                <div className="flex items-center gap-3 px-4 py-3 rounded-lg bg-dark-hover border border-dark-border">
+                  <span className="w-8 h-8 rounded-full bg-accent-blue/20 flex items-center justify-center text-accent-blue font-bold text-sm shrink-0">1</span>
+                  <span className="text-sm text-gray-300 text-left">
+                    Connect your wallet
+                  </span>
+                </div>
+                <div className="flex items-center gap-3 px-4 py-3 rounded-lg bg-dark-hover border border-dark-border">
+                  <span className="w-8 h-8 rounded-full bg-accent-blue/20 flex items-center justify-center text-accent-blue font-bold text-sm shrink-0">2</span>
+                  <span className="text-sm text-gray-300 text-left">
+                    Fund your wallet with MATIC
+                  </span>
+                </div>
+                <div className="flex items-center gap-3 px-4 py-3 rounded-lg bg-dark-hover border border-dark-border">
+                  <span className="w-8 h-8 rounded-full bg-accent-blue/20 flex items-center justify-center text-accent-blue font-bold text-sm shrink-0">3</span>
+                  <span className="text-sm text-gray-300 text-left">
+                    Agents start automatically
+                  </span>
+                </div>
+              </div>
+
+              {/* What agents do */}
+              <div className="max-w-sm mx-auto mb-6">
+                <p className="text-xs text-[#455a64] font-mono mb-2 uppercase tracking-wider">Once connected, agents will:</p>
+                <div className="space-y-1.5 text-left">
+                  <p className="text-xs text-gray-400 flex items-center gap-2">
+                    <span className="text-accent-green text-xs">✓</span> Analyze markets 24/7
+                  </p>
+                  <p className="text-xs text-gray-400 flex items-center gap-2">
+                    <span className="text-accent-green text-xs">✓</span> Find trading opportunities
+                  </p>
+                  <p className="text-xs text-gray-400 flex items-center gap-2">
+                    <span className="text-accent-green text-xs">✓</span> Execute trades automatically
+                  </p>
+                  <p className="text-xs text-gray-400 flex items-center gap-2">
+                    <span className="text-accent-green text-xs">✓</span> Track profits in <Link to="/merchant" className="text-accent-blue hover:underline">/merchant</Link>
+                  </p>
+                </div>
+              </div>
+
               <p className="text-xs text-[#455a64] font-mono">Use the <span className="text-[#00e676]">Connect Wallet</span> button in the top-right corner</p>
             </div>
           )}

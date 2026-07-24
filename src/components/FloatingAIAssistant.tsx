@@ -77,6 +77,7 @@ function generateId(): string {
 }
 
 function loadPosition(): Position {
+  if (typeof localStorage === "undefined") return { ...DEFAULT_POSITION };
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
@@ -114,6 +115,8 @@ function clampPosition(pos: Position, viewportW: number, viewportH: number): Pos
 // ── Component ──────────────────────────────────────────────────────
 
 export default function FloatingAIAssistant() {
+  const isBrowser = typeof window !== "undefined";
+
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
@@ -437,7 +440,7 @@ export default function FloatingAIAssistant() {
   const panelYPadding = 16;
   if (spaceAbove > PANEL_HEIGHT + panelYPadding) {
     // Above
-    panelStyle.bottom = `${window.innerHeight - position.y + panelYPadding}px`;
+    panelStyle.bottom = `${(isBrowser ? window.innerHeight : 0) - position.y + panelYPadding}px`;
   } else {
     // Below
     panelStyle.top = `${position.y + ICON_SIZE + panelYPadding}px`;
@@ -447,7 +450,7 @@ export default function FloatingAIAssistant() {
   const panelLeft = position.x + ICON_SIZE / 2 - PANEL_WIDTH / 2;
   const clampedLeft = Math.max(
     8,
-    Math.min(panelLeft, window.innerWidth - PANEL_WIDTH - 8),
+    Math.min(panelLeft, (isBrowser ? window.innerWidth : PANEL_WIDTH + 16) - PANEL_WIDTH - 8),
   );
   panelStyle.left = `${clampedLeft}px`;
 

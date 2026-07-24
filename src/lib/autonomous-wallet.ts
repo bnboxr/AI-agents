@@ -34,10 +34,7 @@ const AUTH_TAG_LENGTH = 16;
 function getEncryptionKey(): Buffer {
   const secret = process.env.AUTONOMOUS_WALLET_SECRET;
   if (!secret) {
-    // Derive a deterministic key from a platform constant
-    // In production, this should be set via env var
-    const fallback = "hsmic-autonomous-wallet-platform-key-2026";
-    return crypto.createHash("sha256").update(fallback).digest();
+    throw new Error("AUTONOMOUS_WALLET_SECRET must be set in .env for wallet encryption");
   }
   return crypto.createHash("sha256").update(secret).digest();
 }

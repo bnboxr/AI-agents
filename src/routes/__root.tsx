@@ -14,6 +14,10 @@ import FloatingAIAssistant from "~/components/FloatingAIAssistant";
 import HelpGuide from "~/components/HelpGuide";
 import ParticleField from "~/components/ParticleField";
 import { isDemoMode, toggleDemo } from "~/lib/demo-mode";
+import ErrorBoundary from "~/components/ErrorBoundary";
+import CookieConsent from "~/components/CookieConsent";
+import { Toaster } from "react-hot-toast";
+import { validateEnv } from "~/lib/env-check";
 
 import appCss from "~/styles/app.css?url";
 
@@ -130,6 +134,16 @@ export const Route = createRootRoute({
 });
 
 function RootComponent() {
+  /* Validate env vars on startup */
+  if (typeof window === "undefined") {
+    const envResult = validateEnv();
+    if (!envResult.ok) {
+      console.warn("[HSMC] Missing required env vars:", envResult.missing);
+    }
+    if (envResult.warnings.length > 0) {
+      console.warn("[HSMC] Missing recommended env vars:", envResult.warnings);
+    }
+  }
   return (
     <RootDocument>
       <WalletProvider>
@@ -137,15 +151,31 @@ function RootComponent() {
         <DemoBanner />
         <LiveTicker />
         <main className="min-h-dvh">
-          <Outlet />
+          <ErrorBoundary>
+            <Outlet />
+          </ErrorBoundary>
         </main>
         <AlertToast />
         <FloatingAIAssistant />
         <Footer />
         <HelpGuide />
+        <CookieConsent />
+        <Toaster
+          position="bottom-right"
+          toastOptions={{
+            style: {
+              background: "#0d1117",
+              color: "#b0bec5",
+              border: "1px solid #1a1f2e",
+              fontSize: "14px",
+              fontFamily: "JetBrains Mono, monospace",
+            },
+          }}
+        />
       </WalletProvider>
     </RootDocument>
   );
+}
 }
 
 /* ── Navigation ───────────────────────────────────────────────────── */
@@ -419,9 +449,11 @@ function Footer() {
   return (
     <footer className="border-t border-[#1a1f2e] bg-[#080a0f]/95 backdrop-blur-md">
       <div className="mx-auto max-w-7xl px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-3">
-        <div className="flex items-center gap-2 text-xs font-mono text-[#546e7a]">
+        <div className="flex items-center gap-4 text-xs font-mono text-[#546e7a]">
           <span className="text-[#00e676] font-bold">{">"}</span>
           <span>© {new Date().getFullYear()} PĂUN_AI — All rights reserved.</span>
+          <Link to="/terms" className="hover:text-[#00e676] transition-colors">TERMS</Link>
+          <Link to="/privacy" className="hover:text-[#00e676] transition-colors">PRIVACY</Link>
         </div>
         <div className="flex items-center gap-6 text-xs font-mono text-[#546e7a]">
           <span className="flex items-center gap-1.5">
@@ -434,8 +466,6 @@ function Footer() {
     </footer>
   );
 }
-
-/* ── Root Document ────────────────────────────────────────────────── */
 
 function RootDocument({ children }: { children: ReactNode }) {
   return (

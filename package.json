@@ -39,7 +39,8 @@
     "tronweb": "^6.4.0",
     "viem": "^2.55.2",
     "wagmi": "^3.7.3",
-    "xrpl": "^5.0.0"
+    "xrpl": "^5.0.0",
+    "react-hot-toast": "^2.5.2"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.18",

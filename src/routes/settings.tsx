@@ -246,6 +246,8 @@ function SettingsPage() {
   // ── Autonomous wallet state ─────────────────────────────────────
   const [walletData, setWalletData] = useState<AutonomousWalletPublic>(initial.walletInfo);
   const [chainAddresses, setChainAddresses] = useState<ChainAddressEntry[]>(initial.chainAddresses);
+  // ── Solana connected wallet from browser adapter ──────────────
+  const { publicKey: solanaPublicKey, connected: solanaConnected, wallet: solanaWallet } = useWallet();
   const [balancesLoading, setBalancesLoading] = useState(false);
   const [showSeedConfirm, setShowSeedConfirm] = useState(false);
   const [seedPhrase, setSeedPhrase] = useState<string | null>(null);
@@ -1919,6 +1921,50 @@ function SettingsPage() {
               </div>
             </div>
 
+            {/* Connected Browser Wallets */}
+            <div className="pt-2 border-t border-dark-border">
+              <label className="text-xs text-gray-500 uppercase tracking-wider font-mono mb-2 block">
+                Browser Wallet Connections
+              </label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Solana */}
+                <div className="flex items-center gap-3 px-3 py-2 rounded-lg bg-dark-hover/30 border border-dark-border">
+                  <span className="text-lg shrink-0">◎</span>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-semibold text-white font-mono">Solana</span>
+                      {solanaConnected ? (
+                        <span className="status-dot-online" title="Connected" />
+                      ) : (
+                        <span className="status-dot-offline" title="Not connected" />
+                      )}
+                    </div>
+                    {solanaConnected && solanaPublicKey ? (
+                      <p className="text-[0.65rem] text-gray-400 font-mono truncate mt-0.5">
+                        {solanaPublicKey.toBase58().slice(0, 16)}...{solanaPublicKey.toBase58().slice(-8)}
+                      </p>
+                    ) : (
+                      <p className="text-[0.65rem] text-gray-600 mt-0.5">
+                        {solanaWallet ? `${solanaWallet.adapter.name} not connected` : "No Solana wallet detected"}
+                      </p>
+                    )}
+                  </div>
+                </div>
+                {/* EVM / Wagmi */}
+                <div className="flex items-center gap-3 px-3 py-2 rounded-lg bg-dark-hover/30 border border-dark-border">
+                  <span className="text-lg shrink-0">⟠</span>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-semibold text-white font-mono">Ethereum (EVM)</span>
+                      <span className="status-dot-online" title="Wagmi provider active" />
+                    </div>
+                    <p className="text-[0.65rem] text-gray-500 font-mono mt-0.5">
+                      Via wagmi / WalletConnect
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
             {/* Wallet info summary grid */}
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 pt-2 border-t border-dark-border">
               <div>

@@ -1,6 +1,6 @@
 // App.tsx — HSMC Pay main entry point with LockScreen + bottom tab navigation
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { StatusBar, Platform } from 'react-native';
 import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -11,6 +11,7 @@ import PayScreen from './src/screens/PayScreen';
 import ATMScreen from './src/screens/ATMScreen';
 import HistoryScreen from './src/screens/HistoryScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
+import * as NotificationService from './src/services/NotificationService';
 import { Colors, FontSizes } from './src/theme/colors';
 
 const Tab = createBottomTabNavigator();
@@ -118,13 +119,17 @@ function MainApp() {
     </NavigationContainer>
   );
 }
-
 export default function App() {
   const [isUnlocked, setIsUnlocked] = useState(false);
+
+  useEffect(() => {
+    NotificationService.initialize().catch((err: unknown) => {
+      console.warn('[HSMC Pay] Failed to initialize notifications:', err);
+    });
+  }, []);
 
   if (!isUnlocked) {
     return <LockScreen onUnlock={() => setIsUnlocked(true)} />;
   }
-
   return <MainApp />;
 }

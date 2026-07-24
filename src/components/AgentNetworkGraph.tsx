@@ -1,8 +1,8 @@
 // ── Agent Network Graph — React Flow + Framer Motion ────────────────
-// Interactive draggable graph showing all 29 HSMC agents.
+// Interactive draggable graph showing all 29 HSMC agents + AI Model center.
 // React Flow v12 (@xyflow/react) with custom nodes, animated edges,
 // glassmorphism detail cards, dark grid background.
-import { useCallback, useState, useMemo } from "react";
+import { useCallback, useState, useMemo, useEffect } from "react";
 import {
   ReactFlow,
   Background,
@@ -21,6 +21,10 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { motion, AnimatePresence } from "framer-motion";
+import { scanLocalAI, findAvailableLocalSource } from "~/lib/local-ai-scanner";
+import type { LocalAISource, LocalAIScanResult } from "~/lib/local-ai-scanner";
+import { getAvailableProviders } from "~/lib/llm/multi-provider";
+import type { LLMProvider } from "~/lib/llm/multi-provider";
 
 // ── Agent Data (same as before) ─────────────────────────────────────
 
@@ -346,6 +350,36 @@ const AGENT_NODES: AgentNode[] = [
   },
 ];
 
+// ── AI Model Node (center of the graph) ─────────────────────────────
+
+interface ModelDetails {
+  name: string;
+  provider: "local" | "cloud";
+  source: LocalAISource | LLMProvider | null;
+  status: "active" | "loading" | "offline";
+  memoryUsage: string;
+}
+
+const defaultModelDetails: ModelDetails = {
+  name: "DeepSeek V4 Pro",
+  provider: "cloud",
+  source: "deepseek",
+  status: "active",
+  memoryUsage: "N/A (cloud)",
+};
+
+const MODEL_NODE: AgentNode = {
+  id: "ai-model",
+  name: "AI Model",
+  displayName: "AI MODEL",
+  role: "Model",
+  ring: "center",
+  color: "#00e676",
+  glowColor: "rgba(0,230,118,0.5)",
+  icon: "🧠",
+  description: "Central AI inference engine. All 29 agents query this model for reasoning, analysis, and decision-making.",
+};
+
 // ── Communication Edges ────────────────────────────────────────────
 
 interface GraphEdge {
@@ -354,6 +388,17 @@ interface GraphEdge {
 }
 
 const EDGES: GraphEdge[] = [];
+
+// Model edges: connect all agents to the AI model node
+const MODEL_EDGES: GraphEdge[] = [];
+for (const n of AGENT_NODES) {
+  if (n.id !== "orchestrator") {
+    MODEL_EDGES.push({ from: "ai-model", to: n.id });
+  }
+}
+// Orchestrator has a bidirectional special connection
+MODEL_EDGES.push({ from: "ai-model", to: "orchestrator" });
+MODEL_EDGES.push({ from: "orchestrator", to: "ai-model" });
 
 // Build edges: all outer → inner, all inner → center
 for (const n of AGENT_NODES) {
@@ -402,18 +447,23 @@ function getStatusColor(status: "active" | "idle" | "error") {
 
 // ── Layout computation ─────────────────────────────────────────────
 // Canvas: 1200 x 900 (React Flow coordinates)
-// Level 0: Orchestrator at center top
-// Level 1: Intelligence (10 agents) in arc
-// Level 2: Analysis (8 agents) in arc
-// Level 3: Decision/Execution/Monitoring in arc
+// Center: AI Model node (largest, diamond-like glow)
+// Ring 0: Orchestrator — just below model
+// Ring 1: Inner core agents — tight arc
+// Ring 2: Intelligence agents — mid arc
+// Ring 3: Analysis agents — outer arc
+// Ring 4: Execution/Monitoring — outermost arc
 
 function computeLayout(): Map<string, { x: number; y: number; size: number }> {
   const map = new Map<string, { x: number; y: number; size: number }>();
   const CX = 600;
-  const ORCH_Y = 100;
+  const MODEL_Y = 300; // AI Model at true center
 
-  // Orchestrator
-  map.set("orchestrator", { x: CX, y: ORCH_Y, size: 56 });
+  // AI Model — largest, at true center
+  map.set("ai-model", { x: CX, y: MODEL_Y, size: 70 });
+
+  // Orchestrator — just below the model
+  map.set("orchestrator", { x: CX, y: MODEL_Y + 80, size: 48 });
 
   // Group agents by role level
   const intelligenceAgents = AGENT_NODES.filter(
@@ -456,34 +506,32 @@ function computeLayout(): Map<string, { x: number; y: number; size: number }> {
     });
   }
 
-  // Inner core agents in tight arc below orchestrator
-  placeArc(innerAgents, CX, ORCH_Y + 100, 140, Math.PI * 0.25, Math.PI * 0.75, 34);
+  // Inner core agents — tight arc below orchestrator
+  placeArc(innerAgents, CX, MODEL_Y + 160, 130, Math.PI * 0.22, Math.PI * 0.78, 30);
 
-  // Level 1: Intelligence (10)
+  // Level 1: Intelligence (10) — mid arc
   placeArc(
     intelligenceAgents,
     CX,
-    ORCH_Y + 200,
-    340,
-    Math.PI * 0.12,
-    Math.PI * 0.88,
-    28
+    MODEL_Y + 80,
+    300,
+    Math.PI * 0.08,
+    Math.PI * 0.92,
+    24
   );
 
-  // Level 2: Analysis (8 — includes risk from inner? No, outer only)
+  // Level 2: Analysis — outer arc
   placeArc(
     analysisAgents,
     CX,
-    ORCH_Y + 350,
-    420,
-    Math.PI * 0.12,
-    Math.PI * 0.88,
-    28
+    MODEL_Y + 60,
+    400,
+    Math.PI * 0.08,
+    Math.PI * 0.92,
+    24
   );
 
-  // Level 3: rest (exit, system-audit, plus...
-  // Actually let's also include the inner agents in this arc if they're not already placed.
-  // The inner agents are already placed. This arc gets remaining outer agents.
+  // Level 3: rest — outermost arc
   const remainingOuter = AGENT_NODES.filter(
     (n) => n.ring === "outer" && !map.has(n.id)
   );
@@ -491,11 +539,11 @@ function computeLayout(): Map<string, { x: number; y: number; size: number }> {
     placeArc(
       remainingOuter,
       CX,
-      ORCH_Y + 500,
-      500,
-      Math.PI * 0.12,
-      Math.PI * 0.88,
-      28
+      MODEL_Y + 50,
+      490,
+      Math.PI * 0.08,
+      Math.PI * 0.92,
+      24
     );
   }
 
@@ -519,26 +567,30 @@ interface AgentFlowData {
 function AgentFlowNode({ data, selected }: NodeProps) {
   const { agent, status, isHighlighted } = data as AgentFlowData;
   const statusColor = getStatusColor(status);
-  const nodeSize = agent.ring === "center" ? 56 : agent.ring === "inner" ? 34 : 28;
-  const fontSize = agent.ring === "center" ? 20 : agent.ring === "inner" ? 10 : 8;
+  const isModel = agent.id === "ai-model";
+  const isOrchestrator = agent.id === "orchestrator" && !isModel;
+  const nodeSize = isModel ? 56 : isOrchestrator ? 42 : agent.ring === "inner" ? 30 : 24;
+  const fontSize = isModel ? 28 : isOrchestrator ? 18 : agent.ring === "inner" ? 10 : 8;
 
-  const isOrchestrator = agent.ring === "center";
+  // Model status color
+  const modelStatusColor =
+    status === "active" ? "#00e676" : status === "idle" ? "#ffab00" : "#9e9e9e";
 
   return (
     <div
-      className="agent-flow-node"
+      className={`agent-flow-node${isModel ? " model-node" : ""}`}
       style={{
         position: "relative",
-        width: nodeSize * 2 + 16,
-        height: nodeSize * 2 + 28,
+        width: nodeSize * 2 + 24,
+        height: nodeSize * 2 + 32,
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
         cursor: "pointer",
         filter: isHighlighted
-          ? `drop-shadow(0 0 14px ${agent.glowColor})`
-          : `drop-shadow(0 0 4px ${agent.glowColor})`,
+          ? `drop-shadow(0 0 ${isModel ? 24 : 14}px ${agent.glowColor})`
+          : `drop-shadow(0 0 ${isModel ? 8 : 4}px ${agent.glowColor})`,
         transition: "filter 0.3s ease, transform 0.3s ease",
         transform: selected ? "scale(1.08)" : "scale(1)",
       }}
@@ -555,48 +607,51 @@ function AgentFlowNode({ data, selected }: NodeProps) {
         style={{ opacity: 0, width: 1, height: 1 }}
       />
 
-      {/* Glow ring */}
+      {/* Glow ring — extra large for model */}
       <div
-        className={isOrchestrator ? "orchestrator-glow" : ""}
+        className={isModel ? "model-glow" : isOrchestrator ? "orchestrator-glow" : ""}
         style={{
           position: "absolute",
-          width: nodeSize * 2 + 16,
-          height: nodeSize * 2 + 16,
-          borderRadius: "50%",
-          border: `2px solid ${agent.glowColor}`,
+          width: nodeSize * 2 + (isModel ? 32 : 16),
+          height: nodeSize * 2 + (isModel ? 32 : 16),
+          borderRadius: isModel ? "30%" : "50%",
+          border: `2px solid ${isModel ? "rgba(0,230,118,0.6)" : agent.glowColor}`,
+          transform: isModel ? "rotate(45deg)" : "none",
           opacity: selected ? 0.7 : 0.2,
           animation:
             status === "active"
-              ? `agentPulse ${isOrchestrator ? 2 : 3}s ease-in-out infinite`
+              ? `${isModel ? "modelPulse" : "agentPulse"} ${isModel ? 2 : isOrchestrator ? 2 : 3}s ease-in-out infinite`
               : "none",
           transition: "opacity 0.3s",
         }}
       />
 
       {/* Status ring */}
-      <div
-        style={{
-          position: "absolute",
-          width: nodeSize * 2 + 6,
-          height: nodeSize * 2 + 6,
-          borderRadius: "50%",
-          border: `2px solid ${statusColor}`,
-          opacity: 0.7,
-          animation:
-            status === "active"
-              ? "none"
-              : "none",
-        }}
-      />
+      {!isModel && (
+        <div
+          style={{
+            position: "absolute",
+            width: nodeSize * 2 + 6,
+            height: nodeSize * 2 + 6,
+            borderRadius: "50%",
+            border: `2px solid ${statusColor}`,
+            opacity: 0.7,
+          }}
+        />
+      )}
 
-      {/* Main node circle with gradient */}
+      {/* Main node circle (diamond for model) */}
       <div
         style={{
           width: nodeSize * 2,
           height: nodeSize * 2,
-          borderRadius: "50%",
-          background: `radial-gradient(circle at 35% 35%, ${agent.color}88, ${agent.color}22 60%, ${agent.color}11 100%)`,
-          border: `1.5px solid ${agent.color}66`,
+          borderRadius: isModel ? "28%" : "50%",
+          transform: isModel ? "rotate(45deg)" : "none",
+          background: isModel
+            ? `radial-gradient(circle at 35% 35%, rgba(0,230,118,0.5), rgba(0,188,212,0.2) 60%, rgba(0,230,118,0.08) 100%)`
+            : `radial-gradient(circle at 35% 35%, ${agent.color}88, ${agent.color}22 60%, ${agent.color}11 100%)`,
+          border: `2px solid ${isModel ? "rgba(0,230,118,0.8)" : agent.color}66`,
+          boxShadow: isModel ? "0 0 24px rgba(0,230,118,0.3), inset 0 0 16px rgba(0,230,118,0.1)" : "none",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -613,17 +668,18 @@ function AgentFlowNode({ data, selected }: NodeProps) {
             width: "30%",
             height: "25%",
             borderRadius: "50%",
-            background: `radial-gradient(ellipse, ${agent.color}44, transparent)`,
+            background: `radial-gradient(ellipse, ${isModel ? "rgba(0,255,135,0.6)" : agent.color}44, transparent)`,
             opacity: 0.6,
           }}
         />
 
-        {/* Icon */}
+        {/* Icon — counter-rotate for model so icon stays upright */}
         <span
           style={{
             fontSize: `${fontSize}px`,
             lineHeight: 1,
             zIndex: 1,
+            transform: isModel ? "rotate(-45deg)" : "none",
             filter: "drop-shadow(0 0 3px rgba(0,0,0,0.5))",
           }}
         >
@@ -634,11 +690,11 @@ function AgentFlowNode({ data, selected }: NodeProps) {
       {/* Label */}
       <span
         style={{
-          fontSize: isOrchestrator ? "11px" : "8px",
-          fontWeight: isOrchestrator ? 800 : 600,
+          fontSize: isModel ? "10px" : isOrchestrator ? "10px" : "8px",
+          fontWeight: isModel ? 900 : isOrchestrator ? 800 : 600,
           fontFamily: "'JetBrains Mono', monospace",
-          color: isOrchestrator ? "#ffab00" : "#b0bec5",
-          marginTop: 4,
+          color: isModel ? "#00e676" : isOrchestrator ? "#ffab00" : "#b0bec5",
+          marginTop: 6,
           textAlign: "center",
           letterSpacing: "0.5px",
           whiteSpace: "nowrap",
@@ -742,9 +798,11 @@ const edgeTypes = {
 function buildFlowNodes(
   highlightedId: string | null,
   selectedId: string | null,
-  onClick: (id: string) => void
+  onClick: (id: string) => void,
+  modelStatus: "active" | "idle" | "error"
 ): Node<AgentFlowData>[] {
-  return AGENT_NODES.map((agent) => {
+  const allNodes: AgentNode[] = [MODEL_NODE, ...AGENT_NODES];
+  return allNodes.map((agent) => {
     const pos = layoutMap.get(agent.id) ?? { x: 0, y: 0, size: 28 };
     const isHighlighted =
       (highlightedId || selectedId) != null &&
@@ -757,6 +815,8 @@ function buildFlowNodes(
       agent.id !== highlightedId &&
       agent.id !== selectedId;
 
+    const status = agent.id === "ai-model" ? modelStatus : getSimulatedStatus(agent.id);
+
     return {
       id: agent.id,
       type: "agentNode",
@@ -766,7 +826,7 @@ function buildFlowNodes(
       },
       data: {
         agent,
-        status: getSimulatedStatus(agent.id),
+        status,
         isSelected: selectedId === agent.id,
         isHighlighted,
         onClick,
@@ -775,7 +835,7 @@ function buildFlowNodes(
         opacity: isDimmed ? 0.3 : 1,
         transition: "opacity 0.3s ease",
       },
-      draggable: true,
+      draggable: agent.id !== "ai-model",
       selectable: true,
     };
   });
@@ -783,9 +843,11 @@ function buildFlowNodes(
 
 function buildFlowEdges(highlightedId: string | null, selectedId: string | null): Edge[] {
   const focusId = highlightedId ?? selectedId;
-  return EDGES.map((edge, i) => {
+  const allEdges = [...MODEL_EDGES, ...EDGES];
+  return allEdges.map((edge, i) => {
     const isSelected =
       focusId != null && (edge.from === focusId || edge.to === focusId);
+    const isModelEdge = edge.from === "ai-model" || edge.to === "ai-model";
     return {
       id: `${edge.from}->${edge.to}-${i}`,
       source: edge.from,
@@ -794,8 +856,12 @@ function buildFlowEdges(highlightedId: string | null, selectedId: string | null)
       animated: true,
       selected: isSelected,
       style: {
-        stroke: isSelected ? "rgba(0,230,118,0.5)" : "rgba(255,255,255,0.06)",
-        strokeWidth: isSelected ? 1.5 : 0.5,
+        stroke: isSelected
+          ? "rgba(0,230,118,0.5)"
+          : isModelEdge
+          ? "rgba(0,230,118,0.15)"
+          : "rgba(255,255,255,0.06)",
+        strokeWidth: isSelected ? 1.5 : isModelEdge ? 0.8 : 0.5,
         transition: "all 0.3s ease",
       },
     };
@@ -807,6 +873,68 @@ function buildFlowEdges(highlightedId: string | null, selectedId: string | null)
 export function AgentNetworkGraph() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [modelDetails, setModelDetails] = useState<ModelDetails>(defaultModelDetails);
+  const [modelStatus, setModelStatus] = useState<"active" | "idle" | "error">("active");
+
+  // ── Scan local AI + detect active provider on mount ────────────────
+  useEffect(() => {
+    let cancelled = false;
+    async function detectModel() {
+      setModelStatus("idle");
+      try {
+        // 1. Check for local AI servers
+        const localResult = await findAvailableLocalSource();
+        // 2. Check cloud providers
+        const cloudProviders = getAvailableProviders();
+
+        if (localResult) {
+          const sourceName =
+            localResult.source === "ollama" ? "Ollama" :
+            localResult.source === "lmStudio" ? "LM Studio" :
+            localResult.source === "llamaCpp" ? "llama.cpp" :
+            localResult.source === "textGenWebUI" ? "Oobabooga" :
+            localResult.source === "jan" ? "Jan AI" :
+            localResult.source === "openWebUI" ? "Open WebUI" : localResult.source;
+          if (!cancelled) {
+            setModelDetails({
+              name: sourceName,
+              provider: "local",
+              source: localResult.source,
+              status: "active",
+              memoryUsage: "Local instance",
+            });
+            setModelStatus("active");
+          }
+        } else if (cloudProviders.length > 0) {
+          if (!cancelled) {
+            setModelDetails({
+              name: cloudProviders.includes("deepseek") ? "DeepSeek V4 Pro" :
+                    cloudProviders.includes("openai") ? "GPT-4o" :
+                    cloudProviders.includes("grok") ? "Grok" :
+                    cloudProviders.includes("gemini") ? "Gemini Pro" : "Cloud LLM",
+              provider: "cloud",
+              source: cloudProviders[0],
+              status: "active",
+              memoryUsage: "N/A (cloud)",
+            });
+            setModelStatus("active");
+          }
+        } else {
+          if (!cancelled) {
+            setModelDetails({ ...defaultModelDetails, status: "offline", name: "No provider detected" });
+            setModelStatus("error");
+          }
+        }
+      } catch {
+        if (!cancelled) {
+          setModelDetails({ ...defaultModelDetails, status: "offline" });
+          setModelStatus("error");
+        }
+      }
+    }
+    detectModel();
+    return () => { cancelled = true; };
+  }, []);
 
   const onNodeClick = useCallback(
     (_event: React.MouseEvent, node: Node) => {
@@ -832,8 +960,8 @@ export function AgentNetworkGraph() {
 
   // Build nodes and edges reactively
   const initialNodes = useMemo(
-    () => buildFlowNodes(hoveredId, selectedId, setSelectedId),
-    [hoveredId, selectedId]
+    () => buildFlowNodes(hoveredId, selectedId, setSelectedId, modelStatus),
+    [hoveredId, selectedId, modelStatus]
   );
   const initialEdges = useMemo(
     () => buildFlowEdges(hoveredId, selectedId),
@@ -864,10 +992,12 @@ export function AgentNetworkGraph() {
     });
   }, [edges, initialEdges]);
 
+  const allAgents = useMemo(() => [MODEL_NODE, ...AGENT_NODES], []);
   const selectedNode = useMemo(
-    () => AGENT_NODES.find((n) => n.id === selectedId) ?? null,
-    [selectedId]
+    () => allAgents.find((n) => n.id === selectedId) ?? null,
+    [selectedId, allAgents]
   );
+  const isModelSelected = selectedId === "ai-model";
 
   return (
     <div
@@ -914,9 +1044,9 @@ export function AgentNetworkGraph() {
         />
       </ReactFlow>
 
-      {/* ── Detail Card (Framer Motion) ──────────────────────── */}
+      {/* ── Agent Detail Card (Framer Motion) ──────────────────── */}
       <AnimatePresence>
-        {selectedNode && (
+        {selectedNode && !isModelSelected && (
           <motion.div
             initial={{ opacity: 0, y: 16, scale: 0.96 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -1024,6 +1154,148 @@ export function AgentNetworkGraph() {
         )}
       </AnimatePresence>
 
+      {/* ── Model Info Panel (when clicking the AI Model node) ──── */}
+      <AnimatePresence>
+        {isModelSelected && (
+          <motion.div
+            initial={{ opacity: 0, y: 16, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 16, scale: 0.96 }}
+            transition={{ duration: 0.25, ease: "easeOut" }}
+            className="absolute bottom-4 right-4 w-80 max-w-[calc(100%-2rem)] z-20"
+            style={{
+              background: "rgba(13, 17, 23, 0.92)",
+              backdropFilter: "blur(16px)",
+              WebkitBackdropFilter: "blur(16px)",
+              border: "1px solid #00e67633",
+              borderRadius: "12px",
+              padding: "20px",
+              boxShadow: "0 8px 32px rgba(0,230,118,0.15)",
+              maxHeight: "420px",
+              overflowY: "auto",
+            }}
+          >
+            {/* Close button */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setSelectedId(null);
+              }}
+              className="absolute top-3 right-3 text-gray-400 hover:text-white text-lg leading-none transition-colors"
+            >
+              ×
+            </button>
+
+            {/* Header */}
+            <div className="flex items-center gap-3 mb-4">
+              <div
+                className="text-2xl w-10 h-10 flex items-center justify-center rounded-xl"
+                style={{
+                  background: "rgba(0,230,118,0.12)",
+                  border: "1px solid rgba(0,230,118,0.3)",
+                }}
+              >
+                🧠
+              </div>
+              <div>
+                <h3 className="text-white font-bold text-sm">AI Model</h3>
+                <span
+                  className="text-xs font-mono px-2 py-0.5 rounded-full inline-block mt-0.5"
+                  style={{
+                    background: "rgba(0,230,118,0.12)",
+                    color: "#00e676",
+                    border: "1px solid rgba(0,230,118,0.3)",
+                  }}
+                >
+                  {modelDetails.provider === "local" ? "Local" : "Cloud"}
+                </span>
+              </div>
+              <div className="ml-auto flex items-center gap-1.5">
+                <span
+                  className="inline-block w-2 h-2 rounded-full"
+                  style={{
+                    backgroundColor:
+                      modelStatus === "active" ? "#00e676" :
+                      modelStatus === "idle" ? "#ffab00" : "#9e9e9e",
+                    boxShadow: `0 0 6px ${
+                      modelStatus === "active" ? "#00e676" :
+                      modelStatus === "idle" ? "#ffab00" : "#9e9e9e"
+                    }`,
+                  }}
+                />
+                <span className="text-xs text-gray-400 font-mono uppercase">
+                  {modelStatus}
+                </span>
+              </div>
+            </div>
+
+            {/* Model details */}
+            <div className="space-y-2 text-xs mb-4">
+              <div className="flex justify-between py-1.5 border-b border-[#1a1f2e]">
+                <span className="text-gray-500">Model Name</span>
+                <span className="text-white font-mono">{modelDetails.name}</span>
+              </div>
+              <div className="flex justify-between py-1.5 border-b border-[#1a1f2e]">
+                <span className="text-gray-500">Provider</span>
+                <span className="text-[#00bcd4] font-mono capitalize">
+                  {modelDetails.provider}
+                  {modelDetails.source ? ` · ${modelDetails.source}` : ""}
+                </span>
+              </div>
+              <div className="flex justify-between py-1.5 border-b border-[#1a1f2e]">
+                <span className="text-gray-500">Status</span>
+                <span
+                  className="font-mono capitalize"
+                  style={{
+                    color:
+                      modelDetails.status === "active" ? "#00e676" :
+                      modelDetails.status === "loading" ? "#ffab00" : "#9e9e9e",
+                  }}
+                >
+                  {modelDetails.status}
+                </span>
+              </div>
+              <div className="flex justify-between py-1.5 border-b border-[#1a1f2e]">
+                <span className="text-gray-500">Memory Usage</span>
+                <span className="text-white font-mono">{modelDetails.memoryUsage}</span>
+              </div>
+              <div className="flex justify-between py-1.5">
+                <span className="text-gray-500">Connected Agents</span>
+                <span className="text-[#00e676] font-mono">
+                  {AGENT_NODES.length}
+                </span>
+              </div>
+            </div>
+
+            {/* Switch Model button */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                // Placeholder — opens settings or model selector in future iteration
+              }}
+              className="w-full py-2 px-4 text-xs font-semibold rounded-lg transition-colors"
+              style={{
+                background: "rgba(0,230,118,0.1)",
+                color: "#00e676",
+                border: "1px solid rgba(0,230,118,0.3)",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = "rgba(0,230,118,0.2)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "rgba(0,230,118,0.1)";
+              }}
+            >
+              🔄 Switch Model
+            </button>
+
+            <p className="text-gray-500 text-xs mt-3 text-center">
+              All {AGENT_NODES.length} agents are connected to this model
+            </p>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* ── Legend ────────────────────────────────────────────── */}
       <div
         className="absolute top-4 right-4 z-10 hidden md:block"
@@ -1040,6 +1312,7 @@ export function AgentNetworkGraph() {
           LEGEND
         </h4>
         {[
+          { label: "AI Model", color: "#00e676" },
           { label: "Intelligence", color: "#00bcd4" },
           { label: "Analysis", color: "#00e676" },
           { label: "Decision", color: "#ffab00" },
@@ -1048,7 +1321,7 @@ export function AgentNetworkGraph() {
         ].map((item) => (
           <div key={item.label} className="flex items-center gap-2 text-xs mb-1.5">
             <span
-              className="inline-block w-3 h-3 rounded-full flex-shrink-0"
+              className={`inline-block flex-shrink-0 ${item.label === "AI Model" ? "w-3 h-3 rotate-45 rounded-sm" : "w-3 h-3 rounded-full"}`}
               style={{
                 backgroundColor: item.color,
                 boxShadow: `0 0 6px ${item.color}66`,
@@ -1065,6 +1338,10 @@ export function AgentNetworkGraph() {
           0%, 100% { transform: scale(1); opacity: 0.2; }
           50% { transform: scale(1.08); opacity: 0.5; }
         }
+        @keyframes modelPulse {
+          0%, 100% { transform: rotate(45deg) scale(1); opacity: 0.2; }
+          50% { transform: rotate(45deg) scale(1.10); opacity: 0.6; }
+        }
         @keyframes particleFlow {
           0% { opacity: 0; }
           20% { opacity: 1; }
@@ -1074,9 +1351,16 @@ export function AgentNetworkGraph() {
         .orchestrator-glow {
           animation: orchestratorGlow 2.5s ease-in-out infinite !important;
         }
+        .model-glow {
+          animation: modelGlow 2s ease-in-out infinite !important;
+        }
         @keyframes orchestratorGlow {
           0%, 100% { transform: scale(1); opacity: 0.3; }
           50% { transform: scale(1.06); opacity: 0.6; }
+        }
+        @keyframes modelGlow {
+          0%, 100% { transform: rotate(45deg) scale(1); opacity: 0.3; }
+          50% { transform: rotate(45deg) scale(1.08); opacity: 0.7; }
         }
       `}</style>
     </div>

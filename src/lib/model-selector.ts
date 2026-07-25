@@ -2,8 +2,14 @@
 // Profiles local hardware and recommends the best GGUF model to run.
 // Balances model capability against available RAM and CPU cores.
 // Also provides structured recommendations per inference server.
+//
+// Now includes auto-download capability: `downloadModel()` fetches a GGUF
+// from Hugging Face via direct URL or huggingface-cli, with progress reporting.
 
-import os from "os";
+import { createWriteStream, existsSync, mkdirSync, readdirSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
+import { homedir, totalmem, freemem, cpus, platform, arch } from "node:os";
+import { $ } from "bun";
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -43,15 +49,15 @@ export interface ModelRecommendationResult {
 // ── Hardware Profiling ─────────────────────────────────────────────
 
 export function getHardwareProfile(): HardwareProfile {
-  const ram = os.totalmem();
-  const free_ram = os.freemem();
+  const ram = totalmem();
+  const free_ram = freemem();
 
   return {
     ram,
     free_ram,
-    cpus: os.cpus().length,
-    platform: os.platform(),
-    arch: os.arch(),
+    cpus: cpus().length,
+    platform: platform(),
+    arch: arch(),
     ramGB: +(ram / 1_073_741_824).toFixed(1),
     freeRamGB: +(free_ram / 1_073_741_824).toFixed(1),
   };
@@ -297,4 +303,217 @@ export function printHardwareSummary(): string {
     `  Recommended: ${rec.primary.modelName} (${rec.primary.sizeGB} GB, ${rec.primary.quantization})`,
     `  Ollama:    ${getOllamaPullCommand(rec.primary)}`,
   ].join("\n");
+}
+
+// ── Hugging Face URL Builder ─────────────────────────────────────────
+
+const HF_BASE = "https://huggingface.co";
+
+/**
+ * Build a direct download URL for a GGUF file on Hugging Face.
+ *
+ * Accepts several input formats:
+ *   - "TheBloke/CodeLlama-7B-Instruct-GGUF" (repo only — picks first file)
+ *   - "TheBloke/CodeLlama-7B-Instruct-GGUF/codellama-7b-instruct.Q4_K_M.gguf"
+ *   - A raw Hugging Face URL (passed through as-is)
+ *   - An Ollama tag like "codellama:7b-instruct-q4_K_M" (converted to HF ID)
+ */
+export function getHuggingFaceUrl(modelName: string): {
+  url: string;
+  repo: string;
+  filename: string;
+} {
+  // Already a full URL — pass through
+  if (modelName.startsWith("http://") || modelName.startsWith("https://")) {
+    const parts = modelName.split("/");
+    return {
+      url: modelName,
+      repo: "",
+      filename: parts[parts.length - 1] ?? "model.gguf",
+    };
+  }
+
+  // Ollama-style tag ("codellama:7b-instruct-q4_K_M")
+  if (modelName.includes(":") && !modelName.includes("/")) {
+    const [name, tag] = modelName.split(":");
+    const fileName = `${name}-${tag}.gguf`;
+    const repo = `TheBloke/${name}-GGUF`;
+    return {
+      url: `${HF_BASE}/${repo}/resolve/main/${fileName}`,
+      repo,
+      filename: fileName,
+    };
+  }
+
+  // Repo/filepath ("TheBloke/CodeLlama-7B-Instruct-GGUF/filename.gguf")
+  if (modelName.split("/").length >= 3) {
+    const parts = modelName.split("/");
+    const repo = `${parts[0]}/${parts[1]}`;
+    const filepath = parts.slice(2).join("/");
+    return {
+      url: `${HF_BASE}/${repo}/resolve/main/${filepath}`,
+      repo,
+      filename: basename(filepath),
+    };
+  }
+
+  // Repo-only ("TheBloke/CodeLlama-7B-Instruct-GGUF") — no specific file
+  return {
+    url: "",
+    repo: modelName,
+    filename: "",
+  };
+}
+
+// ── Model Download ──────────────────────────────────────────────────
+
+/**
+ * Download a file with progress reporting via the `onProgress` callback.
+ *
+ * Uses Bun's native fetch and writes to `dest` as a stream. If the
+ * destination already exists and the sizes match, it skips the download.
+ *
+ * @param url         Direct download URL
+ * @param dest        Absolute filesystem path for the downloaded file
+ * @param onProgress  Called with percentage (0-100) during download
+ */
+export async function downloadFile(
+  url: string,
+  dest: string,
+  onProgress?: (pct: number) => void,
+): Promise<void> {
+  mkdirSync(dirname(dest), { recursive: true });
+
+  // Check if already downloaded
+  if (existsSync(dest)) {
+    const res = await fetch(url, { method: "HEAD" });
+    if (res.ok) {
+      const remoteSize = parseInt(res.headers.get("content-length") ?? "0", 10);
+      const localSize = Bun.file(dest).size;
+      if (remoteSize > 0 && localSize === remoteSize) {
+        console.log(`[ModelSelector] Already downloaded: ${dest}`);
+        onProgress?.(100);
+        return;
+      }
+    }
+  }
+
+  console.log(`[ModelSelector] Downloading ${url} → ${dest}`);
+
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(
+      `[ModelSelector] Download failed: HTTP ${response.status} for ${url}`,
+    );
+  }
+
+  const contentLength = parseInt(
+    response.headers.get("content-length") ?? "0",
+    10,
+  );
+  const reader = response.body?.getReader();
+  if (!reader) {
+    throw new Error("[ModelSelector] No response body");
+  }
+
+  const writer = createWriteStream(dest);
+  let downloaded = 0;
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      writer.write(Buffer.from(value));
+      downloaded += value.length;
+
+      if (contentLength > 0 && onProgress) {
+        onProgress(Math.min(100, Math.round((downloaded / contentLength) * 100)));
+      }
+    }
+  } finally {
+    writer.end();
+    reader.releaseLock();
+  }
+
+  onProgress?.(100);
+  console.log(`[ModelSelector] Download complete: ${dest}`);
+}
+
+/**
+ * Download a model from Hugging Face by name/reference.
+ *
+ * This is the primary user-facing entry point. It resolves the model name
+ * to a direct download URL, then streams the GGUF file to the local models
+ * directory. If `huggingface-cli` is available it prefers that (it handles
+ * auth tokens automatically); otherwise it falls back to a direct fetch.
+ *
+ * @param modelName  A Hugging Face repo ID (e.g. "TheBloke/CodeLlama-7B-Instruct-GGUF"),
+ *                    a repo+file path, or an Ollama-style tag.
+ * @param onProgress Optional progress callback (0-100).
+ * @returns          The absolute path to the downloaded .gguf file.
+ */
+export async function downloadModel(
+  modelName: string,
+  onProgress?: (pct: number) => void,
+): Promise<string> {
+  const { url, repo, filename } = getHuggingFaceUrl(modelName);
+  const modelsDir = join(homedir(), "models");
+  mkdirSync(modelsDir, { recursive: true });
+  const dest = join(modelsDir, filename || basename(modelName) || "model.gguf");
+
+  // Prefer huggingface-cli if available (handles auth, resuming, etc.)
+  const hfCliCheck = await $`which huggingface-cli`.quiet().nothrow();
+  if (hfCliCheck.exitCode === 0 && repo && filename) {
+    console.log(`[ModelSelector] Using huggingface-cli for ${repo}/${filename}`);
+    const result =
+      await $`huggingface-cli download ${repo} ${filename} --local-dir ${modelsDir} --local-dir-use-symlinks False`
+        .quiet()
+        .nothrow();
+
+    if (result.exitCode === 0) {
+      onProgress?.(100);
+      // Find the downloaded file
+      const expectedPath = join(modelsDir, filename);
+      if (existsSync(expectedPath)) return expectedPath;
+
+      // The CLI may have placed it in a subdirectory
+      for (const entry of readdirSync(modelsDir)) {
+        const entryPath = join(modelsDir, entry);
+        if (entry.toLowerCase().endsWith(".gguf")) {
+          return entryPath;
+        }
+      }
+    }
+    // Fall through to direct download on failure
+  }
+
+  // Direct download via fetch
+  if (!url) {
+    throw new Error(
+      `[ModelSelector] Cannot download "${modelName}" — provide a full Hugging Face repo+file path or URL.\n` +
+        `Example: "TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"`,
+    );
+  }
+
+  await downloadFile(url, dest, onProgress);
+  return dest;
+}
+
+/**
+ * Returns the default path where models are stored.
+ */
+export function getDefaultModelPath(): string {
+  const dir = join(homedir(), "models");
+  mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+/**
+ * Get a recommended model reference string suitable for `downloadModel()`.
+ * Uses the hardware tier's primary recommendation.
+ */
+export function getRecommendedModelRef(): string {
+  const rec = recommendModel();
+  return rec.primary.huggingFaceId ?? rec.primary.ollamaTag ?? rec.primary.modelName;
 }

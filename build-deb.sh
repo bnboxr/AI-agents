@@ -1,116 +1,82 @@
 #!/bin/bash
-# Creates a .deb package for Debian/Ubuntu
-# Requires: dpkg-deb
-
 set -e
-
 VERSION="1.0.0"
-DEB_DIR="/tmp/hsmc-deb"
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+DEB_NAME="hsmc-platform_${VERSION}_all"
+DEB_ROOT="/tmp/${DEB_NAME}"
+rm -rf "$DEB_ROOT"
+mkdir -p "$DEB_ROOT/DEBIAN"
+mkdir -p "$DEB_ROOT/opt/hsmc-platform"
+mkdir -p "$DEB_ROOT/usr/share/applications"
+mkdir -p "$DEB_ROOT/usr/share/icons/hicolor/256x256/apps"
 
-# Clean previous build
-rm -rf "$DEB_DIR"
-mkdir -p "$DEB_DIR/DEBIAN"
-mkdir -p "$DEB_DIR/opt/hsmc"
-mkdir -p "$DEB_DIR/usr/share/applications"
-mkdir -p "$DEB_DIR/usr/share/icons/hicolor/512x512/apps"
-
-# Copy project files (exclude build artifacts and git)
-echo "📦 Copying project files..."
-rsync -a --exclude='.git' --exclude='node_modules' --exclude='dist' \
-      --exclude='.vercel' --exclude='*.deb' --exclude='*.exe' \
-      "$SCRIPT_DIR/" "$DEB_DIR/opt/hsmc/"
-
-# Copy icon
-if [ -f "$SCRIPT_DIR/public/icon-512.png" ]; then
-    cp "$SCRIPT_DIR/public/icon-512.png" "$DEB_DIR/usr/share/icons/hicolor/512x512/apps/hsmc.png"
-fi
-
-# Desktop entry
-cat > "$DEB_DIR/usr/share/applications/hsmc.desktop" << EOF
-[Desktop Entry]
-Name=HSMC Platform
-Comment=AI Hedge Fund OS — Multi-chain DeFi Platform
-Exec=bun run --cwd=/opt/hsmc dev
-Icon=hsmc
-Terminal=false
-Type=Application
-Categories=Finance;Development;
-EOF
+# Copy project (exclude node_modules, .git, dist)
+rsync -av --exclude 'node_modules' --exclude '.git' --exclude 'dist' --exclude 'hsmc-pay-android' . "$DEB_ROOT/opt/hsmc-platform/"
 
 # Control file
-cat > "$DEB_DIR/DEBIAN/control" << EOF
+cat > "$DEB_ROOT/DEBIAN/control" << EOF
 Package: hsmc-platform
 Version: $VERSION
 Section: finance
 Priority: optional
 Architecture: all
-Depends: curl, git
-Maintainer: HSMC Team <team@hsmc.dev>
-Description: AI Hedge Fund OS — Multi-chain DeFi Platform
- Autonomous trading platform with 29 AI agents, POS crypto terminal,
- multi-chain wallet support, and AI-powered market analysis.
+Depends: curl, git, unzip
+Maintainer: HSMC <team@hsmc.dev>
+Description: HSMC Platform — AI Hedge Fund OS
+ Multi-chain DeFi platform with 29 AI agents, POS crypto terminal,
+ multi-chain wallet, and autonomous trading.
 EOF
 
-# Post-install script
-cat > "$DEB_DIR/DEBIAN/postinst" << 'EOF'
+# Post-install — runs during dpkg -i
+cat > "$DEB_ROOT/DEBIAN/postinst" << 'POSTINST'
 #!/bin/bash
 set -e
+echo "🚀 Setting up HSMC Platform..."
 
-echo "🚀 HSMC Platform Post-Install"
-echo "=============================="
-
-# Install Bun if missing
+# Install Bun
 if ! command -v bun &>/dev/null; then
     echo "📦 Installing Bun..."
     curl -fsSL https://bun.sh/install | bash
-    export PATH="$HOME/.bun/bin:$PATH"
-    # Also symlink for system-wide access
-    if [ -f "$HOME/.bun/bin/bun" ]; then
-        ln -sf "$HOME/.bun/bin/bun" /usr/local/bin/bun 2>/dev/null || true
-    fi
+    export BUN_INSTALL="$HOME/.bun"
+    export PATH="$BUN_INSTALL/bin:$PATH"
 fi
 
-cd /opt/hsmc
-
-# Install dependencies
-echo "📦 Installing dependencies..."
+# Install deps
+cd /opt/hsmc-platform
 bun install
 
 # Create .env from example
 if [ ! -f .env ]; then
     cp .env.example .env
-    echo "⚠️  Created .env from .env.example — EDIT WITH YOUR API KEYS!"
-    echo "   nano /opt/hsmc/.env"
+    echo "⚠️  Created .env — edit with: nano /opt/hsmc-platform/.env"
 fi
 
-# Build for production
-echo "🔨 Building..."
-bun run build 2>/dev/null || echo "⚠️  Build skipped (dev mode available)"
+# Desktop entry
+cat > /usr/share/applications/hsmc-platform.desktop << 'DESKTOP'
+[Desktop Entry]
+Name=HSMC Platform
+Comment=AI Hedge Fund OS
+Exec=bun run --cwd=/opt/hsmc-platform dev
+Icon=hsmc-platform
+Terminal=false
+Type=Application
+Categories=Finance;
+DESKTOP
 
-echo ""
-echo "✅ HSMC installed successfully!"
-echo "   Start dev:  cd /opt/hsmc && bun run dev"
-echo "   Start prod: cd /opt/hsmc && bun run start"
-echo "   Open:       http://localhost:3000"
-echo ""
-EOF
-chmod +x "$DEB_DIR/DEBIAN/postinst"
+echo "✅ HSMC Platform installed!"
+echo "   Start: cd /opt/hsmc-platform && bun run dev"
+echo "   Or launch from applications menu"
+POSTINST
+chmod +x "$DEB_ROOT/DEBIAN/postinst"
 
-# Pre-remove script
-cat > "$DEB_DIR/DEBIAN/prerm" << 'EOF'
+# Pre-remove cleanup
+cat > "$DEB_ROOT/DEBIAN/prerm" << 'PRERM'
 #!/bin/bash
 echo "Removing HSMC Platform..."
-# Stop any running HSMC processes
-pkill -f "bun run.*hsmc" 2>/dev/null || true
-pkill -f "bun.*serve.ts" 2>/dev/null || true
-EOF
-chmod +x "$DEB_DIR/DEBIAN/prerm"
+rm -f /usr/share/applications/hsmc-platform.desktop
+PRERM
+chmod +x "$DEB_ROOT/DEBIAN/prerm"
 
-# Build the .deb
-echo "🔨 Building .deb package..."
-dpkg-deb --build "$DEB_DIR" "hsmc-platform_${VERSION}_all.deb"
-
-echo ""
-echo "✅ .deb built: hsmc-platform_${VERSION}_all.deb"
-echo "   Install: sudo dpkg -i hsmc-platform_${VERSION}_all.deb"
+# Build .deb
+dpkg-deb --build "$DEB_ROOT" "$DEB_NAME.deb"
+echo "✅ Built: $DEB_NAME.deb"
+echo "   Install: sudo dpkg -i $DEB_NAME.deb"

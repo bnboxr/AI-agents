@@ -3,6 +3,9 @@
 // spins up specialized agents, manages their lifecycle (create → work →
 // merge results → destroy), and returns a unified SwarmResult.
 //
+// Updated: integrates TaskRouter (task-router.ts) for AI-driven planning
+// and AgentPool (agent-queue.ts) for dynamic agent isolation & spawning.
+//
 // Integrates with the existing 29-agent framework in src/lib/agents/ and
 // the multi-provider LLM pipeline in src/lib/llm/multi-provider.ts.
 
@@ -10,6 +13,8 @@ import type { AgentReport, AgentRole } from "./agents/types";
 import { queryWithPrompt } from "./llm/multi-provider";
 import { findAvailableLocalSource } from "./local-ai-scanner";
 import { getHardwareProfile, recommendModel } from "./model-selector";
+import { planTask, executeTaskPlan, type TaskRequest, type TaskPlan } from "./task-router";
+import { AgentPool, getAgentPool, type AgentSlot } from "./agent-queue";
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -17,7 +22,7 @@ export interface SwarmTask {
   id: string;
   role: AgentRole;
   description: string;
-  priority: number; // 1-10, higher = sooner
+  priority: number;       // 1-10, higher = sooner
   dependencies: string[]; // task ids that must complete first
 }
 
@@ -40,12 +45,16 @@ export interface SwarmResult {
   durationMs: number;
   localAIAvailable: boolean;
   errors: string[];
+  // ── Kimi swarm extras ──
+  plan?: TaskPlan;
+  agentsCreated: number;
+  agentsReused: number;
 }
 
 export interface SwarmConfig {
-  maxAgents?: number; // maximum concurrent agents (default: 5)
-  timeoutMs?: number; // per-task timeout (default: 30_000)
-  localOnly?: boolean; // prefer local AI only (default: false)
+  maxAgents?: number;     // maximum concurrent agents (default: 5)
+  timeoutMs?: number;     // per-task timeout (default: 30_000)
+  localOnly?: boolean;    // prefer local AI only (default: false)
   verbose?: boolean;
 }
 
@@ -58,46 +67,26 @@ const DEFAULT_CONFIG: Required<SwarmConfig> = {
   verbose: false,
 };
 
-// ── Role Selection ─────────────────────────────────────────────────
+// ── Role Selection (kept for backward compat) ─────────────────────
 
-/**
- * Maps a project description to the minimal set of agent roles needed.
- * Uses LLM for intelligent role selection when available.
- */
 function selectRoles(
   description: string,
   agentCount: number,
 ): AgentRole[] {
-  // Default role set for most projects
   const allRoles: AgentRole[] = [
-    "market",
-    "technical",
-    "risk",
-    "strategy",
-    "reasoning",
+    "market", "technical", "risk", "strategy", "reasoning",
   ];
 
-  // For smaller projects, use a subset
-  if (agentCount <= 3) {
-    return ["market", "risk", "strategy"];
-  }
+  if (agentCount <= 3) return ["market", "risk", "strategy"];
+  if (agentCount <= 5) return allRoles;
 
-  if (agentCount <= 5) {
-    return allRoles;
-  }
-
-  // For larger swarms, add specialized agents
   return [
     ...allRoles,
-    "execution",
-    "sentiment",
-    "macro",
-    "portfolio",
-    "learning",
+    "execution", "sentiment", "macro", "portfolio", "learning",
   ];
 }
 
-// ── Task Decomposition ─────────────────────────────────────────────
+// ── Task Decomposition (legacy, kept for compat) ──────────────────
 
 function decomposeProject(
   description: string,
@@ -108,22 +97,15 @@ function decomposeProject(
 
   const roleDescriptions: Record<string, string> = {
     market: "Analyze overall market conditions and trends",
-    technical:
-      "Perform technical analysis on relevant assets/charts",
+    technical: "Perform technical analysis on relevant assets/charts",
     risk: "Evaluate risk exposure and recommend position sizing",
-    strategy:
-      "Develop the execution strategy based on all inputs",
-    reasoning:
-      "Provide a final reasoned analysis and recommendation",
-    execution:
-      "Plan execution details: timing, venues, slippage",
-    sentiment:
-      "Analyze market sentiment from news and social media",
+    strategy: "Develop the execution strategy based on all inputs",
+    reasoning: "Provide a final reasoned analysis and recommendation",
+    execution: "Plan execution details: timing, venues, slippage",
+    sentiment: "Analyze market sentiment from news and social media",
     macro: "Assess macroeconomic factors affecting the project",
-    portfolio:
-      "Evaluate portfolio impact and capital allocation",
-    learning:
-      "Apply historical learnings to improve the strategy",
+    portfolio: "Evaluate portfolio impact and capital allocation",
+    learning: "Apply historical learnings to improve the strategy",
   };
 
   for (let i = 0; i < roles.length; i++) {
@@ -132,22 +114,18 @@ function decomposeProject(
       id: `${role}-${Date.now()}`,
       role,
       description: `${roleDescriptions[role] ?? "Analyze and report"} for: ${description}`,
-      priority: 10 - i, // first roles get highest priority
-      dependencies: [], // all run in parallel by default
+      priority: 10 - i,
+      dependencies: [],
     });
   }
 
-  // Strategy depends on market, technical, and risk analyses
   const strategyTask = tasks.find((t) => t.role === "strategy");
   if (strategyTask) {
     strategyTask.dependencies = tasks
-      .filter((t) =>
-        ["market", "technical", "risk"].includes(t.role),
-      )
+      .filter((t) => ["market", "technical", "risk"].includes(t.role))
       .map((t) => t.id);
   }
 
-  // Reasoning depends on everything else
   const reasoningTask = tasks.find((t) => t.role === "reasoning");
   if (reasoningTask) {
     reasoningTask.dependencies = tasks
@@ -160,11 +138,6 @@ function decomposeProject(
 
 // ── Simulated Agent Execution ──────────────────────────────────────
 
-/**
- * Runs a single task via LLM. In production, this would invoke the
- * actual agent class from src/lib/agents/ for architectural purity.
- * Currently uses the multi-provider pipeline for flexibility.
- */
 async function executeTask(
   task: SwarmTask,
   config: Required<SwarmConfig>,
@@ -181,8 +154,7 @@ async function executeTask(
       timeoutMs: config.timeoutMs,
     });
 
-    const content =
-      result.response?.content ?? "No analysis produced";
+    const content = result.response?.content ?? "No analysis produced";
     const durationMs = Date.now() - startTime;
 
     const report: AgentReport = {
@@ -192,19 +164,10 @@ async function executeTask(
       direction: extractDirection(content),
       confidence: extractConfidence(content),
       reasoning: content,
-      data: {
-        durationMs,
-        provider: result.response?.provider ?? "none",
-      },
+      data: { durationMs, provider: result.response?.provider ?? "none" },
     };
 
-    return {
-      taskId: task.id,
-      role: task.role,
-      report,
-      error: null,
-      durationMs,
-    };
+    return { taskId: task.id, role: task.role, report, error: null, durationMs };
   } catch (err) {
     const durationMs = Date.now() - startTime;
     return {
@@ -229,20 +192,13 @@ function extractDirection(content: string): "LONG" | "SHORT" | "NEUTRAL" {
 }
 
 function extractConfidence(content: string): number {
-  // Try to find "confidence: XX" or "XX% confident"
-  const percentMatch = content.match(
-    /confidence[:\s]*(\d{1,3})/i,
-  );
+  const percentMatch = content.match(/confidence[:\s]*(\d{1,3})/i);
   if (percentMatch) {
     return Math.min(100, Math.max(0, parseInt(percentMatch[1])));
   }
-
   const pctMatch = content.match(/(\d{1,3})%/);
-  if (pctMatch) {
-    return Math.min(100, Math.max(0, parseInt(pctMatch[1])));
-  }
-
-  return 50; // default moderate confidence
+  if (pctMatch) return Math.min(100, Math.max(0, parseInt(pctMatch[1])));
+  return 50;
 }
 
 // ── Merge Results ──────────────────────────────────────────────────
@@ -251,9 +207,7 @@ function mergeResults(
   taskResults: SwarmTaskResult[],
   projectDescription: string,
 ): string {
-  const successful = taskResults.filter(
-    (t) => t.report !== null,
-  );
+  const successful = taskResults.filter((t) => t.report !== null);
   const failed = taskResults.filter((t) => t.error !== null);
 
   const lines: string[] = [
@@ -277,29 +231,19 @@ function mergeResults(
   if (failed.length > 0) {
     lines.push(`## Errors`);
     for (const result of failed) {
-      lines.push(
-        `- **${result.role}**: ${result.error}`,
-      );
+      lines.push(`- **${result.role}**: ${result.error}`);
     }
   }
 
-  // Compute aggregate direction and confidence
-  const directions = successful.map(
-    (r) => r.report!.direction,
-  );
-  const longCount = directions.filter((d) => d === "LONG")
-    .length;
-  const shortCount = directions.filter((d) => d === "SHORT")
-    .length;
-  const neutralCount = directions.filter((d) => d === "NEUTRAL")
-    .length;
+  const directions = successful.map((r) => r.report!.direction);
+  const longCount = directions.filter((d) => d === "LONG").length;
+  const shortCount = directions.filter((d) => d === "SHORT").length;
+  const neutralCount = directions.filter((d) => d === "NEUTRAL").length;
 
   const avgConfidence = successful.length > 0
     ? Math.round(
-        successful.reduce(
-          (sum, r) => sum + r.report!.confidence,
-          0,
-        ) / successful.length,
+        successful.reduce((sum, r) => sum + r.report!.confidence, 0) /
+          successful.length,
       )
     : 0;
 
@@ -316,19 +260,19 @@ function mergeResults(
 
 export class SwarmOrchestrator {
   private config: Required<SwarmConfig>;
+  private pool: AgentPool;
 
   constructor(config: SwarmConfig = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
+    this.pool = getAgentPool();
   }
 
   /**
-   * Execute a project request by decomposing it into tasks,
-   * running agents in parallel (with dependency ordering), and
-   * merging results into a unified report.
+   * Execute a project request using the Kimi-style task router + agent pool.
+   * Uses AI-driven planning (task-router.ts) and dynamic agent isolation
+   * (agent-queue.ts) with on-demand spawning.
    */
-  async executeProject(
-    description: string,
-  ): Promise<SwarmResult> {
+  async executeProject(description: string): Promise<SwarmResult> {
     const startTime = Date.now();
     const errors: string[] = [];
 
@@ -346,76 +290,111 @@ export class SwarmOrchestrator {
       // Ignore scan errors
     }
 
-    // ── Step 2: Hardware-aware agent count ──
-    const hw = getHardwareProfile();
-    const agentCount = this.config.maxAgents; // Use max config, not auto-scale for now
+    // ── Step 2: AI-driven task planning ──
+    const request: TaskRequest = {
+      description,
+      priority: "medium",
+    };
+
+    if (this.config.verbose) {
+      console.log(`[Swarm] Planning task: "${description}"`);
+    }
+
+    const plan = await planTask(request);
 
     if (this.config.verbose) {
       console.log(
-        `[Swarm] Hardware: ${hw.ramGB}GB RAM, ${hw.cpus} CPUs → ${agentCount} agents`,
+        `[Swarm] Plan: ${plan.agentsNeeded} agents, ${plan.subtasks.length} subtasks, ~${plan.estimatedTime}s`,
       );
     }
 
-    // ── Step 3: Decompose project ──
-    const tasks = decomposeProject(description, agentCount);
+    // ── Step 3: Route subtasks to agent pool ──
+    let createdCount = 0;
+    let reusedCount = 0;
 
-    if (this.config.verbose) {
-      console.log(
-        `[Swarm] Decomposed into ${tasks.length} tasks:`,
-        tasks.map((t) => t.role).join(", "),
-      );
-    }
-
-    // ── Step 4: Execute tasks in parallel (with batch limiting) ──
-    const taskResults: SwarmTaskResult[] = [];
-
-    // Sort by priority, then execute in batches
-    const sorted = [...tasks].sort(
+    const sortedSubtasks = [...plan.subtasks].sort(
       (a, b) => b.priority - a.priority,
     );
 
-    // Execute in batches of maxAgents
-    for (let i = 0; i < sorted.length; i += this.config.maxAgents) {
-      const batch = sorted.slice(i, i + this.config.maxAgents);
-      const batchResults = await Promise.all(
-        batch.map((task) =>
-          executeTask(task, this.config),
-        ),
-      );
+    const taskResults: SwarmTaskResult[] = [];
+
+    // Execute subtasks in batches respecting pool capacity
+    for (let i = 0; i < sortedSubtasks.length; i += this.config.maxAgents) {
+      const batch = sortedSubtasks.slice(i, i + this.config.maxAgents);
+
+      const batchPromises = batch.map(async (subtask) => {
+        // Try to acquire an existing idle agent
+        let slot = this.pool.acquire(subtask.specialization);
+
+        if (!slot) {
+          // All busy — spawn a new temporary agent
+          slot = this.pool.spawn(subtask.specialization);
+          if (slot) {
+            createdCount++;
+          } else {
+            // Pool is full — queue until a slot frees (simple retry)
+            // For now, execute without a slot (direct execution)
+          }
+        } else {
+          reusedCount++;
+        }
+
+        if (slot) {
+          this.pool.assign(slot.agentId, subtask.description);
+        }
+
+        // Execute via the legacy path (LLM call)
+        const swarmTask: SwarmTask = {
+          id: subtask.id,
+          role: subtask.specialization,
+          description: subtask.description,
+          priority: subtask.priority,
+          dependencies: subtask.dependencies,
+        };
+
+        const result = await executeTask(swarmTask, this.config);
+
+        if (slot) {
+          this.pool.release(slot.agentId, result.durationMs);
+        }
+
+        return result;
+      });
+
+      const batchResults = await Promise.all(batchPromises);
       taskResults.push(...batchResults);
 
       for (const r of batchResults) {
-        if (r.error) {
-          errors.push(`${r.role}: ${r.error}`);
-        }
+        if (r.error) errors.push(`${r.role}: ${r.error}`);
       }
     }
 
+    // ── Step 4: Cleanup temporary agents ──
+    this.pool.cleanup();
+
     // ── Step 5: Merge results ──
-    const mergedReport = mergeResults(
-      taskResults,
-      description,
-    );
-    const tasksCompleted = taskResults.filter(
-      (t) => t.report !== null,
-    ).length;
+    const mergedReport = mergeResults(taskResults, description);
+    const tasksCompleted = taskResults.filter((t) => t.report !== null).length;
 
     const result: SwarmResult = {
       success: tasksCompleted > 0,
       projectDescription: description,
-      tasksPlanned: tasks.length,
+      tasksPlanned: plan.subtasks.length,
       tasksCompleted,
       taskResults,
       mergedReport,
-      agentCount: tasks.length,
+      agentCount: plan.agentsNeeded,
       durationMs: Date.now() - startTime,
       localAIAvailable,
       errors,
+      plan,
+      agentsCreated: createdCount,
+      agentsReused: reusedCount,
     };
 
     if (this.config.verbose) {
       console.log(
-        `[Swarm] Complete: ${tasksCompleted}/${tasks.length} tasks in ${result.durationMs}ms`,
+        `[Swarm] Complete: ${tasksCompleted}/${plan.subtasks.length} tasks in ${result.durationMs}ms — ${reusedCount} reused, ${createdCount} created`,
       );
     }
 
@@ -429,14 +408,26 @@ export class SwarmOrchestrator {
     description: string,
     maxAgents: number = 3,
   ): Promise<SwarmResult> {
-    const orchestrator = new SwarmOrchestrator({
-      maxAgents,
-      verbose: false,
-    });
+    const orchestrator = new SwarmOrchestrator({ maxAgents, verbose: false });
     return orchestrator.executeProject(description);
+  }
+
+  /**
+   * Kimi-style handleTask — returns a rich response with plan details.
+   * Designed to be called from the chat UI for the new swarm interface.
+   */
+  async handleTask(description: string): Promise<SwarmResult> {
+    return this.executeProject(description);
+  }
+
+  /**
+   * Get pool snapshot for the dashboard sidebar.
+   */
+  getPoolSnapshot() {
+    return this.pool.snapshot();
   }
 }
 
 // ── Re-exports for convenience ─────────────────────────────────────
 
-export { getHardwareProfile, recommendModel };
+export { getHardwareProfile, recommendModel, getAgentPool };

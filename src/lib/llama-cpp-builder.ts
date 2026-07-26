@@ -13,7 +13,7 @@
 import { existsSync, mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { homedir, platform, cpus, tmpdir } from "node:os";
-import { $ } from "bun";
+import { execSync, spawnSync } from "child_process";
 
 // ── Constants ─────────────────────────────────────────────────────────
 
@@ -41,15 +41,12 @@ const SEARCH_PATHS = [
  * Returns `null` if the binary is not found on PATH.
  */
 function which(name: string): string | null {
-  const result = Bun.spawnSync(["which", name], {
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  if (result.exitCode === 0) {
-    const out = result.stdout.toString().trim();
+  try {
+    const out = execSync(`which ${name}`, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
     return out.length > 0 ? out : null;
+  } catch {
+    return null;
   }
-  return null;
 }
 
 /**
@@ -88,9 +85,12 @@ export async function checkBuildTools(): Promise<BuildToolsStatus> {
   const tools = ["cmake", "make", "gcc", "git"] as const;
   const [cmake, make, gcc, git] = await Promise.all(
     tools.map(async (tool) => {
-      const result =
-        await $`which ${tool}`.quiet().nothrow();
-      return result.exitCode === 0;
+      try {
+        execSync(`which ${tool}`, { stdio: "ignore" });
+        return true;
+      } catch {
+        return false;
+      }
     }),
   );
   return { cmake, make, gcc, git };

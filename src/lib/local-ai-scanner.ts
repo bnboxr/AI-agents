@@ -10,8 +10,8 @@
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { homedir, tmpdir, cpus } from "node:os";
+import { spawn, type ChildProcess } from "child_process";
 import { ensureLlamaCpp } from "./llama-cpp-builder";
-import type { Subprocess } from "bun";
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -215,25 +215,23 @@ export async function findAvailableLocalSource(): Promise<{
  * Find a free TCP port on localhost by binding to port 0 and
  * immediately releasing it. Returns the ephemeral port number assigned.
  */
-export function findFreePort(): number {
-  let port = 0;
-  try {
-    const server = Bun.listen({
-      port: 0,
-      hostname: "127.0.0.1",
-      socket: {
-        data() {
-          /* no-op — just need a port */
-        },
-      },
+export async function findFreePort(): Promise<number> {
+  const { createServer } = await import("node:net");
+  return new Promise((resolve, reject) => {
+    const server = createServer();
+    server.listen(0, "127.0.0.1", () => {
+      const addr = server.address();
+      if (addr && typeof addr === "object") {
+        const port = addr.port;
+        server.close(() => resolve(port));
+      } else {
+        server.close(() => resolve(8081 + Math.floor(Math.random() * 1000)));
+      }
     });
-    port = (server as unknown as { port: number }).port;
-    server.stop(true);
-    return port;
-  } catch {
-    // Fallback: pick a port in the ephemeral range
-    return 8081 + Math.floor(Math.random() * 1000);
-  }
+    server.on("error", () => {
+      resolve(8081 + Math.floor(Math.random() * 1000));
+    });
+  });
 }
 
 // ── Wait for Server ─────────────────────────────────────────────────
@@ -281,7 +279,7 @@ export async function startLlamaCppServer(
     host?: string;
     threads?: number;
   },
-): Promise<{ port: number; process: Subprocess }> {
+): Promise<{ port: number; process: ChildProcess }> {
   // 1. Ensure we have a llama-server binary
   const binary = await ensureLlamaCpp();
 
@@ -309,16 +307,16 @@ export async function startLlamaCppServer(
   );
 
   // 4. Spawn llama-server
-  const proc = Bun.spawn([binary, ...args], {
-    stdout: "pipe",
-    stderr: "pipe",
-    onExit(_proc, exitCode, signalCode, error) {
-      if (error) {
-        console.error(`[LlamaCpp] Server exited with error:`, error);
-      } else if (exitCode !== 0 && signalCode === null) {
-        console.error(`[LlamaCpp] Server exited with code ${exitCode}`);
-      }
-    },
+  const proc = spawn(binary, args, {
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  proc.on("exit", (exitCode, signalCode) => {
+    if (exitCode !== null && exitCode !== 0) {
+      console.error(`[LlamaCpp] Server exited with code ${exitCode}`);
+    }
+  });
+  proc.on("error", (error) => {
+    console.error(`[LlamaCpp] Server exited with error:`, error);
   });
 
   // 5. Wait for the server to be ready
@@ -343,12 +341,12 @@ export async function startLlamaCppServer(
 /**
  * Gracefully stop a llama-server subprocess.
  */
-export function stopLlamaCppServer(proc: Subprocess): void {
+export function stopLlamaCppServer(proc: ChildProcess): void {
   try {
     proc.kill("SIGTERM");
     // Force kill after 5s if still alive
     setTimeout(() => {
-      if (!proc.killed) proc.kill("SIGKILL");
+      try { proc.kill("SIGKILL"); } catch { /* already dead */ }
     }, 5_000);
   } catch {
     // Already dead

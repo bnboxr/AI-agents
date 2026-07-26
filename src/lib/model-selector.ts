@@ -6,10 +6,10 @@
 // Now includes auto-download capability: `downloadModel()` fetches a GGUF
 // from Hugging Face via direct URL or huggingface-cli, with progress reporting.
 
-import { createWriteStream, existsSync, mkdirSync, readdirSync } from "node:fs";
+import { createWriteStream, existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { homedir, totalmem, freemem, cpus, platform, arch } from "node:os";
-import { $ } from "bun";
+import { execSync } from "child_process";
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -389,7 +389,7 @@ export async function downloadFile(
     const res = await fetch(url, { method: "HEAD" });
     if (res.ok) {
       const remoteSize = parseInt(res.headers.get("content-length") ?? "0", 10);
-      const localSize = Bun.file(dest).size;
+      const localSize = statSync(dest).size;
       if (remoteSize > 0 && localSize === remoteSize) {
         console.log(`[ModelSelector] Already downloaded: ${dest}`);
         onProgress?.(100);
@@ -463,15 +463,27 @@ export async function downloadModel(
   const dest = join(modelsDir, filename || basename(modelName) || "model.gguf");
 
   // Prefer huggingface-cli if available (handles auth, resuming, etc.)
-  const hfCliCheck = await $`which huggingface-cli`.quiet().nothrow();
-  if (hfCliCheck.exitCode === 0 && repo && filename) {
+  let hfCliAvailable = false;
+  try {
+    execSync("which huggingface-cli", { stdio: "ignore" });
+    hfCliAvailable = true;
+  } catch {
+    hfCliAvailable = false;
+  }
+  if (hfCliAvailable && repo && filename) {
     console.log(`[ModelSelector] Using huggingface-cli for ${repo}/${filename}`);
-    const result =
-      await $`huggingface-cli download ${repo} ${filename} --local-dir ${modelsDir} --local-dir-use-symlinks False`
-        .quiet()
-        .nothrow();
+    let hfCliSucceeded = false;
+    try {
+      execSync(
+        `huggingface-cli download ${repo} ${filename} --local-dir ${modelsDir} --local-dir-use-symlinks False`,
+        { stdio: "pipe", encoding: "utf8" }
+      );
+      hfCliSucceeded = true;
+    } catch {
+      hfCliSucceeded = false;
+    }
 
-    if (result.exitCode === 0) {
+    if (hfCliSucceeded) {
       onProgress?.(100);
       // Find the downloaded file
       const expectedPath = join(modelsDir, filename);

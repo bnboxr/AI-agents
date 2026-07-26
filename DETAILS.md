@@ -12,11 +12,12 @@
 2. [Architecture](#-architecture)
 3. [Technology Stack](#-technology-stack)
 4. [Features](#-features)
-5. [Deployment](#-deployment)
-6. [API Keys & Configuration](#-api-keys--configuration)
-7. [Future Roadmap](#-future-roadmap)
-8. [Contributing](#-contributing)
-9. [License & Credits](#-license--credits)
+5. [One-Click Installers](#-one-click-installers)
+6. [Deployment](#-deployment)
+7. [API Keys & Configuration](#-api-keys--configuration)
+8. [Future Roadmap](#-future-roadmap)
+9. [Contributing](#-contributing)
+10. [License & Credits](#-license--credits)
 
 ---
 
@@ -794,6 +795,93 @@ Emitted via the `agentBus` event system and persisted to database.
 
 ---
 
+
+## 📥 One-Click Installers
+
+The fastest way to get HSMC running on your machine — no manual setup required.
+
+### 🐧 Linux (install.sh)
+
+Single command to download, install, and launch:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/bnboxr/AI-agents/main/install.sh | bash
+```
+
+**What it does:**
+1. Installs [Bun](https://bun.sh) runtime if missing
+2. Clones (or updates) the repo to `~/hsmc-platform`
+3. Installs all dependencies (`bun install`)
+4. Creates `.env` from `.env.example` template
+5. Adds a desktop shortcut (`.desktop` file)
+6. Launches the dev server at `http://localhost:3000`
+
+**Manual install:**
+```bash
+git clone https://github.com/bnboxr/AI-agents.git ~/hsmc-platform
+cd ~/hsmc-platform
+bash install.sh
+```
+
+### 🪟 Windows (install.bat)
+
+Download and double-click `install.bat`, or run from PowerShell:
+
+```powershell
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/bnboxr/AI-agents/main/install.bat" -OutFile "$env:TEMP\install.bat"
+Start-Process "$env:TEMP\install.bat"
+```
+
+**What it does:**
+1. Installs Bun via PowerShell
+2. Clones (or updates) the repo to `%USERPROFILE%\hsmc-platform`
+3. Installs all dependencies
+4. Ready — run `bun run dev` to start
+
+### 📦 Debian/Ubuntu Package (.deb)
+
+Build a native `.deb` package for system-wide installation:
+
+```bash
+git clone https://github.com/bnboxr/AI-agents.git
+cd AI-agents
+bash build-deb.sh
+sudo dpkg -i hsmc-platform_1.0.0_all.deb
+```
+
+**The .deb package:**
+- Installs to `/opt/hsmc`
+- Creates desktop entry and application icon
+- Runs post-install: installs Bun, dependencies, builds
+- Clean uninstall: `sudo dpkg -r hsmc-platform`
+
+### 🖥️ Windows Standalone (.exe)
+
+Build a self-contained Windows executable (no Bun install needed on target):
+
+```bash
+# Run on Linux (cross-compiles to Windows x64)
+git clone https://github.com/bnboxr/AI-agents.git
+cd AI-agents
+bash build-exe.sh
+# Copy hsmc-server.exe to any Windows machine and run!
+```
+
+**The .exe bundles:**
+- Full Bun runtime (no external dependencies)
+- Production build of HSMC
+- Starts server at `http://localhost:3000`
+
+### 📋 Quick Reference
+
+| Platform | File | Method |
+|----------|------|--------|
+| Linux | `install.sh` | `curl ... \| bash` — one command |
+| Windows | `install.bat` | Double-click or PowerShell |
+| Debian/Ubuntu | `build-deb.sh` | Native `.deb` package |
+| Windows (offline) | `build-exe.sh` | Standalone `.exe` binary |
+
+> ⚠️ **After installing:** Edit `.env` with your API keys! At minimum, set one LLM provider key (`OPENAI_API_KEY`, `DEEPSEEK_API_KEY`, `GROK_API_KEY`, or `GEMINI_API_KEY`).
 ## 📦 Deployment
 
 ### Quick Deploy (VPS)
@@ -965,6 +1053,8 @@ COPY_TRADE_WALLETS='0x1234...,0x5678...'
 ## 👥 Contributing
 
 ### Getting Started
+
+> 💡 **Just want to run HSMC?** Use the [One-Click Installers](#-one-click-installers) instead — they handle everything automatically. The steps below are for contributors who want to modify the code.
 
 1. **Fork** the repository: `https://github.com/bnboxr/AI-agents`
 2. **Clone** your fork:

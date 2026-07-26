@@ -13,11 +13,13 @@ import { Route as WithdrawRouteImport } from './routes/withdraw'
 import { Route as VaultRouteImport } from './routes/vault'
 import { Route as TrainingRouteImport } from './routes/training'
 import { Route as TradeRouteImport } from './routes/trade'
+import { Route as TermsRouteImport } from './routes/terms'
 import { Route as SwapRouteImport } from './routes/swap'
 import { Route as StakeRouteImport } from './routes/stake'
 import { Route as SignalsRouteImport } from './routes/signals'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as RiskRouteImport } from './routes/risk'
+import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as PosRouteImport } from './routes/pos'
 import { Route as PortfolioRouteImport } from './routes/portfolio'
 import { Route as PayPwaRouteImport } from './routes/pay-pwa'
@@ -63,6 +65,11 @@ const TradeRoute = TradeRouteImport.update({
   path: '/trade',
   getParentRoute: () => rootRouteImport,
 } as any)
+const TermsRoute = TermsRouteImport.update({
+  id: '/terms',
+  path: '/terms',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SwapRoute = SwapRouteImport.update({
   id: '/swap',
   path: '/swap',
@@ -86,6 +93,11 @@ const SettingsRoute = SettingsRouteImport.update({
 const RiskRoute = RiskRouteImport.update({
   id: '/risk',
   path: '/risk',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PrivacyRoute = PrivacyRouteImport.update({
+  id: '/privacy',
+  path: '/privacy',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PosRoute = PosRouteImport.update({
@@ -228,11 +240,13 @@ export interface FileRoutesByFullPath {
   '/pay-pwa': typeof PayPwaRoute
   '/portfolio': typeof PortfolioRoute
   '/pos': typeof PosRouteWithChildren
+  '/privacy': typeof PrivacyRoute
   '/risk': typeof RiskRoute
   '/settings': typeof SettingsRoute
   '/signals': typeof SignalsRoute
   '/stake': typeof StakeRoute
   '/swap': typeof SwapRoute
+  '/terms': typeof TermsRoute
   '/trade': typeof TradeRoute
   '/training': typeof TrainingRoute
   '/vault': typeof VaultRoute
@@ -263,11 +277,13 @@ export interface FileRoutesByTo {
   '/pay-pwa': typeof PayPwaRoute
   '/portfolio': typeof PortfolioRoute
   '/pos': typeof PosRouteWithChildren
+  '/privacy': typeof PrivacyRoute
   '/risk': typeof RiskRoute
   '/settings': typeof SettingsRoute
   '/signals': typeof SignalsRoute
   '/stake': typeof StakeRoute
   '/swap': typeof SwapRoute
+  '/terms': typeof TermsRoute
   '/trade': typeof TradeRoute
   '/training': typeof TrainingRoute
   '/vault': typeof VaultRoute
@@ -299,11 +315,13 @@ export interface FileRoutesById {
   '/pay-pwa': typeof PayPwaRoute
   '/portfolio': typeof PortfolioRoute
   '/pos': typeof PosRouteWithChildren
+  '/privacy': typeof PrivacyRoute
   '/risk': typeof RiskRoute
   '/settings': typeof SettingsRoute
   '/signals': typeof SignalsRoute
   '/stake': typeof StakeRoute
   '/swap': typeof SwapRoute
+  '/terms': typeof TermsRoute
   '/trade': typeof TradeRoute
   '/training': typeof TrainingRoute
   '/vault': typeof VaultRoute
@@ -336,11 +354,13 @@ export interface FileRouteTypes {
     | '/pay-pwa'
     | '/portfolio'
     | '/pos'
+    | '/privacy'
     | '/risk'
     | '/settings'
     | '/signals'
     | '/stake'
     | '/swap'
+    | '/terms'
     | '/trade'
     | '/training'
     | '/vault'
@@ -371,11 +391,13 @@ export interface FileRouteTypes {
     | '/pay-pwa'
     | '/portfolio'
     | '/pos'
+    | '/privacy'
     | '/risk'
     | '/settings'
     | '/signals'
     | '/stake'
     | '/swap'
+    | '/terms'
     | '/trade'
     | '/training'
     | '/vault'
@@ -406,11 +428,13 @@ export interface FileRouteTypes {
     | '/pay-pwa'
     | '/portfolio'
     | '/pos'
+    | '/privacy'
     | '/risk'
     | '/settings'
     | '/signals'
     | '/stake'
     | '/swap'
+    | '/terms'
     | '/trade'
     | '/training'
     | '/vault'
@@ -442,11 +466,13 @@ export interface RootRouteChildren {
   PayPwaRoute: typeof PayPwaRoute
   PortfolioRoute: typeof PortfolioRoute
   PosRoute: typeof PosRouteWithChildren
+  PrivacyRoute: typeof PrivacyRoute
   RiskRoute: typeof RiskRoute
   SettingsRoute: typeof SettingsRoute
   SignalsRoute: typeof SignalsRoute
   StakeRoute: typeof StakeRoute
   SwapRoute: typeof SwapRoute
+  TermsRoute: typeof TermsRoute
   TradeRoute: typeof TradeRoute
   TrainingRoute: typeof TrainingRoute
   VaultRoute: typeof VaultRoute
@@ -483,6 +509,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TradeRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/terms': {
+      id: '/terms'
+      path: '/terms'
+      fullPath: '/terms'
+      preLoaderRoute: typeof TermsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/swap': {
       id: '/swap'
       path: '/swap'
@@ -516,6 +549,13 @@ declare module '@tanstack/react-router' {
       path: '/risk'
       fullPath: '/risk'
       preLoaderRoute: typeof RiskRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/privacy': {
+      id: '/privacy'
+      path: '/privacy'
+      fullPath: '/privacy'
+      preLoaderRoute: typeof PrivacyRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/pos': {
@@ -737,11 +777,13 @@ const rootRouteChildren: RootRouteChildren = {
   PayPwaRoute: PayPwaRoute,
   PortfolioRoute: PortfolioRoute,
   PosRoute: PosRouteWithChildren,
+  PrivacyRoute: PrivacyRoute,
   RiskRoute: RiskRoute,
   SettingsRoute: SettingsRoute,
   SignalsRoute: SignalsRoute,
   StakeRoute: StakeRoute,
   SwapRoute: SwapRoute,
+  TermsRoute: TermsRoute,
   TradeRoute: TradeRoute,
   TrainingRoute: TrainingRoute,
   VaultRoute: VaultRoute,

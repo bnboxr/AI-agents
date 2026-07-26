@@ -480,7 +480,6 @@ export const fetchSignalHistory = createServerFn({ method: "GET" }).handler(
 /**
  * Seed some demo signal history so the page isn't empty on first load.
  */
-export function seedDemoSignals(): void {
   const existing = getRevenueSignalHistory(undefined, 1);
   if (existing.length > 0) return; // Already has signals
 

@@ -15,7 +15,6 @@ import AlertToast from "~/components/AlertToast";
 import FloatingAIAssistant from "~/components/FloatingAIAssistant";
 import HelpGuide from "~/components/HelpGuide";
 import ParticleField from "~/components/ParticleField";
-import { isDemoMode, toggleDemo } from "~/lib/demo-mode";
 import ErrorBoundary from "~/components/ErrorBoundary";
 import CookieConsent from "~/components/CookieConsent";
 import { Toaster } from "react-hot-toast";
@@ -402,14 +401,12 @@ function DemoModeToggle() {
 
   useEffect(() => {
     setMounted(true);
-    setDemo(isDemoMode());
   }, []);
 
   if (!mounted) return null;
 
   return (
     <button
-      onClick={toggleDemo}
       className={`px-2.5 py-1.5 rounded-lg border text-xs font-bold font-mono transition-all duration-200 flex items-center gap-1.5 ${
         demo
           ? "border-yellow-500/50 bg-yellow-500/10 text-yellow-400 hover:bg-yellow-500/20"
@@ -431,7 +428,6 @@ function DemoBanner() {
 
   useEffect(() => {
     setMounted(true);
-    setDemo(isDemoMode());
   }, []);
 
   if (!mounted || !demo) return null;

@@ -12,7 +12,6 @@
 
 const STORAGE_KEY = "hs_demo";
 
-export function isDemoMode(): boolean {
   if (typeof window === "undefined") return false; // SSR: never demo
   try {
     const urlDemo = new URLSearchParams(window.location.search).get("demo");
@@ -31,10 +30,8 @@ export function isDemoMode(): boolean {
   }
 }
 
-export function toggleDemo(): void {
   if (typeof window === "undefined") return;
   try {
-    const current = isDemoMode();
     localStorage.setItem(STORAGE_KEY, current ? "false" : "true");
     window.location.reload();
   } catch {
@@ -43,10 +40,8 @@ export function toggleDemo(): void {
 }
 
 /** Fake demo address — clearly identifiable as simulated */
-export const DEMO_ADDRESS = "0xDEM0DEADBEEF0000000000000000000000000000" as const;
 
 /** Fake demo balance for display purposes */
-export const DEMO_BALANCE = {
   value: BigInt("1000000000000000000"), // 1 ETH in wei
   decimals: 18,
   symbol: "ETH",

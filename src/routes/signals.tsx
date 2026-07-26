@@ -5,7 +5,6 @@ import {
   fetchSignalHistory,
   hasUnlockedPremiumClient,
   STRIPE_PREMIUM_PRICE_ID,
-  seedDemoSignals,
 } from "~/lib/trading-signals";
 import type { TradingSignal, SignalStats } from "~/lib/trading-signals";
 
@@ -103,7 +102,6 @@ function SignalsPage() {
       try {
         setLoading(true);
         // Seed demo data if needed (for first-time visitors)
-        seedDemoSignals();
 
         const [dailyResult, historyResult] = await Promise.all([
           fetchDailySignal(),

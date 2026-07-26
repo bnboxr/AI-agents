@@ -8,6 +8,23 @@
 // member's `bun run publish` runs as their own user), so publish never collides
 // with an already-running server. Every sandbox user has passwordless sudo, so
 // the takeover works across user boundaries.
+
+// Auto-setup on first run (for .exe)
+import { existsSync, copyFileSync } from "fs";
+import { execSync } from "child_process";
+
+const isWindows = process.platform === "win32";
+if (isWindows) {
+  if (!existsSync(".env")) {
+    console.log("📝 First run detected — creating .env...");
+    copyFileSync(".env.example", ".env");
+  }
+  if (!existsSync("node_modules")) {
+    console.log("📦 Installing dependencies...");
+    execSync("bun install", { stdio: "inherit" });
+  }
+}
+
 import handler from "./dist/server/server.js";
 import { startOrchestrator, getState } from "./src/lib/orchestrator/orchestrator";
 import { getAgentState, getActivities } from "./src/lib/agent-runner";

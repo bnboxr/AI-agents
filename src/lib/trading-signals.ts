@@ -395,7 +395,7 @@ export async function getSignalHistory(
 
 function mapRevenueStatus(
   status: string,
-  outcomePnl?: number
+  _outcomePnl?: number
 ): "active" | "hit" | "miss" | "expired" {
   switch (status) {
     case "hit_tp":
@@ -452,8 +452,6 @@ export const STRIPE_PRICE_ID = "price_1TvhyEDMSAUyHlnSAFC30QKp";
 export const STRIPE_PREMIUM_PRICE_ID = "price_1TvhyEDMSAUyHlnSAFC30qKp";
 
 export function getStripeCheckoutUrl(sessionId?: string): string {
-  const successUrl = `${typeof window !== "undefined" ? window.location.origin : ""}/signals?session_id={CHECKOUT_SESSION_ID}`;
-  const cancelUrl = `${typeof window !== "undefined" ? window.location.origin : ""}/signals`;
   // Using the price ID from the task
   return `https://buy.stripe.com/${STRIPE_PREMIUM_PRICE_ID}?prefilled_promo_code=free&client_reference_id=${sessionId ?? ""}`;
 }
@@ -480,6 +478,7 @@ export const fetchSignalHistory = createServerFn({ method: "GET" }).handler(
 /**
  * Seed some demo signal history so the page isn't empty on first load.
  */
+export function seedDemoSignals(): void {
   const existing = getRevenueSignalHistory(undefined, 1);
   if (existing.length > 0) return; // Already has signals
 

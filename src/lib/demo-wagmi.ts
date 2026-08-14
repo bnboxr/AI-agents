@@ -27,13 +27,17 @@ import {
   useChainId as wagmiUseChainId,
   useBalance as wagmiUseBalance,
 } from "wagmi";
+import { isDemoMode, DEMO_ADDRESS, DEMO_BALANCE } from "./demo-mode";
 
 // ── useAccount ──────────────────────────────────────────────────────
 
 export function useAccount() {
   const wagmiResult = wagmiUseAccount();
+  if (isDemoMode()) {
     return {
       ...wagmiResult,
+      address: DEMO_ADDRESS as `0x${string}`,
+      addresses: [DEMO_ADDRESS as `0x${string}`],
       isConnected: true,
       isConnecting: false,
       isReconnecting: false,
@@ -50,6 +54,7 @@ export function useAccount() {
 
 export function useChainId() {
   const wagmiResult = wagmiUseChainId();
+  if (isDemoMode()) return 1; // Ethereum mainnet
   return wagmiResult;
 }
 
@@ -57,9 +62,14 @@ export function useChainId() {
 
 export function useBalance(params?: { address?: `0x${string}`; chainId?: number; token?: `0x${string}` }) {
   const wagmiResult = wagmiUseBalance(params as any);
+  if (isDemoMode()) {
     return {
       ...wagmiResult,
       data: {
+        value: DEMO_BALANCE.value,
+        decimals: DEMO_BALANCE.decimals,
+        symbol: DEMO_BALANCE.symbol,
+        formatted: DEMO_BALANCE.formatted,
       },
       isLoading: false,
       isError: false,

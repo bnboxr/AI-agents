@@ -34,10 +34,17 @@ class HCEBridgeModule(reactContext: ReactApplicationContext) :
      * Called from JS (HCEService.ts) to send payment response back to native HCE.
      * This delivers the signed (or declined) payment authorization to the
      * waiting HCEService.kt thread.
+     *
+     * The response contains the payment signature and wallet address — the
+     * payload is never logged, only its size.
      */
     @ReactMethod
     fun sendResponse(responseJson: String) {
-        Log.d(TAG, "sendResponse called from JS: $responseJson")
+        if (responseJson.isBlank()) {
+            Log.w(TAG, "sendResponse called with empty payload — ignoring")
+            return
+        }
+        Log.d(TAG, "sendResponse called from JS (${responseJson.length} bytes)")
         HCEService.setResponse(responseJson)
     }
 

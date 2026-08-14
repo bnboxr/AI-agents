@@ -6,6 +6,8 @@ import android.util.Log
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.modules.core.DeviceEventManagerModule
 import com.facebook.react.ReactApplication
+import org.json.JSONException
+import org.json.JSONObject
 
 /**
  * HCEService — Host-based Card Emulation service for NFC tap-to-pay.
@@ -187,8 +189,10 @@ class HCEService : HostApduService() {
 
                 if (isHSMC) {
                     Log.d(TAG, "HSMC AID selected")
-                    // Also emit via onHCERequest for JS to handle
-                    emitHCERequest("{\"type\":\"hsmc_select\"}")
+                    // A SELECT is not a payment request. Do NOT emit an
+                    // onHCERequest event here: the JS layer would treat it as a
+                    // payment, respond with a decline, and that stale response
+                    // would then be returned for the real payment APDU.
                     return SW_SUCCESS
                 }
 
@@ -213,34 +217,21 @@ class HCEService : HostApduService() {
         }
 
         val requestJson = String(payload, Charsets.UTF_8)
-        Log.d(TAG, "Payment request: $requestJson")
+        Log.d(TAG, "Payment request received (${requestJson.length} bytes)")
 
-        // Emit event to React Native JS layer
+        // sessionId ties the JS response back to this exact APDU exchange.
+        val requestSessionId = runCatching { JSONObject(requestJson).optString("sessionId") }
+            .getOrDefault("")
+
         try {
-            val reactContext = (application as ReactApplication)
-                .reactNativeHost
-                .reactInstanceManager
-                .currentReactContext
+            // Emit event to React Native JS layer
+            emitHCERequest(requestJson)
 
-            if (reactContext != null) {
-                val eventData = Arguments.createMap().apply {
-                    putString("requestJson", requestJson)
-                }
-                reactContext
-                    .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
-                    .emit("onHCERequest", eventData)
-            }
-
-            // Wait for JS response (timeout: 10 seconds)
-            synchronized(responseLock) {
-                responseLock.wait(10_000)
-            }
-
-            val response = pendingResponse
-            pendingResponse = null
+            // Wait for the JS response correlated to this session (10s timeout)
+            val response = waitForMatchingResponse(requestSessionId, 10_000)
 
             if (response != null) {
-                Log.d(TAG, "Returning response: ${String(response, Charsets.UTF_8)}")
+                Log.d(TAG, "Returning response (${response.size} bytes)")
                 // APDU response = data + SW_SUCCESS
                 return response + SW_SUCCESS
             } else {
@@ -250,6 +241,76 @@ class HCEService : HostApduService() {
         } catch (e: Exception) {
             Log.e(TAG, "Error processing payment request", e)
             return SW_WRONG_DATA
+        }
+    }
+
+    /**
+     * Emit the payment request to React Native as a flat map matching the
+     * HCEPaymentRequest interface consumed by HCEService.ts:
+     * { amount, token, contractAddress, sessionId, merchant }.
+     */
+    private fun emitHCERequest(requestJson: String) {
+        try {
+            val reactContext = (application as ReactApplication)
+                .reactNativeHost
+                .reactInstanceManager
+                .currentReactContext
+
+            if (reactContext != null) {
+                val eventData = Arguments.createMap()
+                try {
+                    val request = JSONObject(requestJson)
+                    eventData.putString("amount", request.optString("amount"))
+                    eventData.putString("token", request.optString("token"))
+                    eventData.putString("contractAddress", request.optString("contractAddress"))
+                    eventData.putString("sessionId", request.optString("sessionId"))
+                    if (request.has("merchant")) {
+                        eventData.putString("merchant", request.optString("merchant"))
+                    }
+                } catch (e: JSONException) {
+                    // Malformed request — emit an empty amount; the JS layer
+                    // will decline with a clear "Invalid payment amount" error.
+                    Log.w(TAG, "Malformed payment request JSON", e)
+                    eventData.putString("amount", "")
+                }
+                reactContext
+                    .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+                    .emit("onHCERequest", eventData)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to emit HCE request", e)
+        }
+    }
+
+    /**
+     * Wait for a JS response whose sessionId matches the current payment
+     * request.
+     *
+     * A previous NFC tap can deliver a late response (e.g. the JS layer was
+     * still waiting on the biometric prompt when the previous session timed
+     * out). Without correlation, that stale signature would be returned for
+     * the next tap — an authorization replay across sessions. Stale responses
+     * are discarded and the wait continues until the deadline.
+     */
+    private fun waitForMatchingResponse(requestSessionId: String, timeoutMs: Long): ByteArray? {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        synchronized(responseLock) {
+            while (System.currentTimeMillis() < deadline) {
+                val candidate = pendingResponse
+                if (candidate != null) {
+                    val candidateSessionId = runCatching {
+                        JSONObject(String(candidate, Charsets.UTF_8)).optString("sessionId")
+                    }.getOrDefault("")
+                    if (requestSessionId.isEmpty() || candidateSessionId == requestSessionId) {
+                        pendingResponse = null
+                        return candidate
+                    }
+                    // Stale response for a different session — discard and keep waiting
+                    pendingResponse = null
+                }
+                responseLock.wait(200)
+            }
+            return null
         }
     }
 

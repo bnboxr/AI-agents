@@ -7,7 +7,7 @@
 
 import { createFileRoute, useParams } from "@tanstack/react-router";
 import { useState, useEffect, useCallback } from "react";
-import { useAccount } from "~/lib/demo-wagmi";
+import { useAccount } from "wagmi";
 import { getPaymentSession, type PaymentSession } from "~/lib/pos-service";
 
 // ── Route ────────────────────────────────────────────────────────────

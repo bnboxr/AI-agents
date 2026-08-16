@@ -150,7 +150,6 @@ function RootComponent() {
       <SolanaWalletProvider>
         <WalletProvider>
         <NavBar />
-        <DemoBanner />
         <LiveTicker />
         <main className="min-h-dvh">
           <ErrorBoundary>
@@ -296,7 +295,6 @@ function NavBar() {
           <div className="shrink-0 ml-2 flex items-center gap-1">
             <ChainSelector />
             
-            <DemoModeToggle />
             <AlertBell />
             <MultiChainWalletButton />
 
@@ -389,56 +387,6 @@ function MobileSection({ children }: { children: ReactNode }) {
   return (
     <div className="py-1.5 text-[0.6rem] font-bold text-[#546e7a] font-mono tracking-[0.15em] border-t border-[#1a1f2e] mt-1 pt-2">
       {children}
-    </div>
-  );
-}
-
-/* ── Demo Mode Toggle ─────────────────────────────────────────────── */
-
-function DemoModeToggle() {
-  const [mounted, setMounted] = useState(false);
-  const [demo, setDemo] = useState(false); // default: LIVE
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  if (!mounted) return null;
-
-  return (
-    <button
-      className={`px-2.5 py-1.5 rounded-lg border text-xs font-bold font-mono transition-all duration-200 flex items-center gap-1.5 ${
-        demo
-          ? "border-yellow-500/50 bg-yellow-500/10 text-yellow-400 hover:bg-yellow-500/20"
-          : "border-green-500/30 bg-green-500/10 text-green-400 hover:bg-green-500/20"
-      }`}
-      title={demo ? "Maintenance Mode ON — Click to switch to Live" : "LIVE Mode — Click to switch to Maintenance"}
-    >
-      <span className={`w-1.5 h-1.5 rounded-full ${demo ? "bg-yellow-400 animate-pulse" : "bg-green-400"}`} />
-      <span className="hidden sm:inline">{demo ? "🟡 MAINTENANCE" : "LIVE"}</span>
-    </button>
-  );
-}
-
-/* ── Demo Banner ──────────────────────────────────────────────────── */
-
-function DemoBanner() {
-  const [mounted, setMounted] = useState(false);
-  const [demo, setDemo] = useState(false); // default: LIVE, no banner
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  if (!mounted || !demo) return null;
-
-  return (
-    <div className="fixed top-[52px] left-0 right-0 z-40 flex items-center justify-center gap-2 px-4 py-1.5 bg-yellow-500/15 border-b border-yellow-500/30 backdrop-blur-sm">
-      <span className="text-yellow-400 text-xs font-mono font-semibold">🟡</span>
-      <span className="text-yellow-300 text-xs font-mono font-medium">
-        MAINTENANCE MODE — Platform data is simulated. No real funds.
-      </span>
-      <span className="text-yellow-400 text-xs font-mono font-semibold">🟡</span>
     </div>
   );
 }

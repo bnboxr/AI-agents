@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useAccount, useConnect, useDisconnect, useBalance } from "~/lib/demo-wagmi";
+import { useAccount, useConnect, useDisconnect, useBalance } from "wagmi";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { formatUnits } from "viem";
 

@@ -16,7 +16,7 @@ import {
   mantle,
   celo,
   moonbeam,
-} from "wagmi/chains";
+} from "viem/chains";
 import { injected, walletConnect, coinbaseWallet, safe } from "@wagmi/connectors";
 
 // NOTE: Replace this with a real WalletConnect Cloud project ID from https://cloud.walletconnect.com

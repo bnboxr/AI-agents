@@ -3,7 +3,7 @@ import { formatUnits, erc20Abi } from "viem";
 import {
   mainnet, bsc, polygon, arbitrum, optimism, base,
   avalanche, fantom, gnosis, zksync, linea, scroll, mantle, celo, moonbeam,
-} from "wagmi/chains";
+} from "viem/chains";
 
 // ── Token config per chain ─────────────────────────────────────────
 interface TokenInfo { symbol: string; address: `0x${string}`; icon: string; decimals: number; }

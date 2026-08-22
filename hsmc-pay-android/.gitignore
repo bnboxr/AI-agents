@@ -61,3 +61,7 @@ coverage/
 *.swp
 *.swo
 *~
+
+# Keystores - NEVER commit
+*.keystore
+*.jks

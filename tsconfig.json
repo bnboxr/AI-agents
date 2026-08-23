@@ -1,6 +1,15 @@
 {
   "include": ["**/*.ts", "**/*.tsx"],
-  "exclude": ["node_modules", "hsmc-pay-android", "src/contracts"],
+  "exclude": [
+    "node_modules",
+    "hsmc-pay-android",
+    "src/contracts",
+    // Bun-runtime entry files: Bun.serve/Bun.spawn/import.meta.dir need @types/bun
+    // (module "bun" not resolvable here); they are thin production server wrappers,
+    // type-checked by Bun at runtime instead. See serve.ts header.
+    "serve.ts",
+    "src/lib/terminal-server.ts"
+  ],
   "compilerOptions": {
     "target": "ES2022",
     "jsx": "react-jsx",

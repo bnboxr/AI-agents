@@ -162,27 +162,6 @@ function computeBollingerBands(
   };
 }
 
-// ── Helper: compute ATR ──────────────────────────────────────────────
-
-function computeATR(bars: OHLCVBar[], period: number = 14): number {
-  if (bars.length < 2) return 0;
-  const trueRanges: number[] = [];
-  for (let i = 1; i < bars.length; i++) {
-    const high = bars[i].high;
-    const low = bars[i].low;
-    const prevClose = bars[i - 1].close;
-    const tr = Math.max(
-      high - low,
-      Math.abs(high - prevClose),
-      Math.abs(low - prevClose),
-    );
-    trueRanges.push(tr);
-  }
-  if (trueRanges.length === 0) return 0;
-  const window = trueRanges.slice(-Math.min(period, trueRanges.length));
-  return window.reduce((a, b) => a + b, 0) / window.length;
-}
-
 // ── Sub-Strategy 1: Trend Following ──────────────────────────────────
 
 function scoreTrendFollowing(
@@ -400,7 +379,7 @@ function scoreBreakout(
 
 function scoreScalping(
   bars: OHLCVBar[],
-  currentPrice: number,
+  _currentPrice: number,
 ): SubStrategyResult {
   // Short-term momentum: use last 3-5 candles for micro-trend
   if (bars.length < 10) {
@@ -505,13 +484,6 @@ function scoreSwing(
   const ema12 = computeEMA(closes, 12);
   const ema26 = computeEMA(closes, 26);
   const macdLine = ema12 - ema26;
-  const macdSignal = computeEMA(
-    (() => {
-      // simulate MACD line history with limited data
-      return [macdLine];
-    })(),
-    1,
-  ); // simplified — just use current
 
   let vote: StrategyVote = "WAIT";
   let confidence = 0;

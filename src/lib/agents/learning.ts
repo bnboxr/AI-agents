@@ -186,9 +186,25 @@ export class LearningAgent extends BaseAgent {
     return this.trades;
   }
 
-  /** Get per-condition performance statistics. */
-  getConditionStats(): ReadonlyMap<MarketCondition, ConditionStats> {
-    return this.conditionStats;
+  /** Get performance statistics for all market conditions (read-only map). */
+  getConditionStats(): ReadonlyMap<MarketCondition, ConditionStats>;
+  /** Get performance statistics for a single market condition. */
+  getConditionStats(condition: MarketCondition): ConditionStats;
+  getConditionStats(
+    condition?: MarketCondition,
+  ): ReadonlyMap<MarketCondition, ConditionStats> | ConditionStats {
+    if (condition === undefined) return this.conditionStats;
+    return (
+      this.conditionStats.get(condition) ?? {
+        totalTrades: 0,
+        wins: 0,
+        losses: 0,
+        winRate: 0,
+        avgWin: 0,
+        avgLoss: 0,
+        totalPnl: 0,
+      }
+    );
   }
 
   /**
@@ -497,21 +513,6 @@ export class LearningAgent extends BaseAgent {
     this.conditionStats.set(trade.marketCondition, existing);
   }
 
-  /** Get stats for a specific market condition. */
-  getConditionStats(condition: MarketCondition): ConditionStats {
-    return (
-      this.conditionStats.get(condition) ?? {
-        totalTrades: 0,
-        wins: 0,
-        losses: 0,
-        winRate: 0,
-        avgWin: 0,
-        avgLoss: 0,
-        totalPnl: 0,
-      }
-    );
-  }
-
   /** Get overall win rate across all conditions. */
   getOverallWinRate(): number {
     if (this.trades.length === 0) return 50;
@@ -627,7 +628,7 @@ export class LearningAgent extends BaseAgent {
   }
 
   /** Build user prompt for GPT-4o performance analysis. */
-  protected buildUserPrompt(context?: {
+  protected buildUserPrompt(_context?: {
     includeDetails?: boolean;
   }): string {
     const overallWinRate = this.getOverallWinRate();

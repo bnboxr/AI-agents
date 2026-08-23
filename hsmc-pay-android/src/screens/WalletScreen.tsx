@@ -16,7 +16,12 @@ import { Colors, Spacing, FontSizes, BorderRadius } from '../theme/colors';
 
 export default function WalletScreen() {
   const [address, setAddress] = useState<string | null>(null);
-  const [budget, setBudget] = useState({ limit: 0, spent: 0, period: 'monthly' as const, remaining: 0 });
+  const [budget, setBudget] = useState<{
+    limit: number;
+    spent: number;
+    period: 'daily' | 'weekly' | 'monthly';
+    remaining: number;
+  }>({ limit: 0, spent: 0, period: 'monthly', remaining: 0 });
   const [loading, setLoading] = useState(true);
 
   const loadData = useCallback(async () => {
@@ -106,16 +111,15 @@ export default function WalletScreen() {
       {/* Header */}
       <Text style={styles.sectionTitle}>Wallet</Text>
 
-      {/* Balance Card */}
+      {/* Account Card */}
       <View style={styles.glassCard}>
-        <Text style={styles.label}>Available Balance</Text>
+        <Text style={styles.label}>Wallet Account</Text>
         {address ? (
           <>
-            <Text style={styles.balanceAmount}>$500.00</Text>
-            <Text style={styles.walletAddress}>
-              {address.slice(0, 6)}...{address.slice(-4)}
+            <Text style={styles.walletAddressFull}>{address}</Text>
+            <Text style={styles.subLabel}>
+              On-chain balance requires an RPC connection to display.
             </Text>
-            <Text style={styles.subLabel}>USDC · Polygon Network</Text>
           </>
         ) : (
           <Text style={styles.noWallet}>No wallet configured</Text>
@@ -177,7 +181,12 @@ const styles = StyleSheet.create({
   },
   label: { color: Colors.textSecondary, fontSize: FontSizes.sm, textTransform: 'uppercase', letterSpacing: 1 },
   balanceAmount: { color: Colors.primary, fontSize: FontSizes.hero, fontWeight: '700' },
-  walletAddress: { color: Colors.textSecondary, fontSize: FontSizes.md, fontFamily: 'monospace' },
+  walletAddressFull: {
+    color: Colors.text,
+    fontSize: FontSizes.md,
+    fontFamily: 'monospace',
+    marginBottom: Spacing.xs,
+  },
   subLabel: { color: Colors.textMuted, fontSize: FontSizes.xs },
   noWallet: { color: Colors.textMuted, fontSize: FontSizes.lg, fontStyle: 'italic', paddingVertical: Spacing.md },
   budgetHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },

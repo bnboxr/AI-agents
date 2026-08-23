@@ -973,7 +973,7 @@ export default function ATMScreen() {
           <Text style={styles.toolbarBtnText}>📍 Near Me</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.toolbarBtn, view === 'history' && styles.toolbarBtnActive]}
+          style={styles.toolbarBtn}
           onPress={() => setView('history')}
         >
           <Text style={styles.toolbarBtnText}>📋 History</Text>

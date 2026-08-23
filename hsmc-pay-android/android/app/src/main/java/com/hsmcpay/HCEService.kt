@@ -49,50 +49,18 @@ class HCEService : HostApduService() {
         private const val P1_SELECT_BY_NAME = 0x04.toByte()
         private const val P2_SELECT_FIRST = 0x00.toByte()
 
-        // Custom APDU for payment data
+        // HSMC custom AID for the native wallet payment path
         private const val CLA_HSMC = 0xF0.toByte()
         private const val INS_PAYMENT_REQUEST = 0x01.toByte()
 
-        // Standard EMV APDU commands
+        // Standard EMV APDU commands. HSMC Pay has NO issued card (no card
+        // issuer pipeline), so these always return a clean refusal status
+        // (SW_CONDITIONS_NOT_SATISFIED). No fabricated PAN/expiry/CVV data is
+        // ever handed to a terminal.
         private const val CLA_EMV = 0x00.toByte()
         private const val INS_GPO = 0xA8.toByte()    // Get Processing Options
         private const val INS_READ_RECORD = 0xB2.toByte()
         private const val INS_GET_DATA = 0xCA.toByte()
-
-        // ─── Standard EMV SELECT Response ──────────────────────────
-        // FCI template with Payment System Environment
-        private val EMV_SELECT_RESPONSE = byteArrayOf(
-            0x6F.toByte(), 0x2E, // FCI template, length 46
-            0x84.toByte(), 0x0E, // DF Name
-            0x32, 0x50, 0x41, 0x59, 0x2E, 0x53, 0x59, 0x53, 0x2E, 0x44, 0x44, 0x46, 0x30, 0x31, // "2PAY.SYS.DDF01"
-            0xA5.toByte(), 0x1C, // FCI Proprietary template
-            0xBF, 0x0C, 0x19,   // FCI Issuer Discretionary Data
-            0x61.toByte(), 0x17, // Directory Entry
-            0x4F, 0x07,         // ADF Name (length 7)
-            0xA0.toByte(), 0x00, 0x00, 0x00, 0x03, 0x10, 0x10, // Sample Visa AID
-            0x50, 0x0C,         // Application Label
-            0x48, 0x53, 0x4D, 0x43, 0x20, 0x50, 0x61, 0x79, 0x20, 0x43, 0x61, 0x72, 0x64 // "HSMC Pay Card"
-        )
-
-        // ─── EMV GPO Response (AFL + AIP) ──────────────────────────
-        private val EMV_GPO_RESPONSE = byteArrayOf(
-            0x80.toByte(), 0x0A, // Template
-            0x1C, 0x00,           // Application Interchange Profile
-            0x08, 0x01, 0x01, 0x00, // Application File Locator
-            0x10, 0x01, 0x05, 0x00,
-            0x18, 0x01, 0x02, 0x01
-        )
-
-        // ─── EMV Read Record Response (track 2 equivalent data) ───
-        private val EMV_READ_RECORD_RESPONSE = byteArrayOf(
-            0x70.toByte(), 0x1A, // Record Template
-            0x57.toByte(), 0x12, // Track 2 Equivalent Data
-            // PAN: 4761739001010119D (example HSMC virtual card PAN)
-            0x47.toByte(), 0x61, 0x73, 0x90, 0x01, 0x01, 0x01, 0x19,
-            0xD1.toByte(), 0x12, 0x31, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0F,
-            0x5F.toByte(), 0x20, 0x04, // Cardholder Name (empty for virtual)
-            0x20, 0x20, 0x20, 0x20
-        )
 
         // Pending response from JS layer
         @Volatile
@@ -197,8 +165,13 @@ class HCEService : HostApduService() {
                 }
 
                 if (isPPSE) {
-                    Log.d(TAG, "PPSE (standard EMV) selected - returning EMV FCI")
-                    return EMV_SELECT_RESPONSE + SW_SUCCESS
+                    Log.d(TAG, "PPSE (standard EMV) selected — no issued card, refusing")
+                    // A standard-EMV terminal is probing for a Visa/MC
+                    // application. HSMC Pay has no issued card, so signal
+                    // "conditions not satisfied" — the POS will treat this as
+                    // the absence of a usable card rather than receiving a
+                    // fabricated card payload.
+                    return SW_CONDITIONS_NOT_SATISFIED
                 }
             }
         }
@@ -314,32 +287,31 @@ class HCEService : HostApduService() {
         }
     }
 
-    // ─── Standard EMV Handlers ─────────────────────────────────────
+    // ─── Standard EMV Handlers (refuse — no issued card) ──────────
 
     /**
-     * Handle Get Processing Options (GPO) for EMV card emulation.
-     * Returns Application Interchange Profile and Application File Locator.
+     * Get Processing Options for EMV emulation. There is no issued card, so
+     * this is always refused cleanly (never fabricated card data).
      */
     private fun handleEMVGPO(apdu: ByteArray): ByteArray {
-        Log.d(TAG, "EMV GPO received — returning AIP + AFL")
-        return EMV_GPO_RESPONSE + SW_SUCCESS
+        Log.d(TAG, "EMV GPO received — refusing (no issued card)")
+        return SW_CONDITIONS_NOT_SATISFIED
     }
 
     /**
-     * Handle Read Record for EMV card emulation.
-     * Returns track 2 equivalent data (PAN, expiry, etc.)
+     * Read Record for EMV emulation. No issued card exists, so no track-2
+     * equivalent (PAN/expiry) data is ever returned — refused cleanly.
      */
     private fun handleEMVReadRecord(apdu: ByteArray): ByteArray {
-        Log.d(TAG, "EMV Read Record received")
-        return EMV_READ_RECORD_RESPONSE + SW_SUCCESS
+        Log.d(TAG, "EMV Read Record received — refusing (no issued card)")
+        return SW_CONDITIONS_NOT_SATISFIED
     }
 
     /**
-     * Handle Get Data for EMV card emulation.
+     * Get Data for EMV emulation. No issued card exists — refused cleanly.
      */
     private fun handleEMVGetData(apdu: ByteArray): ByteArray {
-        Log.d(TAG, "EMV Get Data received")
-        // Return empty — terminal will proceed with what it has
+        Log.d(TAG, "EMV Get Data received — refusing (no issued card)")
         return SW_CONDITIONS_NOT_SATISFIED
     }
 

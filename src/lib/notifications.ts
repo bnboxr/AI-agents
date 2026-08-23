@@ -19,53 +19,6 @@ const notifications: Notification[] = [];
 const MAX_NOTIFICATIONS = 100;
 let _notifIdCounter = 0;
 
-// Seed some initial notifications
-function seedNotifications() {
-  const now = Date.now();
-  const mins30 = 30 * 60 * 1000;
-  
-  const seed: Notification[] = [
-    {
-      id: 'seed-1',
-      title: 'Oportunitate Staking',
-      message: 'Lido oferă 3.1% APY pe stETH — randament peste medie',
-      type: 'opportunity',
-      timestamp: now - mins30,
-      read: false,
-      chainId: 'ethereum',
-    },
-    {
-      id: 'seed-2',
-      title: 'Arbitraj detectat',
-      message: 'Diferență de preț 0.45% USDC între Arbitrum și Optimism',
-      type: 'opportunity',
-      timestamp: now - mins30 * 2,
-      read: false,
-    },
-    {
-      id: 'seed-3',
-      title: 'Agent activat',
-      message: 'Agentul Neon (Solana) a început scanarea pentru oportunități',
-      type: 'info',
-      timestamp: now - mins30 * 3,
-      read: true,
-      chainId: 'solana',
-    },
-    {
-      id: 'seed-4',
-      title: 'Alertă preț',
-      message: 'ETH a scăzut cu 3.2% în ultima oră — verifică oportunități de cumpărare',
-      type: 'alert',
-      timestamp: now - mins30 * 4,
-      read: false,
-    },
-  ];
-
-  notifications.push(...seed);
-}
-
-// seedNotifications() is available for admin-triggered seeding but does NOT auto-fire on module init
-
 // ── Server Functions ───────────────────────────────────────────────
 
 export const getNotifications = createServerFn({ method: 'GET' }).handler(async (): Promise<Notification[]> => {

@@ -255,7 +255,7 @@ export async function farmAirdrops(
           );
           const r = await tx.wait(1);
           if (r) {
-            totalGas += r.gasUsed * (r.gasPrice ?? 0n);
+            totalGas += BigInt(r.gasUsed ?? 0n) * BigInt(r.gasPrice ?? 0n);
             totalUsd += amountUsd;
             results.push({ proto, txHash: r.hash, amountEth: ethers.formatEther(amountWei) });
           }
@@ -269,7 +269,7 @@ export async function farmAirdrops(
           );
           const r = await tx.wait(1);
           if (r) {
-            totalGas += r.gasUsed * (r.gasPrice ?? 0n);
+            totalGas += BigInt(r.gasUsed ?? 0n) * BigInt(r.gasPrice ?? 0n);
             totalUsd += amountUsd;
             results.push({ proto, txHash: r.hash, amountEth: ethers.formatEther(amountWei) });
           }
@@ -286,7 +286,7 @@ export async function farmAirdrops(
         );
         const r = await tx.wait(1);
         if (r) {
-          totalGas += r.gasUsed * (r.gasPrice ?? 0n);
+          totalGas += BigInt(r.gasUsed ?? 0n) * BigInt(r.gasPrice ?? 0n);
           totalUsd += amountUsd;
           results.push({ proto, txHash: r.hash, amountEth: ethers.formatEther(amountWei) });
         }

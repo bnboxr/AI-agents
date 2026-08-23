@@ -5,7 +5,6 @@
 
 import { BaseAgent } from "./base";
 import type { AgentReport, OrchestratorDecision } from "./types";
-import type { ExecutionResult } from "./execution";
 import { getApiKey } from "~/lib/api-keys";
 
 export interface ExplanationResult {

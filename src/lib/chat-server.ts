@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { executeToolCall, type ToolCall } from "~/lib/chat-tools";
-import { listDestinations, type PaymentDestination } from "~/lib/payment-destinations";
+import type { PaymentDestination } from "~/lib/payment-destinations";
 import { getApiKey, type LLMProvider } from "~/lib/api-keys";
 import { detectOllama, findCompatibleModel, ollamaChat, type OllamaModel } from "~/lib/llm/local";
 import { queryFirstResponse, type LLMMessage } from "~/lib/llm/multi-provider";

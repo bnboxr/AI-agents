@@ -5,7 +5,6 @@
 // Integrates with existing DexAdapter pattern.
 
 import { getTronAddress, getTronBalance, fetchTrxPrice } from "./tron-wallet";
-import { TronWeb } from "tronweb";
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -34,14 +33,6 @@ export interface TronPair {
   baseName: string;
   quoteName: string;
 }
-
-// ── SunSwap Constants ──────────────────────────────────────────────────
-
-// SunSwap V2 Router address on TRON mainnet
-const SUNSWAP_ROUTER = "TKzxdSv2FZKQrEqkKVgp5DcwEXBEKMg2Ax";
-
-// Default TRON RPC
-const DEFAULT_TRON_RPC = "https://api.trongrid.io";
 
 // ── Price Fetching (SunSwap uses TRX price from CoinGecko + slippage) ──
 

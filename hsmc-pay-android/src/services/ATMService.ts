@@ -106,10 +106,13 @@ export async function findNearbyATMs(
           lat: placeLat,
           lng: placeLng,
           distance: Math.round(dist * 100) / 100,
+          // Locator metadata is conservative-by-default: we know an ATM is
+          // present, but fee/hours/deposit support are unknown without live
+          // data, so surfaces are displayed in the UI, not fabricated.
           supportsWithdraw: true,
-          supportsDeposit: Math.random() > 0.4, // ~60% of ATMs support deposits
-          fee: (1.0 + Math.random() * 2.0).toFixed(1) + '%',
-          hours: Math.random() > 0.5 ? '24/7' : '6:00-22:00',
+          supportsDeposit: false,
+          fee: 'see ATM',
+          hours: 'see ATM',
         };
       })
       .sort((a: ATM, b: ATM) => a.distance - b.distance);
@@ -117,8 +120,8 @@ export async function findNearbyATMs(
     return atms;
   } catch (error) {
     console.error('Error fetching ATMs:', error);
-    // Return mock ATMs as fallback when offline
-    return getMockATMs(lat, lng);
+    // No fabricated fallback data: report that no ATMs could be loaded.
+    return [];
   }
 }
 
@@ -141,43 +144,6 @@ function haversineDistance(
       Math.sin(dLng / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
-}
-
-// ─── Mock ATMs for offline / demo fallback ────────────────────────────
-
-function getMockATMs(lat: number, lng: number): ATM[] {
-  const mockBanks = [
-    { bank: 'Chase Bank', base: 0.02 },
-    { bank: 'Bank of America', base: 0.04 },
-    { bank: 'Wells Fargo', base: 0.01 },
-    { bank: 'HSBC', base: 0.03 },
-    { bank: 'Citi Bank', base: 0.05 },
-    { bank: 'Coinbase ATM', base: -0.02 },
-  ];
-
-  return mockBanks.map((b, index) => {
-    const offsetLat = (Math.random() - 0.5) * 0.02;
-    const offsetLng = (Math.random() - 0.5) * 0.02;
-    const atmLat = lat + offsetLat;
-    const atmLng = lng + offsetLng;
-    const dist = haversineDistance(lat, lng, atmLat, atmLng);
-
-    return {
-      id: `mock_atm_${index}`,
-      name: `${b.bank} ATM`,
-      bank: b.bank,
-      address: `${Math.floor(Math.random() * 9999) + 1} ${
-        ['Main St', 'Oak Ave', 'Market Blvd', 'Park Lane', 'Broadway'][index % 5]
-      }, ${['New York', 'Los Angeles', 'Chicago', 'San Francisco', 'Miami'][index % 5]}`,
-      lat: atmLat,
-      lng: atmLng,
-      distance: Math.round(dist * 100) / 100,
-      supportsWithdraw: true,
-      supportsDeposit: index % 3 !== 0,
-      fee: (1.0 + Math.random() * 2.5).toFixed(1) + '%',
-      hours: index % 2 === 0 ? '24/7' : '6:00-23:00',
-    };
-  }).sort((a, b) => a.distance - b.distance);
 }
 
 // ─── Fee Calculator ──────────────────────────────────────────────────

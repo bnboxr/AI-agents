@@ -30,7 +30,13 @@ android {
             keyPassword 'android'
         }
         release {
-            // In production, configure your release keystore here
+            // Release signing uses the OWNER's keystore (android/app/release.keystore,
+            // .gitignored — never committed). The keystore password / alias / key
+            // password are supplied at build time via environment variables:
+            //   HSMC_KEYSTORE_PASSWORD, HSMC_KEY_ALIAS, HSMC_KEY_PASSWORD
+            //
+            // The owner generates release.keystore with keytool (see README) and
+            // exports these three vars before `./gradlew assembleRelease`.
             storeFile file('release.keystore')
             storePassword System.getenv('HSMC_KEYSTORE_PASSWORD') ?: 'changeit'
             keyAlias System.getenv('HSMC_KEY_ALIAS') ?: 'hsmcpay'

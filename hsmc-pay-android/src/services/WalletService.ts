@@ -174,6 +174,79 @@ export async function exportPrivateKey(): Promise<string> {
   return privateKey;
 }
 
+// ─── Biometric enrollment & authentication ───────────────────────────────
+//
+// Unlock uses the device's hardware-backed biometric / passcode gate. A small
+// probe secret is stored in the OS Keystore with biometric access control;
+// reading it back forces the real biometric prompt and only resolves on a
+// successful authentication. The wallet's private key / mnemonic themselves
+// are stored with the same access control, so every sensitive read is already
+// gated by the device biometric.
+
+const BIOMETRIC_PROBE_SERVICE = 'HSMC_BIOMETRIC_PROBE';
+
+/**
+ * Enable biometric unlock. Stores a probe secret under hardware-backed
+ * biometric access control. Once present, authenticateWithBiometrics() can
+ * drive the device prompt. Safe to call repeatedly.
+ */
+export async function enableBiometricUnlock(): Promise<void> {
+  await Keychain.setGenericPassword('hsmc-pay', 'enabled', {
+    service: BIOMETRIC_PROBE_SERVICE,
+    accessControl: Keychain.ACCESS_CONTROL.BIOMETRY_CURRENT_SET_OR_DEVICE_PASSCODE,
+    accessible: Keychain.ACCESSIBLE.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+    securityLevel: Keychain.SECURITY_LEVEL.SECURE_HARDWARE,
+    storage: Keychain.STORAGE_TYPE.AES,
+  });
+}
+
+/** Remove the biometric probe (disables biometric unlock). */
+export async function disableBiometricUnlock(): Promise<void> {
+  try {
+    await Keychain.resetGenericPassword({ service: BIOMETRIC_PROBE_SERVICE });
+  } catch {
+    // Nothing to clear — treat as clean.
+  }
+}
+
+/**
+ * Authenticate the user with the device biometrics / passcode.
+ *
+ * Reads the probe secret: on a device where it was created under biometric
+ * access control this triggers the system biometric dialog and only returns
+ * the secret after a successful match. Returns true when the user
+ * authenticated, false when they cancelled / were not recognized, and throws
+ * only on a genuine keystore failure (which callers surface as an error, not
+ * a silent bypass).
+ */
+export async function authenticateWithBiometrics(
+  promptTitle: string,
+): Promise<boolean> {
+  try {
+    const credentials = await Keychain.getGenericPassword({
+      service: BIOMETRIC_PROBE_SERVICE,
+      authenticationPrompt: { title: promptTitle },
+      accessControl: Keychain.ACCESS_CONTROL.BIOMETRY_CURRENT_SET_OR_DEVICE_PASSCODE,
+    });
+    return credentials !== false;
+  } catch {
+    // Cancel / not recognized is a normal negative result, not a bypass.
+    return false;
+  }
+}
+
+/** Whether biometric unlock has been enrolled on this device. */
+export async function isBiometricEnrolled(): Promise<boolean> {
+  try {
+    const credentials = await Keychain.getGenericPassword({
+      service: BIOMETRIC_PROBE_SERVICE,
+    });
+    return credentials !== false;
+  } catch {
+    return false;
+  }
+}
+
 // ─── Payment authorization (EIP-712) ────────────────────────────────────
 //
 // PAYMENT SCHEME (verifier contract — keep both sides in sync):

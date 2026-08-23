@@ -128,10 +128,24 @@ export default function SettingsScreen() {
     await AsyncStorage.setItem(BIOMETRIC_ENABLED_KEY, value.toString());
 
     if (value) {
-      Alert.alert(
-        'Biometric Enabled',
-        'You can now use fingerprint/Face ID to unlock HSMC Pay.',
-      );
+      try {
+        // Enroll the device biometric gate with the OS Keystore.
+        await WalletService.enableBiometricUnlock();
+        Alert.alert(
+          'Biometric Enabled',
+          'You can now use your fingerprint/Face ID to unlock HSMC Pay.',
+        );
+      } catch (e: any) {
+        setBiometricEnabled(false);
+        await AsyncStorage.setItem(BIOMETRIC_ENABLED_KEY, 'false');
+        Alert.alert(
+          'Error',
+          'Biometric unlock could not be enabled on this device.' +
+            (e?.message ? ` ${e.message}` : ''),
+        );
+      }
+    } else {
+      await WalletService.disableBiometricUnlock();
     }
   };
 
@@ -230,13 +244,6 @@ export default function SettingsScreen() {
     await NotificationService.updatePreferences({ [key]: value });
     setNotifPrefs((prev) => (prev ? { ...prev, [key]: value } : null));
   };
-
-  // ─── Connected Apps ─────────────────────────────────────────────
-
-  const connectedApps = [
-    { name: 'HSMC POS Terminal', status: 'connected', icon: 'store' },
-    { name: 'HSMC Web Dashboard', status: 'connected', icon: 'monitor-dashboard' },
-  ];
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -513,29 +520,6 @@ export default function SettingsScreen() {
         </View>
       </View>
 
-      {/* Connected Apps */}
-      <View style={styles.section}>
-        <Text style={styles.sectionHeader}>Connected Apps</Text>
-        <View style={styles.glassCard}>
-          {connectedApps.map((app, i) => (
-            <View key={app.name}>
-              <View style={styles.settingRow}>
-                <View style={styles.settingRowLeft}>
-                  <Icon name={app.icon} size={20} color={Colors.textSecondary} />
-                  <View>
-                    <Text style={styles.settingLabel}>{app.name}</Text>
-                    <Text style={styles.connectedStatus}>
-                      🟢 {app.status}
-                    </Text>
-                  </View>
-                </View>
-              </View>
-              {i < connectedApps.length - 1 && <View style={styles.divider} />}
-            </View>
-          ))}
-        </View>
-      </View>
-
       {/* About */}
       <View style={styles.section}>
         <Text style={styles.sectionHeader}>About</Text>
@@ -549,9 +533,10 @@ export default function SettingsScreen() {
             <Text style={styles.value}>HSMC Pay Android</Text>
           </View>
           <Text style={styles.aboutText}>
-            HSMC Pay enables crypto tap-to-pay via NFC HCE on Android devices. Payments are
-            settled on Polygon with auto-conversion from any supported token.
-            Virtual Card support enables payments at standard Visa/Mastercard POS terminals.
+            HSMC Pay enables crypto tap-to-pay via NFC HCE on Android devices.
+            Payments are authorized with your own wallet key through the HSMC
+            POS settlement contract. Virtual/standard-EMV card payments are not
+            yet available — no card issuer is configured.
           </Text>
         </View>
       </View>

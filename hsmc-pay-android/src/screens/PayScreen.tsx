@@ -269,17 +269,6 @@ export default function PayScreen() {
     loadBudget();
   };
 
-  // Demo: simulate a payment detection (for development)
-  const simulatePayment = () => {
-    showSelector({
-      amount: 25.0,
-      merchant: 'CoffeeShop',
-      token: 'USDC',
-      sessionId: `sess_${Date.now()}`,
-      contractAddress: '0x0000000000000000000000000000000000000000',
-    });
-  };
-
   const selectedCard = virtualCards.find((c) => c.id === selectedCardId);
 
   return (
@@ -389,16 +378,11 @@ export default function PayScreen() {
         <Text style={styles.noteTitle}>How to Pay</Text>
         <Text style={styles.noteText}>
           1. Set your spending budget in Wallet{'\n'}
-          2. Hold your phone near the POS terminal{'\n'}
-          3. Select payment method when prompted{'\n'}
+          2. Hold your phone near an HSMC POS terminal{'\n'}
+          3. Approve the payment with your device biometrics{'\n'}
           4. Receipt appears in History
         </Text>
       </View>
-
-      {/* Demo: Simulate payment button (development only) */}
-      <TouchableOpacity style={styles.demoButton} onPress={simulatePayment}>
-        <Text style={styles.demoButtonText}>🔄 Simulate Payment</Text>
-      </TouchableOpacity>
 
       {/* Payment Method Selector Bottom Sheet */}
       <Modal visible={showMethodSelector} transparent animationType="none">
@@ -620,17 +604,6 @@ const styles = StyleSheet.create({
   cardFrozenLabel: { color: Colors.danger, fontSize: FontSizes.xs, fontWeight: '700' },
   posMessageIcon: { fontSize: 24, textAlign: 'center' },
   posMessageText: { color: Colors.textSecondary, fontSize: FontSizes.sm, textAlign: 'center' },
-
-  // Demo button
-  demoButton: {
-    backgroundColor: Colors.primaryDim,
-    borderRadius: BorderRadius.md,
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.xl,
-    borderWidth: 1,
-    borderColor: Colors.primary,
-  },
-  demoButtonText: { color: Colors.primary, fontSize: FontSizes.md, fontWeight: '600' },
 
   // Bottom sheet
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' },

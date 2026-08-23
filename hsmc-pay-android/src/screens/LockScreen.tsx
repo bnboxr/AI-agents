@@ -9,7 +9,6 @@ import {
   TouchableOpacity,
   Animated,
   Alert,
-  Platform,
   Vibration,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -92,30 +91,17 @@ export default function LockScreen({ onUnlock }: LockScreenProps) {
 
   const triggerBiometric = async () => {
     try {
-      // In production: use react-native-keychain for biometric
-      // const result = await Keychain.getGenericPassword({
-      //   authenticationPrompt: { title: 'Unlock HSMC Pay' },
-      //   accessControl: Keychain.ACCESS_CONTROL.BIOMETRY_ANY,
-      // });
-      // if (result) { onUnlock(); return; }
-
-      // For prototype, simulate:
-      Alert.alert(
-        'Biometric Unlock',
-        Platform.OS === 'android' ? 'Use fingerprint to unlock' : 'Use Face ID to unlock',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Simulate Success',
-            onPress: () => {
-              AsyncStorage.removeItem(PIN_ATTEMPTS_KEY);
-              onUnlock();
-            },
-          },
-        ],
+      const authenticated = await WalletService.authenticateWithBiometrics(
+        'Unlock HSMC Pay',
       );
+      if (authenticated) {
+        await AsyncStorage.removeItem(PIN_ATTEMPTS_KEY);
+        onUnlock();
+      } else {
+        setErrorMessage('Biometric authentication failed or was cancelled.');
+      }
     } catch (e) {
-      // Biometric failed, fall through to PIN
+      setErrorMessage('Biometric authentication is unavailable on this device.');
     }
   };
 

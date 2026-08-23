@@ -7,4 +7,5 @@
     <color name="text_secondary">#a0a4b0</color>
     <color name="accent">#00e676</color>
     <color name="white">#ffffff</color>
+    <color name="notification_tint">#00e676</color>
 </resources>

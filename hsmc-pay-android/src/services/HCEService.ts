@@ -182,18 +182,21 @@ export function initializeHCE(): void {
         onPOSTypeDetected(posType, apduBytes);
       }
 
-      // For standard POS (Visa, MC, EMV), notify that virtual card is needed
+      // For standard POS (Visa, MC, EMV), HSMC Pay has no issued card, so the
+      // tap cannot be honored — surface an honest message instead of a card.
       if (posType !== 'hsmc' && posType !== 'unknown') {
         const messages: Record<string, string> = {
-          visa: 'This terminal accepts Visa. Use Virtual Card to pay.',
-          mastercard: 'This terminal accepts Mastercard. Use Virtual Card to pay.',
-          generic_emv: 'This terminal accepts card payments. Use Virtual Card.',
+          visa: 'This terminal requires a Visa card, but you have no issued card. Use your HSMC wallet with an HSMC POS terminal instead.',
+          mastercard:
+            'This terminal requires a Mastercard, but you have no issued card. Use your HSMC wallet with an HSMC POS terminal instead.',
+          generic_emv:
+            'This terminal requires a physical/virtual card, which HSMC Pay does not issue. Use an HSMC POS terminal instead.',
         };
 
         if (onStandardPOSDetected) {
           onStandardPOSDetected({
             type: posType,
-            message: messages[posType] || 'This terminal accepts card payments.',
+            message: messages[posType] || 'No issued card available for this terminal.',
           });
         }
       }

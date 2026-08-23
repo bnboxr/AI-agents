@@ -733,7 +733,7 @@ async function gatherReports(ctx: PriceContext): Promise<AgentReport[]> {
     // Feed trade history from learning agent
     const allTrades = learningAgent.getTrades();
     const conditionStats = learningAgent.getConditionStats();
-    probabilityAgent.feedTradeData(allTrades, conditionStats);
+    probabilityAgent.feedTradeData([...allTrades], conditionStats);
 
     // Derive trend score from existing reports
     let trendScore = 50;
@@ -1017,6 +1017,7 @@ function makeDecision(
         pnlPct: state.pnlPct,
         marketCondition: deriveMarketCondition(priceContext, reports),
         confidence: scoreDirection(reports).confidence,
+        timestamp: Date.now(),
       });
 
       // Update state
@@ -2024,4 +2025,3 @@ export {
   positionManager,
   strategyAgent,
 };
-export type { PriceContext };

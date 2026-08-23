@@ -13,8 +13,8 @@ import type { AgentReport, AgentRole } from "./agents/types";
 import { queryWithPrompt } from "./llm/multi-provider";
 import { findAvailableLocalSource } from "./local-ai-scanner";
 import { getHardwareProfile, recommendModel } from "./model-selector";
-import { planTask, executeTaskPlan, type TaskRequest, type TaskPlan } from "./task-router";
-import { AgentPool, getAgentPool, type AgentSlot } from "./agent-queue";
+import { planTask, type TaskRequest, type TaskPlan } from "./task-router";
+import { AgentPool, getAgentPool } from "./agent-queue";
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -70,7 +70,7 @@ const DEFAULT_CONFIG: Required<SwarmConfig> = {
 // ── Role Selection (kept for backward compat) ─────────────────────
 
 function selectRoles(
-  description: string,
+  _description: string,
   agentCount: number,
 ): AgentRole[] {
   const allRoles: AgentRole[] = [

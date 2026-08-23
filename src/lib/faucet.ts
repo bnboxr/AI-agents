@@ -7,14 +7,9 @@
 //
 // Delegates to faucet-aggregator.ts for the full registry.
 
-import { getWalletChainId, SUPPORTED_CHAINS, type WalletChainConfig } from "./chains-config";
+import { getWalletChainId, SUPPORTED_CHAINS } from "./chains-config";
 import {
-  FAUCET_REGISTRY as AGGREGATOR_FAUCETS,
-  getFaucetsForChain as aggregatorGetFaucets,
-  requestFaucetApi as aggregatorRequestApi,
   fundWallet as aggregatorFundWallet,
-  getFaucetSummary,
-  type FaucetEntry as AggregatorFaucetEntry,
   type FaucetResult,
 } from "./faucet-aggregator";
 

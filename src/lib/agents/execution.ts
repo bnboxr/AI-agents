@@ -25,18 +25,6 @@ import { validateTrade, recordTradeResult, initAntiDrain } from "~/lib/anti-drai
 import { updateChainBalance } from "~/lib/chain-balance";
 import { isWalletTestnet } from "~/lib/chains-config";
 
-/** Result type for trade opening: either a successful position or an error. */
-interface TradeOpenResult {
-  id?: string;
-  error?: string;
-}
-
-/** Result type for trade closing: either a successful close or an error. */
-interface TradeCloseResult {
-  id?: string;
-  error?: string;
-}
-
 export type ExecutionMode = "paper" | "live";
 
 export interface ExecutionResult {
@@ -75,7 +63,6 @@ Respond in JSON format only:
 export class ExecutionAgent extends BaseAgent {
   private mode: ExecutionMode;
   private readonly SLIPPAGE_MIN = 0.001; // 0.1%
-  private readonly SLIPPAGE_MAX = 0.005; // 0.5%
 
   /** Active position IDs managed by this agent (in-memory tracking). */
   private activePositionIds: Set<string> = new Set();
@@ -128,7 +115,7 @@ export class ExecutionAgent extends BaseAgent {
 
         for (const level of levels) {
           if (remaining <= 0) break;
-          const fillQty = Math.min(remaining, level.quantity);
+          const fillQty = Math.min(remaining, level.qty);
           totalCost += fillQty * level.price;
           totalFilled += fillQty;
           remaining -= fillQty;

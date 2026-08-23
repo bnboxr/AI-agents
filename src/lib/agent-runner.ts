@@ -5,8 +5,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { AGENTS } from "./agents";
 import { CHAINS } from "./chains";
 import type { AgentActivity } from "./agent-activity";
-import { getRobustMultiPrices } from "./price-feeds";
-import { getPrice, getPrices } from "./ws/price-context";
+import { getPrices } from "./ws/price-context";
 import { agentBus } from "./agent-bus";
 import { sql, isDbAvailable } from "./db";
 
@@ -42,7 +41,6 @@ const agentStates = new Map<string, AgentStatus>();
 
 function initAgentState(chainId: string): AgentStatus {
   const agent = AGENTS[chainId];
-  const chain = CHAINS.find(c => c.id === chainId);
   const now = Date.now();
   
   return {

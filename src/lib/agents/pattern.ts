@@ -257,7 +257,7 @@ export class PatternRecognitionAgent extends BaseAgent {
   }
 
   /** Detect Triangle patterns (ascending, descending, symmetrical). */
-  detectTriangle(bars: OHLCVBar[], extrema: PriceExtrema): DetectedPattern | null {
+  detectTriangle(_bars: OHLCVBar[], extrema: PriceExtrema): DetectedPattern | null {
     const { highs, lows } = extrema;
 
     // Need at least 3 highs and 3 lows in recent range
@@ -349,7 +349,6 @@ export class PatternRecognitionAgent extends BaseAgent {
 
     if (poleChange > 0) {
       // Bullish flag: sharp up, then slight downward/sideways consolidation
-      const flagMid = (flagHigh + flagLow) / 2;
       const target = flagHigh + (poleEnd - poleStart);
       return {
         type: "BULLISH_FLAG",
@@ -361,7 +360,6 @@ export class PatternRecognitionAgent extends BaseAgent {
       };
     } else {
       // Bearish flag: sharp down, then slight upward/sideways consolidation
-      const flagMid = (flagHigh + flagLow) / 2;
       const target = flagLow + (poleEnd - poleStart); // continuation downward
       return {
         type: "BEARISH_FLAG",

@@ -65,8 +65,6 @@ export class PortfolioAgent extends BaseAgent {
   private readonly MAX_SINGLE_ALLOCATION = 0.25;
   /** Minimum cash reserve (% of equity). */
   private readonly MIN_CASH_RESERVE = 0.10;
-  /** Risk-free rate for Sharpe/Sortino (annualized). */
-  private readonly RISK_FREE_RATE = 0.04; // 4%
 
   /** Historical trade outcomes for metric calculation. */
   private tradeReturns: number[] = [];

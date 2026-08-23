@@ -246,7 +246,6 @@ function detectHiddenDivergence(bars: OHLCVBar[]): RedFlag | null {
   if (bars.length < RSI_PERIOD + 5) return null;
 
   const closes = bars.map((b) => b.close);
-  const highs = bars.map((b) => b.high);
   const rsiValues = computeRSI(closes);
 
   // Find two swing highs in the last ~20 bars
@@ -394,9 +393,6 @@ function detectImminentNews(reports: AgentReport[]): RedFlag | null {
     "hack",
     "exploit",
   ];
-
-  const now = Date.now();
-  const TWO_HOURS_MS = 2 * 60 * 60 * 1000;
 
   for (const h of headlines) {
     const title = (h.title || "").toLowerCase();
@@ -609,7 +605,6 @@ export class DevilsAdvocateAgent extends BaseAgent {
     if (corr) flags.push(corr);
 
     // ── Compute scoring ──
-    const totalWeight = flags.reduce((s, f) => s + f.weight, 0);
     const flagCount = flags.length;
 
     let severity: SeverityLevel;

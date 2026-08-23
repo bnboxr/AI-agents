@@ -1,6 +1,6 @@
 import { startScheduler, stopScheduler } from './scheduler';
 import { startDispatcher, stopDispatcher, getActiveCount } from './dispatcher';
-import { size, clear, getQueueSnapshot } from './queue';
+import { size, clear } from './queue';
 import { getAgentState } from '../agent-runner';
 import { CHAINS } from '../chains';
 import type { OrchestratorState } from './types';

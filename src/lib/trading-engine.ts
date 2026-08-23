@@ -226,7 +226,7 @@ function rowToTradePosition(row: Record<string, unknown>): TradePosition {
 
 export const analyzeToken = createServerFn({ method: "POST" }).handler(async ({ data }: { data: { chainId: string; token: string; price: number; change24h: number; volume24h: number; high24h: number; low24h: number } }) => {
   resetDailyIfNeeded();
-  const risk = getRiskStateRaw();
+  const risk = await getRiskStateRaw();
   if (risk.circuitBreakerTripped) {
     return { blocked: true, reason: "Circuit breaker tripped — trading paused" };
   }
@@ -247,7 +247,7 @@ export const analyzeToken = createServerFn({ method: "POST" }).handler(async ({ 
 
 export const openTrade = createServerFn({ method: "POST" }).handler(async ({ data }: { data: { chainId: string; token: string; direction: TradeDirection; price: number; size: number; leverage: number } }): Promise<TradePosition | { error: string }> => {
   resetDailyIfNeeded();
-  const risk = getRiskStateRaw();
+  const risk = await getRiskStateRaw();
   if (risk.circuitBreakerTripped) return { error: "Circuit breaker tripped" };
 
   dailyTradeCount++;
@@ -287,7 +287,16 @@ export const openTrade = createServerFn({ method: "POST" }).handler(async ({ dat
     `.catch((err) => console.error("[DB] openTrade insert failed:", err));
   }
 
-  agentBus.emit("activity", { type: "trade_opened", chainId: data.chainId, data: position });
+  agentBus.emit("activity", {
+    activity: {
+      id: position.id,
+      chainId: position.chainId,
+      agentName: "Trading Engine",
+      action: "Trade opened",
+      timestamp: Date.now(),
+      type: "trade",
+    },
+  });
   return position;
 });
 
@@ -318,7 +327,16 @@ export const closeTrade = createServerFn({ method: "POST" }).handler(async ({ da
     `.catch((err) => console.error("[DB] closeTrade update failed:", err));
   }
 
-  agentBus.emit("activity", { type: "trade_closed", chainId: pos.chainId, data: pos });
+  agentBus.emit("activity", {
+    activity: {
+      id: pos.id,
+      chainId: pos.chainId,
+      agentName: "Trading Engine",
+      action: "Trade closed",
+      timestamp: Date.now(),
+      type: "trade",
+    },
+  });
   return pos;
 });
 
@@ -326,7 +344,6 @@ export const getTradingStats = createServerFn({ method: "GET" }).handler(async (
   const open = Array.from(openPositions.values());
   const totalPnl = open.reduce((s, p) => s + p.pnl, 0);
   const wins = tradeHistory.filter(t => t.pnl > 0).length;
-  const losses = tradeHistory.filter(t => t.pnl < 0).length;
   return {
     openPositions: open.length,
     totalPnl,

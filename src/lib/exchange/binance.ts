@@ -7,6 +7,7 @@
 
 import type {
   ExchangeAdapter,
+  ExchangeRole,
   OrderBook,
   OrderBookLevel,
   OrderRequest,

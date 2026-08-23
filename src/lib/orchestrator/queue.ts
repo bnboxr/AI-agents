@@ -2,13 +2,6 @@ import type { ScanTask, TaskPriority } from './types';
 
 const MAX_QUEUE_SIZE = 200;
 
-// Priority order: HIGH=0, NORMAL=1, LOW=2
-const PRIORITY_ORDER: Record<TaskPriority, number> = {
-  HIGH: 0,
-  NORMAL: 1,
-  LOW: 2,
-};
-
 // Separate FIFO queues per priority level
 const queues: Record<TaskPriority, ScanTask[]> = {
   HIGH: [],

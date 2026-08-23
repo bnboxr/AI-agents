@@ -72,7 +72,6 @@ let lastMarketCheck = Date.now();
 
 let killSwitchTripped = false;
 let killSwitchReason = "";
-let killSwitchTimestamp = 0;
 
 /** Timestamp of last successful API health check (Binance WS + CoinGecko) */
 let lastApiHealthCheck = Date.now();
@@ -110,7 +109,6 @@ const marketPriceHistory: PricePoint[] = [];
 function ensureAgentState(chainId: string): AgentRiskState {
   if (!agentRisk[chainId]) {
     const agent = AGENTS[chainId];
-    const chain = CHAINS.find((c) => c.id === chainId);
     // Fallback initial portfolio value — set STARTING_CAPITAL env var
     const initialValue = Number(process.env.STARTING_CAPITAL) || 1_000_000;
     agentRisk[chainId] = {
@@ -386,7 +384,7 @@ export async function checkRiskLimits(
 /**
  * Check if a position should be auto-exited based on stop-loss.
  */
-export function checkStopLoss(chainId: string, positionLossPct: number): boolean {
+export function checkStopLoss(_chainId: string, positionLossPct: number): boolean {
   return positionLossPct >= currentLimits.stopLossPct;
 }
 

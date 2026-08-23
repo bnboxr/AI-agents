@@ -208,7 +208,7 @@ export function getMaxPositionSize(
 
 /** Get the current size tier label */
 export function getSizeTier(tradeCount: number, winRate: number): SizeTier {
-  const { STARTER, PROVING, TRUSTED } = ANTI_DRAIN_RULES.SIZE_SCALING;
+  const { PROVING, TRUSTED } = ANTI_DRAIN_RULES.SIZE_SCALING;
   if (tradeCount >= TRUSTED.minTrades && winRate >= TRUSTED.minWinRate) return "TRUSTED";
   if (tradeCount >= PROVING.minTrades && winRate >= PROVING.minWinRate) return "PROVING";
   return "STARTER";

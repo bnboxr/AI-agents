@@ -7,7 +7,6 @@
 
 import { BaseAgent } from "./base";
 import type { AgentReport } from "./types";
-import { getPrice } from "../ws/price-context";
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -214,7 +213,6 @@ export class CorrelationAgent extends BaseAgent {
   private lastMatrix: CorrelationMatrix | null = null;
   private lastComputeTime = 0;
   private readonly COMPUTE_TTL_MS = 60_000; // Recompute at most every 60s
-  private wsUnsubscribe: (() => void) | null = null;
 
   constructor() {
     super({
@@ -261,7 +259,7 @@ export class CorrelationAgent extends BaseAgent {
     // Subscribe to Binance WS for BTC and ETH incremental updates
     try {
       const { subscribeToPrices } = await import("../ws/price-context");
-      this.wsUnsubscribe = subscribeToPrices((tick) => {
+      subscribeToPrices((tick) => {
         if (tick.symbol === "BTC") {
           this.updatePrice("BTC-USD", tick.price, tick.timestamp);
         } else if (tick.symbol === "ETH") {

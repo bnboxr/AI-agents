@@ -854,7 +854,7 @@ export class StrategyAgent extends BaseAgent {
 
     return {
       agentId: this.id,
-      role: this.role,
+      role: this.role as "strategy",
       timestamp: Date.now(),
       direction: finalDirection,
       confidence: finalConfidence,

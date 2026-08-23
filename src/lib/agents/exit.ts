@@ -1,7 +1,7 @@
 // ── Exit Agent ────────────────────────────────────────────────────
 // Dedicated to finding exit points. Enforces "Better +7% than -2%" rule.
 import { BaseAgent } from "./base";
-import type { AgentReport, TradingState } from "./types";
+import type { AgentReport } from "./types";
 
 export interface ExitContext {
   symbol: string;

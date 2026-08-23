@@ -48,16 +48,6 @@ function deduplicateHeadlines(headlines: NewsHeadline[]): NewsHeadline[] {
   return result;
 }
 
-/** Apply exponential decay weighting: more recent = higher weight. */
-function exponentialDecayWeight(
-  publishedAt: number,
-  now: number,
-  halfLifeMs: number = 3_600_000, // 1 hour
-): number {
-  const ageMs = now - publishedAt;
-  return Math.exp((-Math.LN2 * ageMs) / halfLifeMs);
-}
-
 export class NewsSentimentAgent extends BaseAgent {
   constructor() {
     super({

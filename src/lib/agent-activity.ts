@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { COINGECKO_IDS, UNIQUE_NATIVE_IDS, type AgentConfig } from "./agents";
+import { UNIQUE_NATIVE_IDS } from "./agents";
 import { CHAINS } from "./chains";
 import { sql, isDbAvailable } from "./db";
 

@@ -49,11 +49,6 @@ const DEX_PAIRS: Record<string, { baseId: string; quoteId: string; baseDecimals:
   "ATOM/OSMO": { baseId: "cosmos",         quoteId: "osmosis",       baseDecimals: 6  },
 };
 
-/** CoinGecko IDs we query for pricing */
-const COINGECKO_IDS = [...new Set([
-  ...Object.values(DEX_PAIRS).flatMap(p => [p.baseId, p.quoteId]),
-])];
-
 // Already includes: ethereum, usd-coin, tether, wrapped-bitcoin, solana,
 // uniswap, chainlink, aave, matic-network
 
@@ -392,7 +387,6 @@ async function dexPaperPlaceOrder(orderReq: OrderRequest): Promise<OrderResult> 
 async function dexPaperCloseOrder(symbol: string): Promise<OrderResult & { realizedPnl: number; exitPrice: number }> {
   ensurePaperBalances();
   const rawSymbol = symbol.includes("/") ? getRawSymbol(symbol) : symbol;
-  const pair = toDexPair(rawSymbol);
 
   const pos = paperDexPositions.get(rawSymbol);
   if (!pos) {

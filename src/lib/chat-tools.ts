@@ -4,7 +4,6 @@ import {
   runAgentScan,
   runAllAgentScans,
   getAllAgentStatuses,
-  getAgentState,
   type AgentStatus,
   type AgentScanResult,
 } from "~/lib/agent-runner";
@@ -14,8 +13,6 @@ import {
   addDestination,
   setDefaultDestination,
   type PaymentDestination,
-  DEST_TYPE_LABELS,
-  DEST_TYPE_ICONS,
 } from "~/lib/payment-destinations";
 
 // ── Types ──────────────────────────────────────────────────────────
@@ -334,7 +331,7 @@ export async function executeToolCall(toolCall: ToolCall): Promise<ToolResult> {
         }
         const all = await listDestinations();
         const match = all.find(
-          (d) => d.id === addr || d.destAddress === addr,
+          (d: PaymentDestination) => d.id === addr || d.destAddress === addr,
         );
         if (!match) {
           return { toolCallId: id, result: { error: `No destination found matching "${addr}".` } };

@@ -3,7 +3,7 @@
 // In production this would use postgres.js or similar.
 // For now, provides an in-memory fallback that existing code can call.
 
-import { sql as neonSql } from "@neondatabase/serverless";
+import { neon } from "@neondatabase/serverless";
 
 const DATABASE_URL =
   typeof process !== "undefined" && process.env?.DATABASE_URL
@@ -20,14 +20,14 @@ export function isDbAvailable(): boolean {
 }
 
 /** SQL tagged template for Neon. Falls back gracefully when DB is unavailable. */
-export const sql: typeof neonSql = (() => {
+export const sql: typeof neon = (() => {
   if (!DATABASE_URL) {
     // Return a no-op proxy so imports don't crash
-    const noop = new Proxy({} as typeof neonSql, {
+    const noop = new Proxy({} as typeof neon, {
       get: () => () => ({ rows: [], rowCount: 0 }),
       apply: () => ({ rows: [], rowCount: 0 }),
     });
-    return noop as unknown as typeof neonSql;
+    return noop as unknown as typeof neon;
   }
-  return neonSql;
+  return neon;
 })();

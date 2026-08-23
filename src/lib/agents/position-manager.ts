@@ -241,7 +241,6 @@ export class PositionManagerAgent extends BaseAgent {
     let reason = "No update needed";
 
     const breakEvenDistance = atr * BREAK_EVEN_ATR_MULTIPLIER;
-    const profitLockDistance = entryPrice * (PROFIT_LOCK_PCT / 100);
 
     if (direction === "LONG") {
       const profitPct = ((currentPrice - entryPrice) / entryPrice) * 100;
@@ -533,7 +532,7 @@ export class PositionManagerAgent extends BaseAgent {
    */
   private buildReasoningSummary(
     output: PositionManagerOutput,
-    ctx: PositionManagerContext,
+    _ctx: PositionManagerContext,
   ): string {
     const parts: string[] = [];
     parts.push(`Position: $${output.positionSize.toFixed(2)} (max ${output.maxPositionPct * 100}% of portfolio)`);

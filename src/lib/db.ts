@@ -27,12 +27,15 @@ if (!databaseUrl) {
  */
 const _sql = Object.assign(
   // Tagged template form
-  async (strings: TemplateStringsArray, ...values: unknown[]) => {
+  async (strings: TemplateStringsArray, ...values: unknown[]): Promise<{ rows: Record<string, unknown>[]; rowCount: number }> => {
     if (!realSql) {
       return { rows: [] as Record<string, unknown>[], rowCount: 0 };
     }
     try {
-      return await realSql(strings as unknown as TemplateStringsArray, ...values);
+      return (await realSql(strings as unknown as TemplateStringsArray, ...values)) as {
+        rows: Record<string, unknown>[];
+        rowCount: number;
+      };
     } catch (err) {
       console.error("[DB] Query error:", err);
       return { rows: [] as Record<string, unknown>[], rowCount: 0 };

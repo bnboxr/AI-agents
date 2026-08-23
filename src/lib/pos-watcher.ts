@@ -9,7 +9,7 @@
 
 import { createPublicClient, http, parseAbiItem } from "viem";
 import { polygonAmoy, polygon } from "viem/chains";
-import { confirmPaymentSession, failPaymentSession } from "./pos-service";
+import { confirmPaymentSession } from "./pos-service";
 
 // ── Config ─────────────────────────────────────────────────────────────
 
@@ -122,7 +122,7 @@ async function pollForPayments(): Promise<void> {
     });
 
     for (const log of logs) {
-      const { sessionId, payer, token, amount } =
+      const { sessionId, payer, amount } =
         log.args as unknown as {
           sessionId: string;
           payer: string;

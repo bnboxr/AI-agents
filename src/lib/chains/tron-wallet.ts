@@ -65,8 +65,8 @@ export async function getTronWallet(): Promise<{ privateKey: string; address: st
     privateKey: privKeyHex,
   });
 
-  const address = tw.defaultAddress.base58!;
-  const hexAddress = tw.defaultAddress.hex!;
+  const address = tw.defaultAddress.base58! as string;
+  const hexAddress = tw.defaultAddress.hex! as string;
 
   cachedPrivateKey_ = privKeyHex;
   cachedAddress_ = address;

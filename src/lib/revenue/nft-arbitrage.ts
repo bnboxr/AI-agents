@@ -274,11 +274,6 @@ async function fetchCollectionStats(slug: string): Promise<OpenSeaCollection | n
 
 // ── Reservoir API (optional, for better data) ──────────────────
 
-interface ReservoirFloorAsk {
-  price?: { amount?: { decimal?: number; native?: number } };
-  source?: { name?: string };
-}
-
 async function fetchReservoirFloor(slug: string): Promise<{ price: number; source: string } | null> {
   const apiKey = typeof process !== "undefined" && process.env?.RESERVOIR_API_KEY;
   if (!apiKey) return null;

@@ -14,19 +14,18 @@ import { MemoryAgent } from "./memory";
 import { ExitAgent, type ExitContext } from "./exit";
 import { ExecutionAgent, type ExecutionResult } from "./execution";
 import { PortfolioAgent, type PortfolioSnapshot } from "./portfolio";
-import { ReasoningAgent, type ExplanationResult, type TradeAudit } from "./reasoning";
-import { SmartMoneyAgent, type SmartMoneyPatterns } from "./smart-money";
-import { LiquidityAgent, subscribeOrderBook, type LiquidityAnalysis } from "./liquidity";
-import { RegimeDetectionAgent, classifyRegime } from "./regime";
-import type { RegimeClassification } from "./regime";
-import { MultiTimeframeAgent, type MultiTimeframeAnalysis } from "./multi-timeframe";
-import { CorrelationAgent, getCorrelationAgent, type CorrelationMatrix } from "./correlation";
-import { SentimentAgent, getSentimentAgent } from "./sentiment";
+import { ReasoningAgent, type TradeAudit } from "./reasoning";
+import { SmartMoneyAgent } from "./smart-money";
+import { LiquidityAgent, subscribeOrderBook } from "./liquidity";
+import { RegimeDetectionAgent } from "./regime";
+import { MultiTimeframeAgent } from "./multi-timeframe";
+import { getCorrelationAgent, type CorrelationMatrix } from "./correlation";
+import { getSentimentAgent } from "./sentiment";
 import { getVolumeAgent } from "./volume";
 import { ProbabilityAgent } from "./probability";
 import { ConfidenceAgent } from "./confidence";
 import { DevilsAdvocateAgent, type DevilsAdvocateContext } from "./devils-advocate";
-import { PositionManagerAgent, getPositionManager } from "./position-manager";
+import { getPositionManager } from "./position-manager";
 import type { PositionManagerOutput } from "./position-manager";
 import { StrategyAgent } from "./strategy";
 import { isKillSwitchActive, getKillSwitchReason, markApiHealthy, recordLastPrice } from "../risk-engine";
@@ -38,7 +37,7 @@ import type {
   TradingState,
 } from "./types";
 import { getApiKey } from "~/lib/api-keys";
-import { queryFirstResponse, type LLMMessage } from "../llm/multi-provider";
+import { queryFirstResponse } from "../llm/multi-provider";
 import { sql, isDbAvailable } from "../db";
 
 // ── Agent Registry ────────────────────────────────────────────────
@@ -734,7 +733,7 @@ async function gatherReports(ctx: PriceContext): Promise<AgentReport[]> {
     // Feed trade history from learning agent
     const allTrades = learningAgent.getTrades();
     const conditionStats = learningAgent.getConditionStats();
-    probabilityAgent.feedTradeData(allTrades, conditionStats);
+    probabilityAgent.feedTradeData([...allTrades], conditionStats);
 
     // Derive trend score from existing reports
     let trendScore = 50;
@@ -1018,6 +1017,7 @@ function makeDecision(
         pnlPct: state.pnlPct,
         marketCondition: deriveMarketCondition(priceContext, reports),
         confidence: scoreDirection(reports).confidence,
+        timestamp: Date.now(),
       });
 
       // Update state
@@ -2025,4 +2025,3 @@ export {
   positionManager,
   strategyAgent,
 };
-export type { PriceContext };

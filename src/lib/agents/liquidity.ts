@@ -514,7 +514,6 @@ export class LiquidityAgent extends BaseAgent {
 
     // Could not fill full size
     if (remainingSize > 0 && positionSizeUSD > 0) {
-      const fillPct = ((positionSizeUSD - remainingSize) / positionSizeUSD) * 100;
       // If less than 80% filled, flag as problematic
       const filledFraction = (positionSizeUSD - remainingSize) / positionSizeUSD;
       const executionPrice = totalQty > 0 ? totalCost / totalQty : midPrice;

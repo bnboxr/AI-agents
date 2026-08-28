@@ -13,7 +13,7 @@ import type {
   OrderRequest,
   OrderResult,
   Balance,
-  Order,
+  AssetBalance,
 } from "./types";
 import { getBinanceAdapter } from "./binance";
 import { getBitunixAdapter } from "./bitunix";

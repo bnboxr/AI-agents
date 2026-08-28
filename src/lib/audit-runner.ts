@@ -38,9 +38,12 @@ let lastScanTime = 0;
 
 async function getAgent(): Promise<any> {
   if (!auditAgent) {
+    // Named export SystemAuditAgent is the only real export; the `default`
+    // fallback guards against Vite SSR/bundler interop injecting it.
+    type SystemAuditAgentCtor = typeof import("./agents/system-audit").SystemAuditAgent;
     const mod = await import("./agents/system-audit");
-    // Handle both named export and default export (Vite SSR bundling quirk)
-    const AgentClass = mod.SystemAuditAgent ?? mod.default;
+    const AgentClass: SystemAuditAgentCtor | undefined =
+      mod.SystemAuditAgent ?? (mod as { default?: SystemAuditAgentCtor }).default;
     if (typeof AgentClass !== "function") {
       throw new Error(
         `SystemAuditAgent not constructable. Available exports: ${Object.keys(mod).join(", ")}`,

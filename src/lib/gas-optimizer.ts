@@ -411,7 +411,7 @@ export const fetchGasState = createServerFn({ method: "GET" }).handler(async ():
 
 export const toggleAutoSchedule = createServerFn({ method: "POST" })
   .validator((data: unknown) => data as { enabled: boolean })
-  .handler(async ({ data }) => {
+  .handler(async ({ data }: { data: { enabled: boolean } }) => {
     setAutoSchedule(data.enabled);
     return { success: true, autoScheduleEnabled };
   });

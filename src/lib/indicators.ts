@@ -246,7 +246,6 @@ export function computeADX(bars: OHLCBar[], period: number = 14): number {
   // DX
   const diSum = plusDI + minusDI;
   if (diSum === 0) return 0;
-  const dx = (Math.abs(plusDI - minusDI) / diSum) * 100;
 
   // ADX: we compute DX for each period, then smooth
   // For a single-point ADX, compute DX over the most recent `period` values

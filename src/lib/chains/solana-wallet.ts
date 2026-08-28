@@ -163,7 +163,7 @@ export function getSolanaChainConfig() {
  * Sign a raw transaction buffer with the Solana keypair.
  * Returns the signature as base58 string.
  */
-export async function signTransaction(txBuffer: Uint8Array): Promise<string> {
+export async function signTransaction(_txBuffer: Uint8Array): Promise<string> {
   const kp = await getSolanaKeypair();
   // For simple signing, we sign the message directly
   const signature = kp.secretKey.slice(0, 32); // ed25519 secret key

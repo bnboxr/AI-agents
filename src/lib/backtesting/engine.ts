@@ -1,5 +1,4 @@
 import { createServerFn } from "@tanstack/react-start";
-import { CHAINS } from "../chains";
 import type {
   BacktestConfig,
   BacktestResult,
@@ -371,7 +370,6 @@ function simulateCrossChain(
 function computeMetrics(
   state: SimulationState,
   initialCapital: number,
-  days: number
 ): StrategyMetrics {
   const finalEquity =
     state.equityCurve[state.equityCurve.length - 1]?.equity ?? initialCapital;
@@ -495,7 +493,7 @@ export async function runBacktestInternal(config: BacktestConfig): Promise<Backt
       state = simulateYieldOptimizer(pricePoints, config.initialCapital);
   }
 
-  const metrics = computeMetrics(state, config.initialCapital, days);
+  const metrics = computeMetrics(state, config.initialCapital);
 
   return {
     config,
@@ -512,6 +510,6 @@ export async function runBacktestInternal(config: BacktestConfig): Promise<Backt
 
 export const runBacktest = createServerFn({ method: "POST" })
   .validator((data: unknown) => data as BacktestConfig)
-  .handler(async ({ data }) => {
+  .handler(async ({ data }: { data: BacktestConfig }) => {
     return runBacktestInternal(data);
   });

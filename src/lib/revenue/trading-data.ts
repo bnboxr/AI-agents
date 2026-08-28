@@ -155,8 +155,9 @@ export function exportSignals(req: SignalExportRequest = {}): SignalExportRespon
     filtered = filtered.filter((s) => dirs.has(s.direction));
   }
 
-  if (req.minConfidence != null) {
-    filtered = filtered.filter((s) => s.confidence >= req.minConfidence);
+  const minConfidence = req.minConfidence;
+  if (minConfidence != null) {
+    filtered = filtered.filter((s) => s.confidence >= minConfidence);
   }
 
   if (req.timeframe) {
@@ -293,8 +294,6 @@ export function getSignalSummary(): {
 
 // ── Stripe payment-gated access ────────────────────────────────
 
-const STRIPE_SIGNAL_PRICE_ID = "price_signal_premium";
-
 /**
  * Check if a user has premium signal access.
  * In production, validate against Stripe subscription status.
@@ -320,10 +319,11 @@ export function checkPremiumAccess(userId?: string): boolean {
  * Get the Stripe payment link for premium signal access.
  */
 export function getSignalPaymentLink(): string {
-  return (
-    (typeof process !== "undefined" && process.env?.STRIPE_SIGNAL_LINK) ??
-    "https://buy.stripe.com/signal_premium"
-  );
+  const link =
+    typeof process !== "undefined"
+      ? process.env?.STRIPE_SIGNAL_LINK
+      : undefined;
+  return link ?? "https://buy.stripe.com/signal_premium";
 }
 
 // ── Telegram/Discord bot signal format ─────────────────────────

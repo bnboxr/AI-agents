@@ -224,13 +224,6 @@ export async function fetchAtomPrice(): Promise<number> {
 // ── RPC Helpers ─────────────────────────────────────────────────────────
 
 /**
- * Get default Cosmos REST API URL (configurable via env).
- */
-function getDefaultRestUrl(): string {
-  return process.env.COSMOS_REST_URL ?? DEFAULT_MAINNET_REST;
-}
-
-/**
  * Get default Cosmos RPC URL.
  */
 export function getDefaultRpcUrl(): string {

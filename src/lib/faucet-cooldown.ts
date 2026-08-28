@@ -37,7 +37,7 @@ function claimKey(chainId: string, faucetName: string): string {
 /** Check if a faucet can be claimed right now */
 export function canClaim(faucetName: string, chainId?: string): boolean {
   // Find the claim by faucet name across all chains if chainId not provided
-  for (const [key, claim] of claims) {
+  for (const claim of claims.values()) {
     if (claim.faucetName === faucetName) {
       if (chainId && claim.chainId !== chainId) continue;
       return Date.now() >= claim.resetAt;
@@ -48,7 +48,7 @@ export function canClaim(faucetName: string, chainId?: string): boolean {
 
 /** Get seconds until a faucet resets. Returns 0 if available. */
 export function timeUntilReset(faucetName: string, chainId?: string): number {
-  for (const [key, claim] of claims) {
+  for (const claim of claims.values()) {
     if (claim.faucetName === faucetName) {
       if (chainId && claim.chainId !== chainId) continue;
       const remaining = claim.resetAt - Date.now();

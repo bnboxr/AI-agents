@@ -62,10 +62,12 @@ async function runFarmer(): Promise<void> {
   try {
     // Resolve wallet address: prefer wallet-manager master, fall back to env
     const masterWallet = getMasterWallet();
+    const envAddress =
+      typeof process !== "undefined"
+        ? process.env?.FARMER_WALLET_ADDRESS
+        : undefined;
     const walletAddress: string | undefined =
-      masterWallet?.address ??
-      (typeof process !== "undefined" && process.env?.FARMER_WALLET_ADDRESS) ??
-      undefined;
+      masterWallet?.address ?? envAddress ?? undefined;
 
     if (!walletAddress) {
       if (!farmerWarnedNoWallet) {

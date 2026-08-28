@@ -138,11 +138,6 @@ export async function solanaSwap(
     const outputAmount = Number(quote.outAmount) / 10 ** outDecimals;
     const priceImpact = parseFloat(quote.priceImpactPct);
 
-    // Get SOL price for USD valuation
-    let solPrice = 170;
-    try {
-      solPrice = await fetchSolPrice();
-    } catch { /* fallback */ }
 
     return {
       success: true,

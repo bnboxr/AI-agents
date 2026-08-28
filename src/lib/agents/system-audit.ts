@@ -301,7 +301,6 @@ export class SystemAuditAgent extends BaseAgent {
           const fnBody = match[0];
           // Only flag if the function is short (likely a stub)
           if (fnBody.length < 80) {
-            const beforeMatch = content.lastIndexOf("\n", match.index);
             const lineNum = content.slice(0, match.index).split("\n").length;
             issues.push({
               severity: "LOW",
@@ -360,9 +359,7 @@ export class SystemAuditAgent extends BaseAgent {
     try {
       const priceCtxFile = join(this.projectRoot, "src/lib/ws/price-context.ts");
       if (existsSync(priceCtxFile)) {
-        const stats = statSync(priceCtxFile);
-        const fileAge = Date.now() - stats.mtimeMs;
-        // This just confirms the module exists; actual price freshness is checked above
+        // Module presence confirms price context wiring; freshness checked above.
       }
     } catch (err) {
       console.warn("[SystemAudit] staleDataCheck price-context stat failed:", err);

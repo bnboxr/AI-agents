@@ -36,9 +36,6 @@ export interface CosmosPair {
 
 // ── Osmosis Constants ──────────────────────────────────────────────────
 
-// Default Osmosis REST API
-const DEFAULT_OSMOSIS_RPC = "https://rpc.osmosis.zone";
-
 // OSMO CoinGecko ID
 const OSMO_COINGECKO_ID = "osmosis";
 

@@ -1,7 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useEffect, useMemo } from "react";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, LineChart, Line } from "recharts";
-import { CHAINS } from "~/lib/chains";
+import { useMemo } from "react";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import { getAllChainStatus } from "~/lib/blockchain";
 import type { ChainStatus } from "~/lib/blockchain";
 import { getAllAgentStatuses, getAgentProfitHistory } from "~/lib/agent-runner";
@@ -24,11 +23,11 @@ export const Route = createFileRoute("/analytics")({
 
 function AnalyticsPage() {
   const data = Route.useLoaderData();
-  const { chains, agentStatuses, profitHistory, stakingProtocols } = data;
+  const { chains, agentStatuses, stakingProtocols } = data;
 
   // TVL per chain (estimated from gas/activity)
   const tvlPerChain = useMemo(() => {
-    return chains.map(c => ({
+    return chains.map((c: ChainStatus) => ({
       name: c.name,
       tvl: c.online ? Math.round((c.blockHeight ?? 0) * 0.0001 + (c.gasPrice ?? 0) * 100) : 0,
       gasUsed: c.gasPrice ?? 0,
@@ -38,7 +37,7 @@ function AnalyticsPage() {
 
   // Profit per agent
   const profitPerAgent = useMemo(() => {
-    return agentStatuses.map(a => ({
+    return agentStatuses.map((a: AgentStatus) => ({
       name: a.agentName,
       profit: Math.round(a.profitGenerated * 100) / 100,
       tx: a.transactions,
@@ -47,7 +46,7 @@ function AnalyticsPage() {
 
   // Gas spent per chain
   const gasPerChain = useMemo(() => {
-    return chains.filter(c => c.online && c.gasPrice).map(c => ({
+    return chains.filter((c: ChainStatus) => c.online && c.gasPrice).map((c: ChainStatus) => ({
       name: c.name,
       gas: c.gasPrice ?? 0,
     })).sort((a, b) => b.gas - a.gas);
@@ -55,7 +54,7 @@ function AnalyticsPage() {
 
   // Top staking strategies
   const topStrategies = useMemo(() => {
-    return stakingProtocols.slice(0, 5).map(p => ({
+    return stakingProtocols.slice(0, 5).map((p: StakingProtocol) => ({
       name: `${p.name} (${p.asset})`,
       apy: p.apy,
       chain: p.chain,
@@ -63,9 +62,9 @@ function AnalyticsPage() {
   }, [stakingProtocols]);
 
   // P&L summary
-  const totalProfit = useMemo(() => agentStatuses.reduce((s, a) => s + a.profitGenerated, 0), [agentStatuses]);
-  const totalTx = useMemo(() => agentStatuses.reduce((s, a) => s + a.transactions, 0), [agentStatuses]);
-  const onlineChains = useMemo(() => chains.filter(c => c.online).length, [chains]);
+  const totalProfit = useMemo(() => agentStatuses.reduce((s, a: AgentStatus) => s + a.profitGenerated, 0), [agentStatuses]);
+  const totalTx = useMemo(() => agentStatuses.reduce((s, a: AgentStatus) => s + a.transactions, 0), [agentStatuses]);
+  const onlineChains = useMemo(() => chains.filter((c: ChainStatus) => c.online).length, [chains]);
 
   const fmtUSD = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
   const fmtAPY = (n: number) => `${n.toFixed(2)}%`;
@@ -106,7 +105,7 @@ function AnalyticsPage() {
                     tickFormatter={(v: number) => `$${v}`} />
                   <YAxis dataKey="name" type="category" stroke="#30363d" tick={{ fill: '#9ca3af', fontSize: 10 }} axisLine={false} tickLine={false} width={55} />
                   <Tooltip contentStyle={{ background: '#0d1117', border: '1px solid #21262d', borderRadius: '0.5rem', color: '#e5e7eb', fontSize: '0.75rem' }}
-                    formatter={(value: number) => [fmtUSD(value), 'Profit']} />
+                    formatter={(value) => [fmtUSD(Number(value)), 'Profit']} />
                   <Bar dataKey="profit" fill="#22c55e" radius={[0, 4, 4, 0]} maxBarSize={16} />
                 </BarChart>
               </ResponsiveContainer>
@@ -126,7 +125,7 @@ function AnalyticsPage() {
                     tickFormatter={(v: number) => `${v}gwei`} />
                   <YAxis dataKey="name" type="category" stroke="#30363d" tick={{ fill: '#9ca3af', fontSize: 10 }} axisLine={false} tickLine={false} width={55} />
                   <Tooltip contentStyle={{ background: '#0d1117', border: '1px solid #21262d', borderRadius: '0.5rem', color: '#e5e7eb', fontSize: '0.75rem' }}
-                    formatter={(value: number) => [`${value.toFixed(1)} gwei`, 'Gas']} />
+                    formatter={(value) => [`${Number(value).toFixed(1)} gwei`, 'Gas']} />
                   <Bar dataKey="gas" fill="#eab308" radius={[0, 4, 4, 0]} maxBarSize={16} />
                 </BarChart>
               </ResponsiveContainer>
@@ -149,7 +148,7 @@ function AnalyticsPage() {
                   <YAxis stroke="#30363d" tick={{ fill: '#6b7280', fontSize: 10 }} axisLine={false} tickLine={false}
                     tickFormatter={(v: number) => `${v}%`} />
                   <Tooltip contentStyle={{ background: '#0d1117', border: '1px solid #21262d', borderRadius: '0.5rem', color: '#e5e7eb', fontSize: '0.75rem' }}
-                    formatter={(value: number) => [fmtAPY(value), 'APY']} />
+                    formatter={(value) => [fmtAPY(Number(value)), 'APY']} />
                   <Bar dataKey="apy" fill="#3b82f6" radius={[4, 4, 0, 0]} maxBarSize={40} />
                 </BarChart>
               </ResponsiveContainer>
@@ -169,7 +168,7 @@ function AnalyticsPage() {
                     tickFormatter={(v: number) => `$${(v / 1e6).toFixed(1)}M`} />
                   <YAxis dataKey="name" type="category" stroke="#30363d" tick={{ fill: '#9ca3af', fontSize: 10 }} axisLine={false} tickLine={false} width={55} />
                   <Tooltip contentStyle={{ background: '#0d1117', border: '1px solid #21262d', borderRadius: '0.5rem', color: '#e5e7eb', fontSize: '0.75rem' }}
-                    formatter={(value: number) => [fmtUSD(value), 'Est. TVL']} />
+                    formatter={(value) => [fmtUSD(Number(value)), 'Est. TVL']} />
                   <Bar dataKey="tvl" fill="#14b8a6" radius={[0, 4, 4, 0]} maxBarSize={16} />
                 </BarChart>
               </ResponsiveContainer>
@@ -196,7 +195,7 @@ function AnalyticsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {chains.map((chain) => (
+                  {chains.map((chain: ChainStatus) => (
                     <tr key={chain.id} className="border-b border-dark-border hover:bg-dark-hover transition-colors">
                       <td className="py-3 px-4">
                         <span className="text-white font-medium">{chain.name}</span>

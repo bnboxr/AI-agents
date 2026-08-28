@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { WagmiProvider, useAccount, useConnect, useDisconnect, useBalance, useChainId, useSwitchChain, useChains } from "wagmi";
+import { WagmiProvider, useAccount, useConnect, useDisconnect, useBalance, useChainId, useSwitchChain, useChains, type Connector } from "wagmi";
+import type { Chain } from "viem";
 import { formatUnits } from "viem";
 import { useState, useEffect, useMemo, useCallback, type ReactNode } from "react";
 import { config, type WalletMeta, WALLET_LIST } from "~/lib/web3";
@@ -179,7 +180,7 @@ export function ChainSelector() {
     if (!mounted) return;
     const saved = getSavedChainId();
     if (saved !== chainId && CHAIN_LABELS[saved]) {
-      const targetChain = chains.find((c) => c.id === saved);
+      const targetChain = chains.find((c: Chain) => c.id === saved);
       if (targetChain) {
         switchChain({ chainId: saved });
       }
@@ -222,8 +223,8 @@ export function ChainSelector() {
           >
             <div className="p-1.5">
               {chains
-                .filter((c) => CHAIN_LABELS[c.id])
-                .map((c) => (
+                .filter((c: Chain) => CHAIN_LABELS[c.id])
+                .map((c: Chain) => (
                   <button
                     key={c.id}
                     onClick={() => {
@@ -312,12 +313,12 @@ function WalletModal({ onClose }: { onClose: () => void }) {
 
   useEffect(() => { setMounted(true); }, []);
 
-  const connectorIds = useMemo(() => new Set(availableConnectors.map(c => c.id)), [availableConnectors]);
+  const connectorIds = useMemo(() => new Set(availableConnectors.map((c: Connector) => c.id)), [availableConnectors]);
   const connectorRdns = useMemo(
-    () => availableConnectors.flatMap(c => (c as ConnectorWithRdns).rdns || []).map((r: string) => r.toLowerCase()),
+    () => availableConnectors.flatMap((c: Connector) => (c as ConnectorWithRdns).rdns || []).map((r: string) => r.toLowerCase()),
     [availableConnectors]
   );
-  const connectorNames = useMemo(() => availableConnectors.map(c => c.name.toLowerCase()), [availableConnectors]);
+  const connectorNames = useMemo(() => availableConnectors.map((c: Connector) => c.name.toLowerCase()), [availableConnectors]);
 
   // Sort wallets into categories
   const { detectedWallets, qrWallets, otherWallets } = useMemo(() => {
@@ -382,18 +383,18 @@ function WalletModal({ onClose }: { onClose: () => void }) {
     setConnecting(wallet.id);
     setError(null);
     try {
-      let c = availableConnectors.find(x => x.id === wallet.connectorId);
+      let c = availableConnectors.find((x: Connector) => x.id === wallet.connectorId);
 
       // rdns fallback
       if (!c && wallet.rdns) {
-        c = availableConnectors.find(x =>
+        c = availableConnectors.find((x: Connector) =>
           (x as ConnectorWithRdns).rdns?.some((r: string) => r.toLowerCase() === wallet.rdns!.toLowerCase())
         );
       }
 
       // Name fallback
       if (!c) {
-        c = availableConnectors.find(x =>
+        c = availableConnectors.find((x: Connector) =>
           x.name.toLowerCase().includes(wallet.name.toLowerCase()) ||
           wallet.name.toLowerCase().includes(x.name.toLowerCase())
         );
@@ -401,12 +402,12 @@ function WalletModal({ onClose }: { onClose: () => void }) {
 
       // Generic injected fallback
       if (!c && (wallet.category === "injected" || wallet.category === "sdk")) {
-        c = availableConnectors.find(x => x.id === "injected" || x.type === "injected");
+        c = availableConnectors.find((x: Connector) => x.id === "injected" || x.type === "injected");
       }
 
       // WalletConnect fallback
       if (!c && wallet.category === "walletconnect") {
-        c = availableConnectors.find(x => x.id === "walletConnect");
+        c = availableConnectors.find((x: Connector) => x.id === "walletConnect");
       }
 
       if (c) {
@@ -485,8 +486,8 @@ function WalletModal({ onClose }: { onClose: () => void }) {
                   >
                     <div className="p-1">
                       {chains
-                        .filter((c) => CHAIN_LABELS[c.id])
-                        .map((c) => (
+                        .filter((c: Chain) => CHAIN_LABELS[c.id])
+                        .map((c: Chain) => (
                           <button
                             key={c.id}
                             onClick={() => {

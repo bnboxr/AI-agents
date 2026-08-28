@@ -21,8 +21,8 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { motion, AnimatePresence } from "framer-motion";
-import { scanLocalAI, findAvailableLocalSource } from "~/lib/local-ai-scanner";
-import type { LocalAISource, LocalAIScanResult } from "~/lib/local-ai-scanner";
+import { findAvailableLocalSource } from "~/lib/local-ai-scanner";
+import type { LocalAISource } from "~/lib/local-ai-scanner";
 import { getAvailableProviders } from "~/lib/llm/multi-provider";
 import type { LLMProvider } from "~/lib/llm/multi-provider";
 
@@ -472,12 +472,6 @@ function computeLayout(): Map<string, { x: number; y: number; size: number }> {
   const analysisAgents = AGENT_NODES.filter(
     (n) => n.role === "Analysis" && n.ring !== "inner"
   );
-  const restOuterAgents = AGENT_NODES.filter(
-    (n) =>
-      n.ring === "outer" &&
-      n.role !== "Intelligence" &&
-      n.role !== "Analysis"
-  );
   const innerAgents = AGENT_NODES.filter(
     (n) => n.ring === "inner"
   );
@@ -572,9 +566,6 @@ function AgentFlowNode({ data, selected }: NodeProps) {
   const nodeSize = isModel ? 56 : isOrchestrator ? 42 : agent.ring === "inner" ? 30 : 24;
   const fontSize = isModel ? 28 : isOrchestrator ? 18 : agent.ring === "inner" ? 10 : 8;
 
-  // Model status color
-  const modelStatusColor =
-    status === "active" ? "#00e676" : status === "idle" ? "#ffab00" : "#9e9e9e";
 
   return (
     <div

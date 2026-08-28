@@ -1,7 +1,7 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useAccount, useChainId, useReadContract, useWriteContract, useBalance, useWaitForTransactionReceipt } from "wagmi";
-import { parseUnits, formatUnits, parseEther, type Address } from "viem";
+import { parseUnits, formatUnits, parseEther } from "viem";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import {
   getStakingProtocols,
@@ -10,7 +10,6 @@ import {
   getAPYHistory,
 } from "~/lib/staking";
 import type { StakingProtocol, StakingChainGroup, StakingAPYHistory } from "~/lib/staking";
-import { addNotification } from "~/lib/notifications";
 import {
   discoverPools,
   depositLP,
@@ -245,7 +244,7 @@ function StakePage() {
   });
 
   // ── Write contracts ─────────────────────────────────────────────
-  const { writeContract: writeContractRaw, data: txData, isPending: txPending } = useWriteContract();
+  const { writeContract: writeContractRaw, data: txData } = useWriteContract();
 
   // Track tx hash from writeContract return
   useEffect(() => {
@@ -371,18 +370,18 @@ function StakePage() {
   // ── Derived data ────────────────────────────────────────────────
   const chains = useMemo(() => {
     const unique = new Map<string, string>();
-    protocols.forEach(p => unique.set(p.chain, p.chain.charAt(0).toUpperCase() + p.chain.slice(1)));
+    protocols.forEach((p: StakingProtocol) => unique.set(p.chain, p.chain.charAt(0).toUpperCase() + p.chain.slice(1)));
     return Array.from(unique.entries()).map(([id, name]) => ({ id, name }));
   }, [protocols]);
 
   const filteredProtocols = useMemo(() => {
     if (selectedChain === "all") return protocols;
-    return protocols.filter(p => p.chain === selectedChain);
+    return protocols.filter((p: StakingProtocol) => p.chain === selectedChain);
   }, [protocols, selectedChain]);
 
   const selectedHistory = useMemo(() => {
     if (!selectedProtocol) return null;
-    return apyHistory.find(h => h.protocolId === selectedProtocol.id);
+    return apyHistory.find((h: StakingAPYHistory) => h.protocolId === selectedProtocol.id);
   }, [selectedProtocol, apyHistory]);
 
   const allAssets = useMemo(() => Object.keys(bestAPY), [bestAPY]);
@@ -516,7 +515,7 @@ function StakePage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredProtocols.map((proto) => (
+                  {filteredProtocols.map((proto: StakingProtocol) => (
                     <tr
                       key={proto.id}
                       className={`border-b border-dark-border hover:bg-dark-hover transition-colors cursor-pointer ${
@@ -769,7 +768,7 @@ function StakePage() {
                       fontSize: '0.75rem',
                     }}
                     labelFormatter={(ts: number) => fmtDate(ts)}
-                    formatter={(value: number) => [`${value.toFixed(2)}%`, 'APY']}
+                    formatter={(value) => [`${Number(value).toFixed(2)}%`, 'APY']}
                   />
                   <Line
                     type="monotone"
@@ -805,13 +804,13 @@ function StakePage() {
             <span className="text-accent-blue">▸</span> By Chain
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {byChain.map((group) => (
+            {byChain.map((group: StakingChainGroup) => (
               <div key={group.chain} className="glass-card p-4">
                 <h3 className="text-sm font-semibold text-white capitalize mb-3">
                   {group.chainName}
                 </h3>
                 <div className="space-y-1">
-                  {group.protocols.slice(0, 4).map((proto) => (
+                  {group.protocols.slice(0, 4).map((proto: StakingProtocol) => (
                     <div
                       key={proto.id}
                       onClick={() => { setSelectedProtocol(proto); setExecState(null); setStakeAmount(""); }}
@@ -846,8 +845,6 @@ function StakePage() {
 // ── LP Compounder Section ────────────────────────────────────────
 
 function LPSection() {
-  const { address, isConnected } = useAccount();
-  const chainId = useChainId();
   const [lpPools, setLpPools] = useState<DeFiLlamaPool[]>([]);
   const [lpPositions, setLpPositions] = useState<LPPosition[]>([]);
   const [lpLoading, setLpLoading] = useState(false);

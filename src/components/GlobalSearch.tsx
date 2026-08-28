@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef, useMemo } from "react";
-import { Link } from "@tanstack/react-router";
 import { CHAINS } from "~/lib/chains";
 import { AGENTS } from "~/lib/agents";
 import { COMMON_TOKENS } from "~/lib/web3";

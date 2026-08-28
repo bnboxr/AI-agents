@@ -64,7 +64,6 @@ function parsePaperBalances(): AssetBalance[] {
 
 const paperOrders = new Map<string, Order>();
 const paperBalances: AssetBalance[] = parsePaperBalances();
-let paperOrderCounter = 0;
 
 // ── Helpers ────────────────────────────────────────────────────────
 
@@ -105,86 +104,6 @@ async function fetchBinancePrice(symbol: string): Promise<number> {
     if (cached !== null) return cached;
     throw new Error(`No price available for ${symbol}`);
   }
-}
-
-// ── Paper Trading Engine ───────────────────────────────────────────
-
-async function paperPlaceOrder(orderReq: OrderRequest): Promise<OrderResult> {
-  const pair = getPair(orderReq.symbol);
-  let fillPrice: number;
-
-  try {
-    fillPrice = await fetchBinancePrice(pair);
-  } catch (err) {
-    console.warn("[Binance] paperPlaceOrder fetchBinancePrice failed:", err);
-    throw new Error(`Cannot get price for ${pair}`);
-  }
-
-  // Apply realistic slippage (0.05% for market, 0% for limit)
-  const slippage = orderReq.type === "MARKET" ? 0.0005 : 0;
-  const slippageDir = orderReq.side === "BUY" ? 1 : -1;
-  const execPrice = fillPrice * (1 + slippage * slippageDir);
-
-  paperOrderCounter++;
-  const orderId = `paper_binance_${Date.now()}_${paperOrderCounter}`;
-
-  const order: Order = {
-    orderId,
-    symbol: pair,
-    side: orderReq.side,
-    type: orderReq.type,
-    quantity: orderReq.quantity,
-    filledQuantity: orderReq.quantity,
-    price: orderReq.price ?? execPrice,
-    avgPrice: execPrice,
-    status: "FILLED",
-    timestamp: Date.now(),
-    isPaper: true,
-  };
-
-  paperOrders.set(orderId, order);
-
-  // Update paper balances
-  const quoteAmount = orderReq.quantity * execPrice;
-  const baseAsset = pair.replace("USDT", "");
-  const quoteAsset = "USDT";
-
-  let baseBal = paperBalances.find((b) => b.asset === baseAsset);
-  let quoteBal = paperBalances.find((b) => b.asset === quoteAsset);
-
-  if (!baseBal) {
-    baseBal = { asset: baseAsset, free: 0, locked: 0, usdValue: 0 };
-    paperBalances.push(baseBal);
-  }
-  if (!quoteBal) {
-    quoteBal = { asset: quoteAsset, free: 0, locked: 0, usdValue: 0 };
-    paperBalances.push(quoteBal);
-  }
-
-  if (orderReq.side === "BUY") {
-    quoteBal.free -= quoteAmount;
-    baseBal.free += orderReq.quantity;
-  } else {
-    baseBal.free -= orderReq.quantity;
-    quoteBal.free += quoteAmount;
-  }
-
-  const result: OrderResult = {
-    orderId,
-    symbol: pair,
-    side: orderReq.side,
-    type: orderReq.type,
-    quantity: orderReq.quantity,
-    filledQuantity: orderReq.quantity,
-    avgPrice: execPrice,
-    status: "FILLED",
-    fee: quoteAmount * 0.001, // 0.1% fee
-    feeAsset: "USDT",
-    timestamp: Date.now(),
-    isPaper: true,
-  };
-
-  return result;
 }
 
 // ── BinanceAdapter Class ───────────────────────────────────────────

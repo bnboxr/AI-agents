@@ -217,7 +217,7 @@ export async function findAvailableLocalSource(): Promise<{
  */
 export async function findFreePort(): Promise<number> {
   const { createServer } = await import("node:net");
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     const server = createServer();
     server.listen(0, "127.0.0.1", () => {
       const addr = server.address();
@@ -284,7 +284,7 @@ export async function startLlamaCppServer(
   const binary = await ensureLlamaCpp();
 
   // 2. Pick a free port
-  const port = opts?.port ?? findFreePort();
+  const port = opts?.port ?? (await findFreePort());
   const host = opts?.host ?? "127.0.0.1";
   const ngl = opts?.ngl ?? 999; // offload all layers to GPU if available
   const threads = opts?.threads ?? Math.max(1, (cpus().length || 4) - 1);
@@ -310,7 +310,7 @@ export async function startLlamaCppServer(
   const proc = spawn(binary, args, {
     stdio: ["ignore", "pipe", "pipe"],
   });
-  proc.on("exit", (exitCode, signalCode) => {
+  proc.on("exit", (exitCode) => {
     if (exitCode !== null && exitCode !== 0) {
       console.error(`[LlamaCpp] Server exited with code ${exitCode}`);
     }

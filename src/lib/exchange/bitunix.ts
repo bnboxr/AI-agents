@@ -86,18 +86,6 @@ function ensurePaperBalances(): void {
   }
 }
 
-/** Sync paper USDT balance back to unified-balance after a trade. */
-function syncUsdtToUnifiedBalance(): void {
-  try {
-    const quoteBal = paperBalances.find((b) => b.asset === "USDT");
-    if (!quoteBal) return;
-    // Best-effort: the unified-balance will be the primary source
-    // This just ensures the local paperBalances reflect reality
-  } catch {
-    // ignore sync failures
-  }
-}
-
 // ── Paper Perpetuals State ──────────────────────────────────────────
 
 const paperPerpetualPositions = new Map<string, PerpetualPosition>();
@@ -259,7 +247,7 @@ async function paperPlaceOrder(orderReq: OrderRequest): Promise<OrderResult> {
 }
 
 /** Close an existing paper spot position and return PnL. */
-async function paperCloseOrder(symbol: string, closeSide?: "SELL" | "BUY"): Promise<OrderResult & { realizedPnl: number; exitPrice: number }> {
+async function paperCloseOrder(symbol: string): Promise<OrderResult & { realizedPnl: number; exitPrice: number }> {
   ensurePaperBalances();
   const rawSymbol = symbol.includes("/") ? getRawSymbol(symbol) : symbol;
   const pair = rawSymbol.includes("/") ? rawSymbol : `${rawSymbol.slice(0, -4)}/${rawSymbol.slice(-4)}`;
@@ -488,10 +476,6 @@ class BitunixAdapter implements ExchangeAdapter {
       if (request.reduceOnly) body.reduceOnly = true;
       if (request.stopLossPrice) body.stopLossPrice = request.stopLossPrice;
       if (request.takeProfitPrice) body.takeProfitPrice = request.takeProfitPrice;
-
-      const queryString = new URLSearchParams(
-        Object.entries(body).map(([k, v]) => [k, String(v)]),
-      ).toString();
 
       const res = await fetch(`${BITUNIX_FUTURES_REST}/api/v1/futures/order`, {
         method: "POST",
@@ -835,7 +819,8 @@ class BitunixAdapter implements ExchangeAdapter {
     entryPrice: number,
     side: "BUY" | "SELL",
     leverage: number,
-    marginMode: "isolated" | "cross",
+    // Kept for signature symmetry with callers; liq calc below is mode-independent.
+    _marginMode: "isolated" | "cross",
   ): number {
     // Maintenance margin rate: ~0.5% for most pairs
     const mmr = 0.005;

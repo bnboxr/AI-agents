@@ -8,7 +8,11 @@
     // (module "bun" not resolvable here); they are thin production server wrappers,
     // type-checked by Bun at runtime instead. See serve.ts header.
     "serve.ts",
-    "src/lib/terminal-server.ts"
+    "src/lib/terminal-server.ts",
+    // Vercel Build Output entry: imports build-generated ./dist/server/server.js
+    // (produced by build-vercel.sh), which does not exist at typecheck time; the
+    // launcher is a thin Node adapter checked at deploy. See vercel-entry.ts.
+    "vercel-entry.ts"
   ],
   "compilerOptions": {
     "target": "ES2022",

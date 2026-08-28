@@ -4,7 +4,7 @@
 // Paper mode: real order book quotes from XRPL.
 // Integrates with existing DexAdapter pattern.
 
-import { getXrpAddress, getXrpBalance, fetchXrpPrice } from "./xrp-wallet";
+import { getXrpAddress, getXrpBalance } from "./xrp-wallet";
 
 // ── Types ──────────────────────────────────────────────────────────────
 

@@ -212,11 +212,8 @@ async function fetchRealMSolBalance(): Promise<number | null> {
  */
 async function sendRealMarinadeDeposit(amountSOL: number): Promise<string | null> {
   try {
-    const { Connection, PublicKey, Transaction, SystemProgram, LAMPORTS_PER_SOL, sendAndConfirmTransaction } =
+    const { PublicKey, Transaction, SystemProgram, LAMPORTS_PER_SOL } =
       await import("@solana/web3.js");
-
-    const rpcUrl = getSolanaRpcUrl();
-    const connection = new Connection(rpcUrl, "confirmed");
 
     const walletPubkeyStr =
       typeof process !== "undefined" && process.env?.SOLANA_WALLET_PUBKEY;

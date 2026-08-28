@@ -13,7 +13,7 @@
 import { existsSync, mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { homedir, platform, cpus, tmpdir } from "node:os";
-import { execSync, spawnSync } from "child_process";
+import { execSync } from "child_process";
 
 // ── Constants ─────────────────────────────────────────────────────────
 

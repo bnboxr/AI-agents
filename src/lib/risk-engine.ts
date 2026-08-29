@@ -109,8 +109,9 @@ const marketPriceHistory: PricePoint[] = [];
 function ensureAgentState(chainId: string): AgentRiskState {
   if (!agentRisk[chainId]) {
     const agent = AGENTS[chainId];
-    // Fallback initial portfolio value — set STARTING_CAPITAL env var
-    const initialValue = Number(process.env.STARTING_CAPITAL) || 1_000_000;
+    // Initial portfolio value — set STARTING_CAPITAL env var. Default is $0
+    // (no fabricated $1M paper value presented as capital).
+    const initialValue = Number(process.env.STARTING_CAPITAL) || 0;
     agentRisk[chainId] = {
       chainId,
       agentName: agent?.name ?? "Unknown",

@@ -1,10 +1,9 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useState, useEffect, useCallback } from "react";
 import {
   fetchDailySignal,
   fetchSignalHistory,
-  hasUnlockedPremiumClient,
-  STRIPE_PREMIUM_PRICE_ID,
+  getStripeCheckoutUrl,
 } from "~/lib/trading-signals";
 import type { TradingSignal, SignalStats } from "~/lib/trading-signals";
 
@@ -63,14 +62,6 @@ function timeAgo(ts: number): string {
   return `${days}d ago`;
 }
 
-// ── Stripe Checkout ─────────────────────────────────────────────────
-
-function getStripeCheckoutUrl(): string {
-  const origin =
-    typeof window !== "undefined" ? window.location.origin : "https://hsmc.io";
-  return `https://buy.stripe.com/14k5oGe0egmA9mE3cd?client_reference_id=${encodeURIComponent(origin)}/signals?session_id={CHECKOUT_SESSION_ID}`;
-}
-
 // ── Page Component ──────────────────────────────────────────────────
 
 function SignalsPage() {
@@ -82,19 +73,10 @@ function SignalsPage() {
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
-  // Check URL params for Stripe redirect
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const sessionId = params.get("session_id");
-    if (sessionId) {
-      setUnlocked(true);
-      hasUnlockedPremiumClient(sessionId);
-      // Clean URL
-      window.history.replaceState({}, "", "/signals");
-    } else {
-      setUnlocked(hasUnlockedPremiumClient());
-    }
-  }, []);
+  // Premium gate. A `session_id` URL param is NOT proof of payment — there is no
+  // server-side Stripe verification wired here, so treating it as unlocked would be
+  // a free-pass mock. The signal stays honestly locked (`unlocked === false`) until a
+  // real, server-verified/webhook unlock path exists.
 
   // Fetch signals
   useEffect(() => {
@@ -263,25 +245,12 @@ function SignalsPage() {
                   onClick={handleUnlock}
                   className="w-full py-3.5 rounded-xl bg-gradient-to-r from-[#00e676] to-[#00bcd4] text-[#080a0f] font-bold font-mono text-sm tracking-wider hover:opacity-90 transition-opacity shadow-lg shadow-[#00e676]/20"
                 >
-                  UNLOCK FULL SIGNAL — 25 RON
+                  UNLOCK FULL SIGNAL — 5 RON
                 </button>
 
                 <p className="mt-3 text-center text-[0.6rem] text-[#546e7a] font-mono">
                   One-time payment. Secure checkout via Stripe.
                 </p>
-
-                {/* Already unlocked link */}
-                <div className="mt-4 pt-4 border-t border-[#1a1f2e] text-center">
-                  <p className="text-[0.65rem] text-[#546e7a] font-mono">
-                    Already unlocked?{" "}
-                    <span
-                      className="text-[#00e676] cursor-pointer hover:underline"
-                      onClick={() => setUnlocked(true)}
-                    >
-                      View signal →
-                    </span>
-                  </p>
-                </div>
               </div>
             ) : (
               /* ── Unlocked View ── */
@@ -484,7 +453,7 @@ function SignalsPage() {
                 onClick={handleUnlock}
                 className="w-full py-3 rounded-xl bg-gradient-to-r from-[#00e676] to-[#00bcd4] text-[#080a0f] font-bold font-mono text-sm tracking-wider hover:opacity-90 transition-opacity shadow-lg shadow-[#00e676]/20"
               >
-                UNLOCK PREMIUM SIGNAL — 25 RON
+                UNLOCK PREMIUM SIGNAL — 5 RON
               </button>
               <p className="mt-3 text-[0.6rem] text-[#546e7a] font-mono">
                 Powered by Stripe • Secure payment • Instant access

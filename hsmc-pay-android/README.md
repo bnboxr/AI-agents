@@ -46,16 +46,32 @@ card issuer, so no card data is ever fabricated.
 
 ## Prerequisites (owner's machine)
 
-- **Node.js** 18+
-- **JDK 17** (Android Gradle Plugin 8.2 requires JDK 17)
-- **Android SDK** platform 34 + **build-tools 34.0.0**
+- **Node.js** 18+ (LTS recommended)
+- **JDK 17** (Android Gradle Plugin 8.2 requires JDK 17). Install **Temurin 17**
+  or **OpenJDK 17** and make sure `JAVA_HOME` points at it:
+  - **Windows**: `java -version` → if not 17, install from
+    https://adoptium.net and set `JAVA_HOME` (System Environment Variables) to
+    the unpacked JDK folder (e.g. `C:\Program Files\Eclipse Adoptium\jdk-17.x`).
+  - **macOS/Linux**: `export JAVA_HOME=$(/usr/libexec/java_home -v 17)` (mac) or
+    the path of your JDK 17 (Linux). Confirm with `echo $JAVA_HOME`.
+- **Android SDK / Android Studio** — platform 34 + **build-tools 34.0.0**
   - The Gradle build reads the SDK location from `android/local.properties`
     (`sdk.dir=...`). This file is **not in the repo** — Android Studio creates
     it for you on first open; alternatively create it manually:
-    `echo "sdk.dir=/path/to/Android/Sdk" > android/local.properties`
+    - **Windows**: `echo sdk.dir=C:\\Users\\<you>\\AppData\\Local\\Android\\Sdk > android\local.properties`
+    - **macOS**: `echo "sdk.dir=$HOME/Library/Android/sdk" > android/local.properties`
 - The Gradle **wrapper is committed** (`android/gradlew`, `android/gradlew.bat`,
   `android/gradle/wrapper/gradle-wrapper.jar`) — you do **not** need to install
   Gradle separately; `./gradlew` downloads Gradle 8.6 on first run.
+
+> **Toolchain note (why `JAVA_HOME` matters):** `android/gradle.properties` ships
+> with a Linux-only line `org.gradle.java.installations.paths=/usr/lib/jvm/java-17-openjdk-amd64`
+> (the CI/sandbox build machines use it so Gradle finds the JDK 17 toolchain the
+> React Native Gradle plugin requires). On **your** PC that exact path won't
+> exist — that's fine, ignore it. What matters on your PC is that `JAVA_HOME`
+> points to a real JDK 17, so Gradle's toolchain auto-detect resolves. If you
+> see `Path for java installation ... does not contain a java executable`, that
+> simply means Gradle can't see JDK 17 — fix `JAVA_HOME` and retry.
 
 ## Install & Build (debug)
 

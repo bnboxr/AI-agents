@@ -3,7 +3,7 @@
 // from the platform's autonomous wallet mnemonic.
 // Uses @solana/web3.js + bip39 + ed25519-hd-key.
 
-import { Keypair, Connection, PublicKey, LAMPORTS_PER_SOL } from "@solana/web3.js";
+import { Keypair, Connection, PublicKey, LAMPORTS_PER_SOL, Transaction } from "@solana/web3.js";
 import * as bip39 from "bip39";
 import { derivePath } from "ed25519-hd-key";
 import { getAutonomousWallet } from "../autonomous-wallet";
@@ -160,15 +160,50 @@ export function getSolanaChainConfig() {
 // ── Transaction signing helpers ─────────────────────────────────────────
 
 /**
- * Sign a raw transaction buffer with the Solana keypair.
- * Returns the signature as base58 string.
+ * Sign a serialized Solana Transaction with the autonomous Solana keypair
+ * using the real @solana/web3.js Transaction machinery.
+ *
+ * Returns the 64-byte Ed25519 signature, base64-encoded, for the given
+ * transaction, after verifying it with `Transaction.verifySignatures()`.
+ *
+ * This NEVER returns or exposes the secret key. If the input cannot be parsed
+ * or signed (e.g. missing fee payer / recent blockhash), it throws an explicit
+ * error instead of fabricating a placeholder.
  */
-export async function signTransaction(_txBuffer: Uint8Array): Promise<string> {
+export async function signTransaction(txBuffer: Uint8Array): Promise<string> {
   const kp = await getSolanaKeypair();
-  // For simple signing, we sign the message directly
-  const signature = kp.secretKey.slice(0, 32); // ed25519 secret key
-  // In production, use actual transaction signing via @solana/web3.js Transaction
-  return Buffer.from(signature).toString("base64");
+
+  let tx: Transaction;
+  try {
+    tx = Transaction.from(txBuffer);
+  } catch (err) {
+    throw new Error(
+      `[SolanaWallet] signTransaction: could not parse input as a Solana Transaction: ${(err as Error).message}`,
+    );
+  }
+
+  // A transaction must have a fee payer and a recent blockhash before it can be
+  // signed and verified — refuse rather than produce an unusable signature.
+  if (!tx.feePayer) {
+    throw new Error("[SolanaWallet] signTransaction: transaction has no fee payer — cannot sign");
+  }
+  if (!tx.recentBlockhash) {
+    throw new Error("[SolanaWallet] signTransaction: transaction has no recent blockhash — cannot sign");
+  }
+
+  tx.partialSign(kp);
+
+  if (!tx.verifySignatures()) {
+    throw new Error("[SolanaWallet] signTransaction: produced signature failed verification");
+  }
+
+  const sig = tx.signatures.find((s) => s.publicKey.equals(kp.publicKey))?.signature;
+  if (!sig || sig.length === 0) {
+    throw new Error("[SolanaWallet] signTransaction: no signature was recorded for our keypair");
+  }
+
+  // Return the real 64-byte Ed25519 signature (never the secret key).
+  return Buffer.from(sig).toString("base64");
 }
 
 /**

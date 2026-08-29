@@ -1,17 +1,21 @@
 // ── Capital Manager ───────────────────────────────────────────────
-// Tracks trading capital, profit, and owner payout.
+// Tracks PAPER/SIMULATION trading capital, profit, and owner payout.
+// This ledger NEVER represents real funds: balances here are labelled
+// `mode: "simulation"` and must never be presented to the UI as live.
 // Profit split: 90% → owner payout, 10% → reinvested into trading capital.
 // Losses are absorbed by trading capital only, down to initial floor.
 //
 // pSOL Auto-Staking: when payout > 0.01 SOL, auto-stake into Marinade.
 //
-// LIVE MODE: Loads STARTING_CAPITAL from env (default $1,000,000).
-// Verifies real exchange balance on startup.
+// Loads STARTING_CAPITAL from env if set; otherwise professional default is $0
+// (no fabricated $1M paper capital). Real funded balances are verified on
+// startup against the exchange; anything here remains labelled simulation.
 
 // HMAC-SHA256: import { createHmac } from "crypto" when Binance API code is added
 import { triggerAutoStake, getPSolState, compoundYield, type PSolStakingState } from "./staking/psol";
 
 interface CapitalState {
+  /** Paper/simulation trading balance in USDT — not real funds. */
   trading: number;
   initial: number;
   profit: number;
@@ -20,9 +24,11 @@ interface CapitalState {
   balanceVerified: boolean;
   /** Exchange-reported balance (if available) */
   exchangeBalance: number | null;
+  /** Always "simulation": this ledger tracks paper capital, never live funds. */
+  mode: "simulation";
 }
 
-/** Load starting capital from env or default to $1,000,000 */
+/** Load starting capital from env; default to $0 (never fabricate paper $1M). */
 function loadStartingCapital(): number {
   try {
     const envVal =
@@ -35,7 +41,7 @@ function loadStartingCapital(): number {
     console.warn("[CapitalManager] loadStartingCapital failed:", err);
     // env not available
   }
-  return 1_000_000;
+  return 0;
 }
 
 const initialCapital = loadStartingCapital();
@@ -47,6 +53,7 @@ let state: CapitalState = {
   payout: 0,
   balanceVerified: false,
   exchangeBalance: null,
+  mode: "simulation",
 };
 
 /** Track whether we've already staked the current payout (prevents duplicate stakes) */
@@ -73,7 +80,7 @@ export async function verifyExchangeBalance(): Promise<CapitalState> {
     const apiKey =
       typeof process !== "undefined" ? process.env?.BINANCE_API_KEY : undefined;
     const apiSecret =
-      typeof process !== "undefined" ? process.env?.BINANCE_API_SECRET : undefined;
+      typeof process !== "undefined" ? process.env?.BINANCE_SECRET_KEY : undefined;
 
     if (apiKey && apiSecret) {
       const timestamp = Date.now();

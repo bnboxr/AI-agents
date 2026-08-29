@@ -1,5 +1,9 @@
-// PayScreen.tsx — Tap-to-pay interface with NFC readiness, POS detection,
-// payment method selector bottom sheet, and Virtual Card support
+// PayScreen.tsx — Tap-to-pay interface with NFC readiness and POS detection.
+//
+// The NFC Ready badge reflects the REAL device capability (native
+// isHCEAvailable()). Payments are only ever produced by the real HCE flow:
+// a POS terminal tap drives HCEService.kt → onHCERequest → processHCERequest
+// → EIP-712 signing → APDU response. This screen does NOT fake an approval.
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
@@ -10,48 +14,24 @@ import {
   Easing,
   Platform,
   TouchableOpacity,
-  Modal,
-  Pressable,
-  Dimensions,
 } from 'react-native';
 import * as HCEService from '../services/HCEService';
 import * as BudgetService from '../services/BudgetService';
 import * as VirtualCardService from '../services/VirtualCardService';
-import * as NotificationService from '../services/NotificationService';
 import type { VirtualCard } from '../services/VirtualCardService';
 import { Colors, Spacing, FontSizes, BorderRadius } from '../theme/colors';
 
-const { height: SCREEN_HEIGHT } = Dimensions.get('window');
-
 export default function PayScreen() {
   const [isReady, setIsReady] = useState(false);
-  const [lastPayment, setLastPayment] = useState<{
-    amount: number;
-    merchant: string;
-    status: 'approved' | 'declined';
-  } | null>(null);
   const [budget, setBudget] = useState({ remaining: 0, limit: 0 });
-
-  // Payment method selector state
-  const [showMethodSelector, setShowMethodSelector] = useState(false);
-  const [pendingPayment, setPendingPayment] = useState<{
-    amount: number;
-    merchant: string;
-    token: string;
-    sessionId: string;
-    contractAddress: string;
-  } | null>(null);
-  const [selectedMethod, setSelectedMethod] = useState<'crypto' | 'virtual_card'>('crypto');
   const [virtualCards, setVirtualCards] = useState<VirtualCard[]>([]);
-  const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
   const [posTypeMessage, setPosTypeMessage] = useState<string | null>(null);
   const [detectedPOSType, setDetectedPOSType] = useState<HCEService.POSType>('unknown');
 
-  const rippleAnim = useRef(new Animated.Value(1)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
-  const sheetSlideAnim = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
+  const rippleAnim = useRef(new Animated.Value(1)).current;
 
-  // Pulse animation for the "Ready to Pay" circle
+  // Pulse animation for the "Ready to Pay" circle (only when NFC is truly ready)
   useEffect(() => {
     if (!isReady) return;
 
@@ -75,7 +55,7 @@ export default function PayScreen() {
     return () => pulse.stop();
   }, [isReady, pulseAnim]);
 
-  // Ripple effect on payment
+  // Ripple effect on a real payment (triggered from the HCE tap path).
   const triggerRipple = useCallback(() => {
     rippleAnim.setValue(0);
     Animated.timing(rippleAnim, {
@@ -94,15 +74,16 @@ export default function PayScreen() {
   const loadCards = useCallback(async () => {
     const cards = await VirtualCardService.getCards();
     setVirtualCards(cards);
-    if (cards.length > 0) {
-      setSelectedCardId(cards[0].id);
-    }
   }, []);
 
   useEffect(() => {
     if (Platform.OS === 'android') {
       HCEService.initializeHCE();
-      setIsReady(true);
+      // Real availability check: reflect the native NFC adapter state instead
+      // of hardcoding "ready".
+      HCEService.isHCEAvailable()
+        .then((available) => setIsReady(available))
+        .catch(() => setIsReady(false));
       loadBudget();
       loadCards();
     }
@@ -112,15 +93,10 @@ export default function PayScreen() {
     };
   }, [loadBudget, loadCards]);
 
-  // Listen for POS type detection
+  // Listen for POS type detection (real HCE events)
   useEffect(() => {
     HCEService.setOnPOSTypeDetected((type, _apduData) => {
       setDetectedPOSType(type);
-      if (type !== 'hsmc' && type !== 'unknown') {
-        setSelectedMethod('virtual_card');
-      } else {
-        setSelectedMethod('crypto');
-      }
     });
 
     HCEService.setOnStandardPOSDetected((info) => {
@@ -152,128 +128,11 @@ export default function PayScreen() {
     outputRange: [0.8, 0.2, 0],
   });
 
-  // Show payment method selector bottom sheet
-  const showSelector = (payment: {
-    amount: number;
-    merchant: string;
-    token: string;
-    sessionId: string;
-    contractAddress: string;
-  }) => {
-    setPendingPayment(payment);
-    setShowMethodSelector(true);
-    Animated.spring(sheetSlideAnim, {
-      toValue: 0,
-      useNativeDriver: true,
-      damping: 20,
-      stiffness: 200,
-    }).start();
-  };
-
-  const hideSelector = () => {
-    Animated.timing(sheetSlideAnim, {
-      toValue: SCREEN_HEIGHT,
-      duration: 250,
-      useNativeDriver: true,
-    }).start(() => {
-      setShowMethodSelector(false);
-      setPendingPayment(null);
-    });
-  };
-
-  const handlePayWithCrypto = async () => {
-    if (!pendingPayment) return;
-    hideSelector();
-    triggerRipple();
-
-    // Simulate crypto payment processing
-    try {
-      const response = await HCEService.processHCERequest({
-        amount: pendingPayment.amount.toString(),
-        token: pendingPayment.token,
-        contractAddress: pendingPayment.contractAddress,
-        sessionId: pendingPayment.sessionId,
-        merchant: pendingPayment.merchant,
-      });
-
-      if (response.approved) {
-        setLastPayment({
-          amount: pendingPayment.amount,
-          merchant: pendingPayment.merchant,
-          status: 'approved',
-        });
-
-        // Send notification
-        await NotificationService.notifyPaymentConfirmed({
-          id: pendingPayment.sessionId,
-          amount: pendingPayment.amount,
-          token: pendingPayment.token,
-          merchant: pendingPayment.merchant,
-          date: Date.now(),
-          status: 'approved',
-        });
-      } else {
-        setLastPayment({
-          amount: pendingPayment.amount,
-          merchant: pendingPayment.merchant,
-          status: 'declined',
-        });
-      }
-    } catch {
-      setLastPayment({
-        amount: pendingPayment.amount,
-        merchant: pendingPayment.merchant,
-        status: 'declined',
-      });
-    }
-
-    loadBudget();
-  };
-
-  const handlePayWithVirtualCard = async () => {
-    if (!pendingPayment || !selectedCardId) {
-      hideSelector();
-      return;
-    }
-
-    hideSelector();
-    triggerRipple();
-
-    try {
-      await VirtualCardService.spendFromCard(selectedCardId, pendingPayment.amount);
-
-      setLastPayment({
-        amount: pendingPayment.amount,
-        merchant: pendingPayment.merchant,
-        status: 'approved',
-      });
-
-      await NotificationService.notifyPaymentConfirmed({
-        id: pendingPayment.sessionId,
-        amount: pendingPayment.amount,
-        token: 'USD',
-        merchant: pendingPayment.merchant,
-        date: Date.now(),
-        status: 'approved',
-      });
-
-      loadCards();
-    } catch (e: any) {
-      setLastPayment({
-        amount: pendingPayment.amount,
-        merchant: pendingPayment.merchant,
-        status: 'declined',
-      });
-    }
-
-    loadBudget();
-  };
-
-  const selectedCard = virtualCards.find((c) => c.id === selectedCardId);
+  const selectedCard = virtualCards[0] ?? null;
 
   return (
     <View style={styles.container}>
-      {/* Status Badge */}
+      {/* Status Badge — reflects the real HCE availability */}
       <View style={styles.statusBadge}>
         <View style={[styles.statusDot, isReady && styles.statusDotActive]} />
         <Text style={styles.statusText}>
@@ -346,22 +205,6 @@ export default function PayScreen() {
         </View>
       )}
 
-      {/* Last Payment Result */}
-      {lastPayment && (
-        <View
-          style={[
-            styles.glassCard,
-            lastPayment.status === 'approved' ? styles.approvedCard : styles.declinedCard,
-          ]}
-        >
-          <Text style={styles.resultStatus}>
-            {lastPayment.status === 'approved' ? '✅ Approved' : '❌ Declined'}
-          </Text>
-          <Text style={styles.resultAmount}>${lastPayment.amount.toFixed(2)}</Text>
-          <Text style={styles.resultMerchant}>{lastPayment.merchant}</Text>
-        </View>
-      )}
-
       {/* Instructions */}
       {!isReady && (
         <View style={styles.glassCard}>
@@ -383,116 +226,6 @@ export default function PayScreen() {
           4. Receipt appears in History
         </Text>
       </View>
-
-      {/* Payment Method Selector Bottom Sheet */}
-      <Modal visible={showMethodSelector} transparent animationType="none">
-        <Pressable style={styles.overlay} onPress={hideSelector}>
-          <View />
-        </Pressable>
-        <Animated.View
-          style={[
-            styles.bottomSheet,
-            { transform: [{ translateY: sheetSlideAnim }] },
-          ]}
-        >
-          <View style={styles.sheetHandle} />
-          <Text style={styles.sheetTitle}>Payment Request</Text>
-
-          {pendingPayment && (
-            <>
-              <Text style={styles.sheetAmount}>
-                ${pendingPayment.amount.toFixed(2)}
-              </Text>
-              <Text style={styles.sheetMerchant}>
-                {pendingPayment.merchant}
-              </Text>
-
-              <Text style={styles.sheetSectionTitle}>Pay with:</Text>
-
-              {/* Crypto option */}
-              <TouchableOpacity
-                style={[
-                  styles.methodOption,
-                  selectedMethod === 'crypto' && styles.methodOptionSelected,
-                ]}
-                onPress={() => setSelectedMethod('crypto')}
-              >
-                <View style={styles.methodRadio}>
-                  {selectedMethod === 'crypto' && <View style={styles.methodRadioDot} />}
-                </View>
-                <View style={styles.methodInfo}>
-                  <Text style={styles.methodTitle}>Crypto (USDC)</Text>
-                  <Text style={styles.methodSubtitle}>
-                    ${pendingPayment.amount.toFixed(2)} — Direct wallet payment
-                  </Text>
-                </View>
-              </TouchableOpacity>
-
-              {/* Virtual Card option */}
-              {virtualCards.map((card) => (
-                <TouchableOpacity
-                  key={card.id}
-                  style={[
-                    styles.methodOption,
-                    selectedMethod === 'virtual_card' &&
-                      selectedCardId === card.id &&
-                      styles.methodOptionSelected,
-                  ]}
-                  onPress={() => {
-                    setSelectedMethod('virtual_card');
-                    setSelectedCardId(card.id);
-                  }}
-                >
-                  <View style={styles.methodRadio}>
-                    {selectedMethod === 'virtual_card' &&
-                      selectedCardId === card.id && (
-                        <View style={styles.methodRadioDot} />
-                      )}
-                  </View>
-                  <View style={styles.methodInfo}>
-                    <Text style={styles.methodTitle}>
-                      Virtual Card ····{card.pan.slice(-4)}
-                    </Text>
-                    <Text style={styles.methodSubtitle}>
-                      Balance: ${card.balance.toFixed(2)}{' '}
-                      {card.frozen ? '🔒 Frozen' : ''}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-              ))}
-
-              {/* No cards message */}
-              {virtualCards.length === 0 && selectedMethod === 'virtual_card' && (
-                <View style={styles.noCardsMessage}>
-                  <Text style={styles.noCardsText}>
-                    No virtual cards available. Go to Settings to create one.
-                  </Text>
-                </View>
-              )}
-
-              {/* Pay button */}
-              <TouchableOpacity
-                style={[
-                  styles.payButton,
-                  selectedMethod === 'virtual_card' && !selectedCardId && styles.payButtonDisabled,
-                ]}
-                onPress={
-                  selectedMethod === 'crypto'
-                    ? handlePayWithCrypto
-                    : handlePayWithVirtualCard
-                }
-                disabled={selectedMethod === 'virtual_card' && !selectedCardId}
-              >
-                <Text style={styles.payButtonText}>Pay Now</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.cancelButton} onPress={hideSelector}>
-                <Text style={styles.cancelText}>Cancel</Text>
-              </TouchableOpacity>
-            </>
-          )}
-        </Animated.View>
-      </Modal>
     </View>
   );
 }
@@ -577,11 +310,6 @@ const styles = StyleSheet.create({
   },
   budgetLabel: { color: Colors.textSecondary, fontSize: FontSizes.md },
   budgetValue: { color: Colors.text, fontSize: FontSizes.lg, fontWeight: '700' },
-  approvedCard: { borderColor: Colors.primary },
-  declinedCard: { borderColor: Colors.danger },
-  resultStatus: { color: Colors.text, fontSize: FontSizes.lg, fontWeight: '700' },
-  resultAmount: { color: Colors.primary, fontSize: FontSizes.xl, fontWeight: '700' },
-  resultMerchant: { color: Colors.textSecondary, fontSize: FontSizes.md },
   noteTitle: { color: Colors.text, fontSize: FontSizes.md, fontWeight: '700' },
   noteText: { color: Colors.textSecondary, fontSize: FontSizes.sm, lineHeight: 20 },
   cardSectionTitle: {
@@ -604,111 +332,4 @@ const styles = StyleSheet.create({
   cardFrozenLabel: { color: Colors.danger, fontSize: FontSizes.xs, fontWeight: '700' },
   posMessageIcon: { fontSize: 24, textAlign: 'center' },
   posMessageText: { color: Colors.textSecondary, fontSize: FontSizes.sm, textAlign: 'center' },
-
-  // Bottom sheet
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' },
-  bottomSheet: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: Colors.background,
-    borderTopLeftRadius: BorderRadius.xl,
-    borderTopRightRadius: BorderRadius.xl,
-    borderWidth: 1,
-    borderColor: Colors.glassBorder,
-    padding: Spacing.lg,
-    paddingBottom: Spacing.xxl,
-    maxHeight: SCREEN_HEIGHT * 0.75,
-  },
-  sheetHandle: {
-    width: 40,
-    height: 4,
-    backgroundColor: Colors.glassBorder,
-    borderRadius: 2,
-    alignSelf: 'center',
-    marginBottom: Spacing.lg,
-  },
-  sheetTitle: {
-    color: Colors.textSecondary,
-    fontSize: FontSizes.sm,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-    textAlign: 'center',
-  },
-  sheetAmount: {
-    color: Colors.text,
-    fontSize: FontSizes.hero,
-    fontWeight: '700',
-    textAlign: 'center',
-    marginTop: Spacing.xs,
-  },
-  sheetMerchant: {
-    color: Colors.textSecondary,
-    fontSize: FontSizes.lg,
-    textAlign: 'center',
-    marginBottom: Spacing.lg,
-  },
-  sheetSectionTitle: {
-    color: Colors.textSecondary,
-    fontSize: FontSizes.xs,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-    marginBottom: Spacing.sm,
-  },
-  methodOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: Spacing.md,
-    backgroundColor: Colors.glass,
-    borderRadius: BorderRadius.md,
-    borderWidth: 1,
-    borderColor: Colors.glassBorder,
-    marginBottom: Spacing.sm,
-    gap: Spacing.md,
-  },
-  methodOptionSelected: {
-    borderColor: Colors.primary,
-    backgroundColor: 'rgba(0, 230, 118, 0.08)',
-  },
-  methodRadio: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    borderWidth: 2,
-    borderColor: Colors.glassBorder,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  methodRadioDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: Colors.primary,
-  },
-  methodInfo: { flex: 1 },
-  methodTitle: { color: Colors.text, fontSize: FontSizes.md, fontWeight: '600' },
-  methodSubtitle: { color: Colors.textSecondary, fontSize: FontSizes.xs, marginTop: 2 },
-  noCardsMessage: {
-    padding: Spacing.md,
-    backgroundColor: Colors.glass,
-    borderRadius: BorderRadius.md,
-    marginBottom: Spacing.md,
-  },
-  noCardsText: { color: Colors.textMuted, fontSize: FontSizes.sm, textAlign: 'center' },
-  payButton: {
-    backgroundColor: Colors.primary,
-    borderRadius: BorderRadius.md,
-    paddingVertical: Spacing.md,
-    alignItems: 'center',
-    marginTop: Spacing.md,
-  },
-  payButtonDisabled: { opacity: 0.4 },
-  payButtonText: { color: Colors.background, fontSize: FontSizes.lg, fontWeight: '700' },
-  cancelButton: {
-    paddingVertical: Spacing.md,
-    alignItems: 'center',
-    marginTop: Spacing.sm,
-  },
-  cancelText: { color: Colors.textSecondary, fontSize: FontSizes.md },
 });

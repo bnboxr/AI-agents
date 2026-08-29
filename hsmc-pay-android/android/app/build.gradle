@@ -9,6 +9,28 @@ react {
 def enableProguardInReleaseBuilds = false
 def jscFlavor = 'org.webkit:android-jsc:+'
 
+// ─── Release signing (SECURITY) ───────────────────────────────────────
+// There is intentionally NO default/sample signing configuration. A release
+// APK is only built when the OWNER supplies the real keystore credentials via
+// environment variables:
+//   HSMC_KEYSTORE_FILE      -> path to the release keystore (default:
+//                              android/app/release.keystore)
+//   HSMC_KEYSTORE_PASSWORD  -> keystore password
+//   HSMC_KEY_ALIAS          -> signing key alias
+//   HSMC_KEY_PASSWORD       -> key password
+//
+// If these are not provided, or the keystore file is missing, the release
+// build FAILS with a clear error instead of silently signing with default
+// credentials. Debug builds are unaffected.
+def releaseStorePassword = System.getenv('HSMC_KEYSTORE_PASSWORD')
+def releaseKeyAlias = System.getenv('HSMC_KEY_ALIAS')
+def releaseKeyPassword = System.getenv('HSMC_KEY_PASSWORD')
+def releaseStoreFile = System.getenv('HSMC_KEYSTORE_FILE')
+    ? file(System.getenv('HSMC_KEYSTORE_FILE'))
+    : file('release.keystore')
+def releaseSigningConfigured =
+    releaseStorePassword != null && releaseKeyAlias != null && releaseKeyPassword != null
+
 android {
     ndkVersion rootProject.ext.ndkVersion
     buildToolsVersion rootProject.ext.buildToolsVersion
@@ -30,17 +52,10 @@ android {
             keyPassword 'android'
         }
         release {
-            // Release signing uses the OWNER's keystore (android/app/release.keystore,
-            // .gitignored — never committed). The keystore password / alias / key
-            // password are supplied at build time via environment variables:
-            //   HSMC_KEYSTORE_PASSWORD, HSMC_KEY_ALIAS, HSMC_KEY_PASSWORD
-            //
-            // The owner generates release.keystore with keytool (see README) and
-            // exports these three vars before `./gradlew assembleRelease`.
-            storeFile file('release.keystore')
-            storePassword System.getenv('HSMC_KEYSTORE_PASSWORD') ?: 'changeit'
-            keyAlias System.getenv('HSMC_KEY_ALIAS') ?: 'hsmcpay'
-            keyPassword System.getenv('HSMC_KEY_PASSWORD') ?: 'changeit'
+            storeFile releaseStoreFile
+            storePassword releaseStorePassword
+            keyAlias releaseKeyAlias
+            keyPassword releaseKeyPassword
         }
     }
     buildTypes {
@@ -59,6 +74,29 @@ android {
     }
     kotlinOptions {
         jvmTarget = "17"
+    }
+}
+
+// Fail the release build with a clear error when the owner's real signing
+// credentials are unavailable — never sign a release with default/sample
+// credentials. Applies only to release tasks; debug builds are unaffected.
+tasks.whenTaskAdded { task ->
+    if (task.name == 'validateSigningRelease' || task.name == 'packageRelease') {
+        task.doFirst {
+            if (!releaseSigningConfigured) {
+                throw new GradleException(
+                    "Release signing is not configured. HSMC Pay does NOT sign releases with " +
+                    "default credentials. Set HSMC_KEYSTORE_PASSWORD, HSMC_KEY_ALIAS and " +
+                    "HSMC_KEY_PASSWORD (owner's real release keystore) to build a release APK."
+                )
+            }
+            if (!releaseStoreFile.exists()) {
+                throw new GradleException(
+                    "Release keystore not found at ${releaseStoreFile}. Provide HSMC_KEYSTORE_FILE " +
+                    "pointing to the owner's real release keystore."
+                )
+            }
+        }
     }
 }
 

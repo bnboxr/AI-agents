@@ -26,7 +26,6 @@ import type { VirtualCard } from '../services/VirtualCardService';
 import type { NotificationPreferences } from '../services/NotificationService';
 import { Colors, Spacing, FontSizes, BorderRadius } from '../theme/colors';
 
-type Network = 'polygon-amoy' | 'polygon-mainnet';
 type DefaultPaymentMethod = 'crypto' | 'virtual_card';
 
 const BIOMETRIC_ENABLED_KEY = '@hsmc_biometric_enabled';
@@ -36,9 +35,7 @@ const PIN_KEY = '@hsmc_pin';
 export default function SettingsScreen() {
   const [address, setAddress] = useState<string | null>(null);
   const [budget, setBudget] = useState(500);
-  const [network, setNetwork] = useState<Network>('polygon-amoy');
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
-  const [autoConfirm, setAutoConfirm] = useState(true);
 
   // Enhanced settings
   const [biometricEnabled, setBiometricEnabled] = useState(false);
@@ -259,37 +256,6 @@ export default function SettingsScreen() {
               {address ? `${address.slice(0, 10)}...${address.slice(-6)}` : 'Not configured'}
             </Text>
           </View>
-          <View style={styles.row}>
-            <Text style={styles.label}>Network</Text>
-            <TouchableOpacity
-              style={styles.networkToggle}
-              onPress={() =>
-                setNetwork((n) => (n === 'polygon-amoy' ? 'polygon-mainnet' : 'polygon-amoy'))
-              }
-            >
-              <Text
-                style={[
-                  styles.networkOption,
-                  network === 'polygon-amoy' && styles.networkActive,
-                ]}
-              >
-                Amoy
-              </Text>
-              <Text
-                style={[
-                  styles.networkOption,
-                  network === 'polygon-mainnet' && styles.networkActive,
-                ]}
-              >
-                Mainnet
-              </Text>
-            </TouchableOpacity>
-          </View>
-          <Text style={styles.networkWarning}>
-            {network === 'polygon-mainnet'
-              ? '⚠️ Mainnet uses real funds. Ensure you understand the risks.'
-              : '🟢 Testnet — safe for development and testing.'}
-          </Text>
         </View>
       </View>
 
@@ -461,26 +427,6 @@ export default function SettingsScreen() {
             <Text style={styles.sliderLabel}>$10</Text>
             <Text style={styles.sliderLabel}>$5,000</Text>
           </View>
-        </View>
-      </View>
-
-      {/* Payment Preferences */}
-      <View style={styles.section}>
-        <Text style={styles.sectionHeader}>Payment</Text>
-        <View style={styles.glassCard}>
-          <View style={styles.row}>
-            <Text style={styles.label}>Auto-confirm payments</Text>
-            <Switch
-              value={autoConfirm}
-              onValueChange={setAutoConfirm}
-              trackColor={{ false: Colors.glassStrong, true: Colors.primaryDim }}
-              thumbColor={autoConfirm ? Colors.primary : Colors.textMuted}
-            />
-          </View>
-          <Text style={styles.settingHint}>
-            When enabled, payments within your budget are automatically approved at POS
-            without manual confirmation.
-          </Text>
         </View>
       </View>
 
@@ -785,26 +731,6 @@ const styles = StyleSheet.create({
     marginTop: -Spacing.sm,
   },
   sliderLabel: { color: Colors.textMuted, fontSize: FontSizes.xs },
-  networkToggle: {
-    flexDirection: 'row',
-    backgroundColor: Colors.surface,
-    borderRadius: BorderRadius.sm,
-    padding: 2,
-  },
-  networkOption: {
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.xs,
-    borderRadius: BorderRadius.sm - 2,
-    color: Colors.textMuted,
-    fontSize: FontSizes.sm,
-    fontWeight: '600',
-  },
-  networkActive: {
-    backgroundColor: Colors.primary,
-    color: Colors.background,
-  },
-  networkWarning: { color: Colors.warning, fontSize: FontSizes.xs },
-  settingHint: { color: Colors.textMuted, fontSize: FontSizes.xs, lineHeight: 16 },
   aboutText: { color: Colors.textMuted, fontSize: FontSizes.sm, lineHeight: 20 },
 
   // Setting rows

@@ -251,16 +251,13 @@ function ATMDetailView({
 function WithdrawFlow({
   atm,
   onBack,
-  onComplete,
 }: {
   atm: ATM;
   onBack: () => void;
-  onComplete: () => void;
 }) {
-  const [step, setStep] = useState<'amount' | 'confirm' | 'tap' | 'done'>('amount');
+  const [step, setStep] = useState<'amount' | 'confirm' | 'tap'>('amount');
   const [amount, setAmount] = useState('');
   const [showFee, setShowFee] = useState(false);
-  const [processing, setProcessing] = useState(false);
 
   const numericAmount = parseFloat(amount) || 0;
   const estimate = ATMService.estimateATMFee(numericAmount, true);
@@ -279,30 +276,6 @@ function WithdrawFlow({
 
   const handleConfirm = () => {
     setStep('tap');
-  };
-
-  const handleTapComplete = async () => {
-    setProcessing(true);
-    try {
-      await ATMService.logATMTransaction({
-        type: 'withdraw',
-        fiatAmount: numericAmount,
-        cryptoAmount: estimate.total,
-        token: 'USDC',
-        atmName: atm.name,
-        bank: atm.bank,
-        address: atm.address,
-        date: Date.now(),
-        status: 'completed',
-        fee: estimate.fee,
-        txId: `txn_${Date.now()}`,
-      });
-      setStep('done');
-    } catch (e) {
-      Alert.alert('Error', 'Transaction failed. Please try again.');
-    } finally {
-      setProcessing(false);
-    }
   };
 
   return (
@@ -423,48 +396,14 @@ function WithdrawFlow({
         <View style={styles.flowContent}>
           <View style={styles.tapContainer}>
             <Text style={styles.tapIcon}>📱</Text>
-            <Text style={styles.tapTitle}>Tap phone at ATM</Text>
+            <Text style={styles.tapTitle}>Withdrawal pending ATM connection</Text>
             <Text style={styles.tapHint}>
-              Hold your phone near the NFC reader on the ATM
+              No HSMC ATM terminal is connected. Cash withdrawal requires an
+              HSMC NFC-enabled ATM terminal; none is available in this build,
+              so no transaction has been created.
             </Text>
-            <View style={styles.tapAnimation}>
-              <Text style={styles.tapAnimationText}>⟳</Text>
-            </View>
-            {processing ? (
-              <ActivityIndicator size="large" color={Colors.primary} />
-            ) : (
-              <TouchableOpacity
-                style={styles.tapSimulateBtn}
-                onPress={handleTapComplete}
-              >
-                <Text style={styles.tapSimulateText}>
-                  Simulate NFC Tap ✓
-                </Text>
-              </TouchableOpacity>
-            )}
             <TouchableOpacity style={styles.cancelBtn} onPress={onBack}>
               <Text style={styles.cancelBtnText}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
-
-      {step === 'done' && (
-        <View style={styles.flowContent}>
-          <View style={styles.doneContainer}>
-            <Text style={styles.doneIcon}>✅</Text>
-            <Text style={styles.doneTitle}>Withdrawal Complete!</Text>
-            <Text style={styles.doneAmount}>
-              {formatCurrency(numericAmount)} cash dispensed
-            </Text>
-            <Text style={styles.doneDetails}>
-              {formatCurrency(estimate.total)} USDC charged
-            </Text>
-            <Text style={styles.doneDetails}>
-              Fee: {formatCurrency(estimate.fee)}
-            </Text>
-            <TouchableOpacity style={styles.primaryBtn} onPress={onComplete}>
-              <Text style={styles.primaryBtnText}>Done</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -478,16 +417,13 @@ function WithdrawFlow({
 function DepositFlow({
   atm,
   onBack,
-  onComplete,
 }: {
   atm: ATM;
   onBack: () => void;
-  onComplete: () => void;
 }) {
-  const [step, setStep] = useState<'amount' | 'confirm' | 'deposit' | 'done'>('amount');
+  const [step, setStep] = useState<'amount' | 'confirm' | 'deposit'>('amount');
   const [amount, setAmount] = useState('');
   const [showFee, setShowFee] = useState(false);
-  const [processing, setProcessing] = useState(false);
 
   const numericAmount = parseFloat(amount) || 0;
   const estimate = ATMService.estimateATMFee(numericAmount, false);
@@ -508,30 +444,6 @@ function DepositFlow({
 
   const handleConfirm = () => {
     setStep('deposit');
-  };
-
-  const handleDepositComplete = async () => {
-    setProcessing(true);
-    try {
-      await ATMService.logATMTransaction({
-        type: 'deposit',
-        fiatAmount: numericAmount,
-        cryptoAmount: Math.max(0, cryptoEquivalent),
-        token: 'USDC',
-        atmName: atm.name,
-        bank: atm.bank,
-        address: atm.address,
-        date: Date.now(),
-        status: 'completed',
-        fee: estimate.fee,
-        txId: `dep_${Date.now()}`,
-      });
-      setStep('done');
-    } catch (e) {
-      Alert.alert('Error', 'Deposit failed. Please try again.');
-    } finally {
-      setProcessing(false);
-    }
   };
 
   return (
@@ -665,45 +577,14 @@ function DepositFlow({
         <View style={styles.flowContent}>
           <View style={styles.tapContainer}>
             <Text style={styles.tapIcon}>💵</Text>
-            <Text style={styles.tapTitle}>Insert cash into ATM</Text>
+            <Text style={styles.tapTitle}>Deposit pending ATM connection</Text>
             <Text style={styles.tapHint}>
-              Insert bills into the ATM cash slot
+              No HSMC ATM terminal is connected. Cash deposit requires an
+              HSMC NFC-enabled ATM terminal; none is available in this build,
+              so no transaction has been created.
             </Text>
-            {processing ? (
-              <ActivityIndicator size="large" color={Colors.primary} />
-            ) : (
-              <TouchableOpacity
-                style={styles.tapSimulateBtn}
-                onPress={handleDepositComplete}
-              >
-                <Text style={styles.tapSimulateText}>
-                  Simulate Deposit Complete ✓
-                </Text>
-              </TouchableOpacity>
-            )}
             <TouchableOpacity style={styles.cancelBtn} onPress={onBack}>
               <Text style={styles.cancelBtnText}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
-
-      {step === 'done' && (
-        <View style={styles.flowContent}>
-          <View style={styles.doneContainer}>
-            <Text style={styles.doneIcon}>✅</Text>
-            <Text style={styles.doneTitle}>Deposit Complete!</Text>
-            <Text style={styles.doneAmount}>
-              {formatCurrency(numericAmount)} deposited
-            </Text>
-            <Text style={styles.doneDetails}>
-              {formatCurrency(Math.max(0, cryptoEquivalent))} USDC added to wallet
-            </Text>
-            <Text style={styles.doneDetails}>
-              Fee: {formatCurrency(estimate.fee)}
-            </Text>
-            <TouchableOpacity style={styles.primaryBtn} onPress={onComplete}>
-              <Text style={styles.primaryBtnText}>Done</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -875,10 +756,18 @@ export default function ATMScreen() {
   const [atms, setAtms] = useState<ATM[]>([]);
   const [selectedAtm, setSelectedAtm] = useState<ATM | null>(null);
   const [loading, setLoading] = useState(true);
-  const [location, setLocation] = useState({ lat: 40.7128, lng: -74.006 }); // Default: NYC
+  // No fabricated device location: this build has no geolocation provider, so
+  // the device location is unknown (null). We never claim to know where the
+  // user is, and never present a hardcoded coordinate as their location.
+  const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
   const loadATMs = useCallback(async () => {
+    if (!location) {
+      setAtms([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const nearby = await ATMService.findNearbyATMs(
@@ -919,12 +808,6 @@ export default function ATMScreen() {
     setView('deposit');
   };
 
-  const handleComplete = () => {
-    setSelectedAtm(null);
-    setView('list');
-    onRefresh();
-  };
-
   // ATM Detail views
   if (view === 'detail' && selectedAtm) {
     return (
@@ -942,7 +825,6 @@ export default function ATMScreen() {
       <WithdrawFlow
         atm={selectedAtm}
         onBack={() => setView('detail')}
-        onComplete={handleComplete}
       />
     );
   }
@@ -952,7 +834,6 @@ export default function ATMScreen() {
       <DepositFlow
         atm={selectedAtm}
         onBack={() => setView('detail')}
-        onComplete={handleComplete}
       />
     );
   }
@@ -1036,17 +917,18 @@ export default function ATMScreen() {
                 Map view (powered by OpenStreetMap)
               </Text>
               <Text style={styles.mapPlaceholderHint}>
-                Using approximate location: {location.lat.toFixed(2)},{' '}
-                {location.lng.toFixed(2)}
+                Device location is unavailable in this build — nearby ATMs are
+                not shown because the phone cannot determine your position.
               </Text>
             </View>
           }
           ListEmptyComponent={
             <View style={styles.emptyState}>
               <Text style={styles.emptyIcon}>🏧</Text>
-              <Text style={styles.emptyText}>No ATMs found nearby</Text>
+              <Text style={styles.emptyText}>Location unavailable</Text>
               <Text style={styles.emptyHint}>
-                Try expanding your search radius or check back later
+                Enable device location access in a build that provides it to
+                search for nearby ATMs.
               </Text>
             </View>
           }
@@ -1570,34 +1452,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: Spacing.xl,
   },
-  tapAnimation: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    borderWidth: 3,
-    borderColor: Colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: Spacing.lg,
-  },
-  tapAnimationText: {
-    color: Colors.primary,
-    fontSize: 36,
-  },
-  tapSimulateBtn: {
-    backgroundColor: Colors.primaryDim,
-    borderRadius: BorderRadius.lg,
-    borderWidth: 1,
-    borderColor: Colors.primary,
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.xl,
-    marginBottom: Spacing.md,
-  },
-  tapSimulateText: {
-    color: Colors.primary,
-    fontSize: FontSizes.md,
-    fontWeight: '700',
-  },
   cancelBtn: {
     paddingVertical: Spacing.sm,
     paddingHorizontal: Spacing.lg,
@@ -1607,32 +1461,6 @@ const styles = StyleSheet.create({
     fontSize: FontSizes.md,
   },
 
-  // Done screen
-  doneContainer: {
-    alignItems: 'center',
-    paddingVertical: Spacing.xxl,
-  },
-  doneIcon: {
-    fontSize: 72,
-    marginBottom: Spacing.md,
-  },
-  doneTitle: {
-    color: Colors.text,
-    fontSize: FontSizes.xxl,
-    fontWeight: '700',
-    marginBottom: Spacing.sm,
-  },
-  doneAmount: {
-    color: Colors.primary,
-    fontSize: FontSizes.xl,
-    fontWeight: '700',
-    marginBottom: Spacing.xs,
-  },
-  doneDetails: {
-    color: Colors.textSecondary,
-    fontSize: FontSizes.md,
-    marginBottom: Spacing.xs,
-  },
 
   // History
   historyContainer: {

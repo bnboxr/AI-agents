@@ -427,32 +427,42 @@ export function getSignalStats(): SignalStats {
 
 // ── Premium Access ─────────────────────────────────────────────────
 
-// Client-side check: check localStorage for unlocked session
-export function hasUnlockedPremiumClient(sessionId?: string): boolean {
-  if (typeof window === "undefined") return false;
-  if (sessionId) {
-    // Store it for future visits
-    localStorage.setItem("signal_unlocked_session", sessionId);
-    return true;
-  }
-  const stored = localStorage.getItem("signal_unlocked_session");
-  return !!stored;
+// Server-side premium gate. There is no real server-side Stripe verification
+// wired in this environment (no Stripe secret key / webhook), so a session cannot
+// be honestly proven to be premium-paid. Returning true for an arbitrary sessionId
+// would be a free pass — the exact mock this removes. Honest behavior: locked.
+//
+// ⚠ LEAD/OWNER DECISION REQUIRED: to perform REAL unlocks, wire a server-side
+// Stripe session check (STRIPE_SECRET_KEY + Stripe webhook) and verify the checkout
+// session here. Until then this returns false so the paywall is genuinely enforced.
+export function hasUnlockedPremium(_sessionId?: string): boolean {
+  return false; // honestly locked — real verification not yet wired
 }
 
-// Server-side: all sessions are treated as valid
-// In production, you'd verify against Stripe API
-export function hasUnlockedPremium(sessionId?: string): boolean {
-  return !!sessionId || false;
+// Client-side gate. There is no trustworthy client-side verification path: trusting
+// a localStorage flag was a local bypass (any value unlocked premium) and is removed.
+// Always returns false (locked) until a real server/webhook verification exists.
+export function hasUnlockedPremiumClient(_sessionId?: string): boolean {
+  return false; // honestly locked — real verification requires server webhook/secret
 }
 
 // ── Stripe ─────────────────────────────────────────────────────────
 
-export const STRIPE_PRICE_ID = "price_1TvhyEDMSAUyHlnSAFC30QKp";
-export const STRIPE_PREMIUM_PRICE_ID = "price_1TvhyEDMSAUyHlnSAFC30qKp";
+// Real Stripe payment link for the "HSMC Trading Signal — Premium" product (5.00 RON).
+// This is an opaque checkout slug — it must NOT be reconstructed as
+// `buy.stripe.com/<price_id>` (that 404s) and never given away via
+// `prefilled_promo_code=free`.
+export const STRIPE_SIGNAL_LINK_DEFAULT =
+  "https://buy.stripe.com/14AfZh7Ax71h0Jv39Bfbq01";
 
-export function getStripeCheckoutUrl(sessionId?: string): string {
-  // Using the price ID from the task
-  return `https://buy.stripe.com/${STRIPE_PREMIUM_PRICE_ID}?prefilled_promo_code=free&client_reference_id=${sessionId ?? ""}`;
+// Single canonical Stripe Price ID for the signal product (lowercase `qKp`).
+export const STRIPE_SIGNAL_PRICE_ID = "price_1TvhyEDMSAUyHlnSAFC30qKp";
+
+export function getStripeCheckoutUrl(_sessionId?: string): string {
+  if (typeof process !== "undefined" && process.env?.STRIPE_SIGNAL_LINK) {
+    return process.env.STRIPE_SIGNAL_LINK;
+  }
+  return STRIPE_SIGNAL_LINK_DEFAULT;
 }
 
 // ── Server Function: get daily signal ──────────────────────────────

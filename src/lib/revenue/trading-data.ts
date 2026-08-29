@@ -1,4 +1,5 @@
 // ── Trading Data Monetization ───────────────────────────────────
+import { STRIPE_SIGNAL_LINK_DEFAULT } from "../trading-signals";
 // Signal export API, quality metrics, and Stripe-gated access
 // for trading signal subscriptions.
 //
@@ -323,7 +324,7 @@ export function getSignalPaymentLink(): string {
     typeof process !== "undefined"
       ? process.env?.STRIPE_SIGNAL_LINK
       : undefined;
-  return link ?? "https://buy.stripe.com/signal_premium";
+  return link ?? STRIPE_SIGNAL_LINK_DEFAULT;
 }
 
 // ── Telegram/Discord bot signal format ─────────────────────────

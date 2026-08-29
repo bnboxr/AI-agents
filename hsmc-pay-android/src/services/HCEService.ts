@@ -142,6 +142,28 @@ export function getLastDetectedPOS(): { type: POSType; aid: number[] } {
   return { type: lastDetectedPOSType, aid: lastDetectedAID };
 }
 
+/**
+ * Check whether NFC HCE is actually available on this device.
+ * Bridges to the native HCEBridge.isHCEAvailable(), which reflects the real
+ * NFC adapter state (present + enabled). Resolves false on non-Android, when
+ * the native module is missing, or when the adapter reports unavailable —
+ * never fabricates a "ready" state.
+ */
+export function isHCEAvailable(): Promise<boolean> {
+  return new Promise((resolve) => {
+    if (Platform.OS !== 'android' || !HCEBridge || typeof HCEBridge.isHCEAvailable !== 'function') {
+      resolve(false);
+      return;
+    }
+    try {
+      HCEBridge.isHCEAvailable((available: boolean) => resolve(!!available));
+    } catch (e) {
+      console.warn('[HSMC Pay] isHCEAvailable failed:', e);
+      resolve(false);
+    }
+  });
+}
+
 export function initializeHCE(): void {
   if (!hceEventEmitter) {
     console.warn('[HSMC Pay] HCE not available — requires Android with NFC HCE support');

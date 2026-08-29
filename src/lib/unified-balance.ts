@@ -1,40 +1,19 @@
 // ── Unified Balance System ────────────────────────────────────────
-// Single source of truth for paper balances.
+// Single source of truth for PAPER/SIMULATION balances.
 // Primary source: capital-manager (env STARTING_CAPITAL).
 // Persists to DB trading_state table for survival across restarts.
 //
 // Wire this into every execution path: before placing a trade, debit.
 // After closing with profit/loss, credit.
 // Reject trades that would exceed available balance.
+//
+// All balances here are labelled `mode: "simulation"` — they are PAPER
+// capital and must never be presented to the user as live funds. There is NO
+// automatic refill: capital only changes via STARTING_CAPITAL at startup and
+// real debit/credit events. No infinite paper money.
 
 import { getCapitalState, recordProfit } from "./capital-manager";
 import { sql, isDbAvailable } from "./db";
-
-// ── Refill Config ──────────────────────────────────────────────────
-
-function getRefillThreshold(): number {
-  try {
-    const envVal =
-      typeof process !== "undefined" && process.env?.REFILL_THRESHOLD;
-    if (envVal) {
-      const parsed = parseFloat(envVal);
-      if (!isNaN(parsed) && parsed > 0) return parsed;
-    }
-  } catch { /* env not available */ }
-  return 100; // default $100 threshold
-}
-
-function getStartingCapital(): number {
-  try {
-    const envVal =
-      typeof process !== "undefined" && process.env?.STARTING_CAPITAL;
-    if (envVal) {
-      const parsed = parseFloat(envVal);
-      if (!isNaN(parsed) && parsed > 0) return parsed;
-    }
-  } catch { /* env not available */ }
-  return 1_000_000;
-}
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -48,10 +27,13 @@ export interface PaperPosition {
 }
 
 export interface UnifiedBalanceState {
+  /** Paper/simulation USDT balance — not real funds. */
   usdt: number;
   initialCapital: number;
   positions: Map<string, PaperPosition>;
   pnl: number;
+  /** Always "simulation": this balance tracks paper capital, never live funds. */
+  mode: "simulation";
 }
 
 // ── In-Memory State ────────────────────────────────────────────────
@@ -110,6 +92,7 @@ export async function initializeBalance(): Promise<UnifiedBalanceState> {
     initialCapital: capState.initial,
     positions: paperPositions,
     pnl: effectiveCapital - capState.initial,
+    mode: "simulation",
   };
 }
 
@@ -123,6 +106,7 @@ export function getSyncBalance(): UnifiedBalanceState {
     initialCapital: capState.initial,
     positions: paperPositions,
     pnl: capState.profit,
+    mode: "simulation",
   };
 }
 
@@ -158,57 +142,10 @@ export async function debitBalance(amount: number): Promise<number> {
   const newBalance = getSyncBalance().usdt;
   await syncToDB();
 
-  // Auto-refill if balance dropped below threshold
-  await checkAndRefill();
-
   return newBalance;
 }
 
-// ── Auto-Refill ─────────────────────────────────────────────────────
-
-/**
- * Check if USDT balance fell below the refill threshold and auto-refill
- * to STARTING_CAPITAL if so. Logs the event and persists to DB.
- *
- * Called automatically after every debitBalance operation.
- */
-export async function checkAndRefill(): Promise<void> {
-  if (!initialized) await initializeBalance();
-
-  const current = getSyncBalance().usdt;
-  const threshold = getRefillThreshold();
-  const startingCapital = getStartingCapital();
-
-  if (current < threshold) {
-    const refillAmount = startingCapital - current;
-    console.log(
-      `[UnifiedBalance] ⚠️ Balance $${current.toFixed(2)} below threshold $${threshold}. ` +
-      `Auto-refilling +$${refillAmount.toFixed(2)} → $${startingCapital.toLocaleString()}`,
-    );
-
-    // Record the refill as capital injection (not profit)
-    await recordProfit(refillAmount);
-
-    const newBalance = getSyncBalance().usdt;
-    await syncToDB();
-
-    // Log refill event to DB if available
-    if (isDbAvailable()) {
-      try {
-        await sql`
-          INSERT INTO agent_activities (id, chain_id, agent_name, action, type, created_at)
-          VALUES (${`refill-${Date.now()}`}, ${"system"}, ${"Auto-Refill"},
-            ${`Balance auto-refilled from $${current.toFixed(2)} to $${newBalance.toFixed(2)} (+$${refillAmount.toFixed(2)})`},
-            ${"info"}, now())
-        `;
-      } catch (err) {
-        console.warn("[UnifiedBalance] Failed to log refill event:", err);
-      }
-    }
-
-    console.log(`[UnifiedBalance] ✓ Refill complete. New balance: $${newBalance.toLocaleString()}`);
-  }
-}
+// ── Credit ─────────────────────────────────────────────────────────
 
 /**
  * Credit balance after closing a position.
@@ -302,6 +239,7 @@ export async function loadFromDB(): Promise<UnifiedBalanceState | null> {
         initialCapital: row.initial_capital,
         positions: paperPositions,
         pnl: row.pnl ?? (row.capital - row.initial_capital),
+        mode: "simulation",
       };
     }
   } catch (err) {

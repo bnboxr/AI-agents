@@ -39,6 +39,7 @@ import {
   closeTerminalSession,
   isTerminalSession,
 } from "./src/lib/terminal-server";
+import { handleStripeWebhook } from "./src/routes/api/stripe-webhook";
 import type { AgentBusEvent, AgentBusEvents } from "./src/lib/agent-bus";
 import type { ServerWebSocket } from "bun";
 
@@ -233,6 +234,21 @@ for (let attempt = 1; ; attempt++) {
 
 async function handleHttp(req: Request): Promise<Response> {
   const { pathname } = new URL(req.url);
+  // Stripe webhook — raw body + Stripe-Signature header must reach the
+  // handler untouched (TanStack server-fn serialization would mangle it).
+  if (pathname === "/api/stripe-webhook") {
+    try {
+      return await handleStripeWebhook(req);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      // Missing STRIPE_WEBHOOK_SECRET (or other misconfiguration) → 500 so
+      // the operator sees it; unverified events are NEVER accepted.
+      return Response.json(
+        { error: "Webhook misconfigured", detail: message },
+        { status: 500 },
+      );
+    }
+  }
   if (pathname !== "/") {
     const file = Bun.file(CLIENT_DIR + pathname);
     if (await file.exists()) return new Response(file);

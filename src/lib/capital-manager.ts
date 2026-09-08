@@ -11,7 +11,9 @@
 // (no fabricated $1M paper capital). Real funded balances are verified on
 // startup against the exchange; anything here remains labelled simulation.
 
-// HMAC-SHA256: import { createHmac } from "crypto" when Binance API code is added
+// HMAC-SHA256 for signed Binance requests (createHmac from node:crypto).
+import { createHmac } from "node:crypto";
+import { requireEnv } from "./env-guard";
 import { triggerAutoStake, getPSolState, compoundYield, type PSolStakingState } from "./staking/psol";
 
 interface CapitalState {
@@ -72,54 +74,92 @@ export function getCapitalAndStakingState(): CapitalState & { staking: PSolStaki
 
 /**
  * Verify real exchange balance. Called once on startup.
- * Falls back gracefully if exchange API is unavailable.
+ *
+ * Behavior (owner hard rule — never swallow a real API rejection):
+ *  - Keys ABSENT: this is an optional startup probe → skip honestly,
+ *    return the current state with a console note. No fabricated balance.
+ *  - Keys PRESENT: the request is SIGNED (HMAC-SHA256, X-MBX-APIKEY).
+ *    API failure (HTTP error, -2014 bad signature, -1021 timestamp skew,
+ *    permissions) THROWS — the caller decides how to surface it. A real
+ *    rejection is never silently converted into "balance verified".
  */
 export async function verifyExchangeBalance(): Promise<CapitalState> {
-  try {
-    // Attempt to fetch real balance from Binance
-    const apiKey =
-      typeof process !== "undefined" ? process.env?.BINANCE_API_KEY : undefined;
-    const apiSecret =
-      typeof process !== "undefined" ? process.env?.BINANCE_SECRET_KEY : undefined;
+  const apiKey =
+    typeof process !== "undefined" ? process.env?.BINANCE_API_KEY : undefined;
+  const apiSecret =
+    typeof process !== "undefined" ? process.env?.BINANCE_SECRET_KEY : undefined;
 
-    if (apiKey && apiSecret) {
-      const timestamp = Date.now();
-      const response = await fetch(
-        `https://api.binance.com/api/v3/account?timestamp=${timestamp}`,
-        {
-          headers: { "X-MBX-APIKEY": apiKey },
-          signal: AbortSignal.timeout(8000),
-        },
-      );
+  // Optional startup probe: keys absent → skip (never fake a balance).
+  if (!apiKey || !apiSecret) {
+    console.warn(
+      "[CapitalManager] verifyExchangeBalance skipped — BINANCE_API_KEY/BINANCE_SECRET_KEY not set. No balance verification performed.",
+    );
+    return { ...state };
+  }
 
-      if (response.ok) {
-        const data = await response.json();
-        const balances = data.balances || [];
-        let totalUsd = 0;
+  // Keys present → fully signed request. Any rejection throws.
+  const key = requireEnv("BINANCE_API_KEY");
+  const secret = requireEnv("BINANCE_SECRET_KEY");
+  const binanceRest =
+    process.env.BINANCE_REST_OVERRIDE ?? "https://api.binance.com/api/v3";
+  const recvWindow = Number(process.env.BINANCE_RECV_WINDOW_MS ?? 5000);
 
-        for (const b of balances) {
-          const free = parseFloat(b.free || "0");
-          const locked = parseFloat(b.locked || "0");
-          if (free + locked > 0) {
-            // Simple USDT valuation — in production would use real prices
-            if (b.asset === "USDT" || b.asset === "USDC" || b.asset === "BUSD") {
-              totalUsd += free + locked;
-            }
-          }
-        }
+  const queryParams = new URLSearchParams({
+    timestamp: String(Date.now()),
+    recvWindow: String(recvWindow),
+  });
+  const signature = createHmac("sha256", secret)
+    .update(queryParams.toString(), "utf8")
+    .digest("hex");
+  queryParams.set("signature", signature);
 
-        state.exchangeBalance = totalUsd;
-        state.balanceVerified = true;
+  const response = await fetch(
+    `${binanceRest}/api/v3/account?${queryParams.toString()}`,
+    {
+      headers: { "X-MBX-APIKEY": key },
+      signal: AbortSignal.timeout(8000),
+    },
+  );
 
-        // If exchange balance exceeds initial + profit, sync it
-        if (totalUsd > state.trading) {
-          state.trading = totalUsd;
-        }
+  if (!response.ok) {
+    // Real rejection — surface it, never swallow.
+    let detail = `HTTP ${response.status}`;
+    try {
+      const j = (await response.json()) as { code?: number; msg?: string };
+      if (typeof j.msg === "string") {
+        detail = `HTTP ${response.status} (code ${j.code ?? "?"}): ${j.msg}`;
+      }
+    } catch {
+      // keep HTTP status detail
+    }
+    throw new Error(
+      `[CapitalManager] Binance balance verification REJECTED — ${detail}. Keys present but API refused the request.`,
+    );
+  }
+
+  const data = (await response.json()) as {
+    balances?: Array<{ asset: string; free: string; locked: string }>;
+  };
+  const balances = data.balances || [];
+  let totalUsd = 0;
+
+  for (const b of balances) {
+    const free = parseFloat(b.free || "0");
+    const locked = parseFloat(b.locked || "0");
+    if (free + locked > 0) {
+      // Simple USDT valuation — in production would use real prices
+      if (b.asset === "USDT" || b.asset === "USDC" || b.asset === "BUSD") {
+        totalUsd += free + locked;
       }
     }
-  } catch (err) {
-    console.warn("[CapitalManager] verifyExchangeBalance failed:", err);
-    // Exchange API unavailable — continue with paper balance
+  }
+
+  state.exchangeBalance = totalUsd;
+  state.balanceVerified = true;
+
+  // If exchange balance exceeds initial + profit, sync it
+  if (totalUsd > state.trading) {
+    state.trading = totalUsd;
   }
 
   return { ...state };

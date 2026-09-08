@@ -55,7 +55,7 @@ export default function POSReceipt({ session, onClose, onConvert }: POSReceiptPr
     if (showConvert) {
       setRateLoading(true);
       getTokenPrices()
-        .then((p) => setPrices(p as Record<string, number>))
+        .then((p) => setPrices({ USDC: p.USDC, USDT: p.USDT, MATIC: p.MATIC }))
         .catch(() => {})
         .finally(() => setRateLoading(false));
     }

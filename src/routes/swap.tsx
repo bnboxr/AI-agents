@@ -35,15 +35,13 @@ const QUOTER_ADDRESSES: Record<number, `0x${string}`> = {
   56: "0xb27308f9F90D607463bb33eA1BeBb41C27CE5AB6",     // BSC
 };
 
-// Common Uniswap V3 fee tiers
-const FEE_TIERS = [100, 500, 3000, 10000];
 
 export const Route = createFileRoute("/swap")({
   component: SwapPage,
 });
 
 function SwapPage() {
-  const { address, isConnected } = useAccount();
+  const { isConnected } = useAccount();
   const chainId = useChainId();
   const [mounted, setMounted] = useState(false);
   const [sellToken, setSellToken] = useState<TokenInfo | null>(null);
@@ -115,7 +113,6 @@ function SwapPage() {
   const amountOut = quoteData ? quoteData[0] : 0n;
   const gasEstimate = quoteData ? quoteData[3] : 0n;
 
-  const fmtPrice = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 6 });
 
   if (!mounted) {
     return (

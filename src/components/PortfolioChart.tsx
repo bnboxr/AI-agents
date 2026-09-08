@@ -144,7 +144,7 @@ export function PortfolioChart({ points, currentTotal }: PortfolioChartProps) {
                   fontFamily: 'var(--font-mono)',
                 }}
                 labelFormatter={(ts: number) => fmtDateTime(ts)}
-                formatter={(value: number) => [fmtPrice(value), 'Value']}
+                formatter={(value) => [fmtPrice(Number(value)), 'Value']}
               />
               <Area
                 type="monotone"

@@ -7,11 +7,7 @@ import {
   getNFTArbitrageState,
   executePaperTrade,
   getPaperTradeProfit,
-  getTopCollections,
-  type NFTArbitrageOpportunity,
   type NFTArbitrageState,
-  type NFTCollection,
-  type PaperNFTTrade,
 } from "~/lib/revenue/nft-arbitrage";
 
 // ── Types ──────────────────────────────────────────────────────────
@@ -169,7 +165,6 @@ function ArbitragePage() {
   // NFT state
   const [nftState, setNftState] = useState<NFTArbitrageState>(getNFTArbitrageState());
   const [nftLoading, setNftLoading] = useState(false);
-  const [nftFilter, setNftFilter] = useState<"all" | "profitable">("profitable");
   const [nftCollectionFilter, setNftCollectionFilter] = useState("all");
   const [paperTradeProfit, setPaperTradeProfit] = useState(0);
 

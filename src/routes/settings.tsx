@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import { useState, useCallback, useEffect } from "react";
+import { useWallet } from "@solana/wallet-adapter-react";
 import {
   getSettings,
   saveApiKey,
@@ -15,7 +16,7 @@ import {
 import type { ServiceKey, RpcEntry, ServiceName, LLMProvider } from "~/lib/api-keys";
 import { detectOllama, findCompatibleModel } from "~/lib/llm/local";
 import type { OllamaModel } from "~/lib/llm/local";
-import { checkAllProviderStatus, getAvailableProviders, type ProviderStatus } from "~/lib/llm/multi-provider";
+import { checkAllProviderStatus, type ProviderStatus } from "~/lib/llm/multi-provider";
 import {
   listDestinations,
   addDestination,
@@ -36,7 +37,6 @@ import {
   listWalletChainIds,
   isWalletTestnet,
   WALLET_CHAINS,
-  type WalletChainConfig,
 } from "~/lib/venue-selector";
 import { getDexSlippageSetting, getPreferredDex, getGasPreference } from "~/lib/exchange/dex";
 import { getFaucetsForCurrentChain, requestSepoliaFaucet, fundWallet, getFaucetSummary } from "~/lib/faucet";
@@ -164,12 +164,6 @@ const getPrivateKeyFn = createServerFn({ method: "POST" }).handler(
 );
 
 // Multi-chain wallet server functions
-const getChainAddressesFn = createServerFn({ method: "GET" }).handler(
-  async (): Promise<ChainAddressEntry[]> => {
-    return getAllChainAddresses();
-  },
-);
-
 const getChainBalancesFn = createServerFn({ method: "POST" }).handler(
   async ({ data }: { data: { entries: ChainAddressEntry[] } }): Promise<ChainAddressEntry[]> => {
     return fetchAllChainBalances(data.entries);
@@ -244,7 +238,7 @@ function SettingsPage() {
   const [gasPreference, setGasPreferenceState] = useState<"fast" | "medium" | "slow">(() => getGasPreference());
 
   // ── Autonomous wallet state ─────────────────────────────────────
-  const [walletData, setWalletData] = useState<AutonomousWalletPublic>(initial.walletInfo);
+  const [, setWalletData] = useState<AutonomousWalletPublic>(initial.walletInfo);
   const [chainAddresses, setChainAddresses] = useState<ChainAddressEntry[]>(initial.chainAddresses);
   // ── Solana connected wallet from browser adapter ──────────────
   const { publicKey: solanaPublicKey, connected: solanaConnected, wallet: solanaWallet } = useWallet();

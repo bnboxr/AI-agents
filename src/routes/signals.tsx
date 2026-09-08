@@ -46,10 +46,6 @@ function formatPrice(p: number): string {
   return `$${p.toFixed(4)}`;
 }
 
-function formatPct(v: number): string {
-  const sign = v >= 0 ? "+" : "";
-  return `${sign}${v.toFixed(1)}%`;
-}
 
 function timeAgo(ts: number): string {
   const diff = Date.now() - ts;
@@ -69,7 +65,7 @@ function SignalsPage() {
   const [history, setHistory] = useState<TradingSignal[]>([]);
   const [stats, setStats] = useState<SignalStats | null>(null);
   const [loading, setLoading] = useState(true);
-  const [unlocked, setUnlocked] = useState(false);
+  const [unlocked] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 

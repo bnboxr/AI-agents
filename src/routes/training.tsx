@@ -5,12 +5,11 @@
 // "Fiecare token contează. Profitul se câștigă."
 
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { SUPPORTED_CHAINS } from "~/lib/chains-config";
 import {
   type ChainBalance,
   getAllChainBalances,
-  getNativeTokenPrice,
 } from "~/lib/chain-balance";
 import {
   type FaucetEntry,
@@ -22,10 +21,8 @@ import {
 } from "~/lib/faucet-cooldown";
 import {
   type AntiDrainState,
-  getAntiDrainState,
   checkDailyDrawdown,
   getAllAntiDrainStates,
-  validateTrade,
 } from "~/lib/anti-drain";
 
 export const Route = createFileRoute("/training")({

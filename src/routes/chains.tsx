@@ -16,7 +16,7 @@ function ChainsPage() {
   const initial = Route.useLoaderData();
   const [chains, setChains] = useState(initial.chains);
   const [refreshing, setRefreshing] = useState(false);
-  const [mounted, setMounted] = useState(false);
+  const [, setMounted] = useState(false);
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -34,8 +34,8 @@ function ChainsPage() {
     return () => clearInterval(interval);
   }, []);
 
-  const onlineChains = chains.filter((c) => c.online);
-  const offlineChains = chains.filter((c) => !c.online);
+  const onlineChains = chains.filter((c: ChainStatus) => c.online);
+  const offlineChains = chains.filter((c: ChainStatus) => !c.online);
 
   const fmtNum = (n: number) => n.toLocaleString("en-US");
   const fmtLatency = (n: number | null) => n !== null ? `${n}ms` : "—";
@@ -72,7 +72,7 @@ function ChainsPage() {
           <div className="glass-card p-4 text-center">
             <p className="text-2xl font-bold text-accent-blue text-mono">
               {onlineChains.length > 0
-                ? Math.round(onlineChains.reduce((s, c) => s + (c.latency ?? 0), 0) / onlineChains.length)
+                ? Math.round(onlineChains.reduce((s: number, c: ChainStatus) => s + (c.latency ?? 0), 0) / onlineChains.length)
                 : "—"}
             </p>
             <p className="text-xs text-gray-400 mt-1">Avg Latency (ms)</p>
@@ -85,7 +85,7 @@ function ChainsPage() {
             <span className="text-accent-blue">▸</span> All Networks — {chains.length} Chains
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
-            {chains.map((chain, i) => (
+            {chains.map((chain: ChainStatus, i: number) => (
               <ChainCard
                 key={chain.id}
                 chain={chain}

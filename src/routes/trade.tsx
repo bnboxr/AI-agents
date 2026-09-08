@@ -22,10 +22,7 @@ import {
   unfollowWallet,
   setCopyPercent,
   setMaxPositionSize,
-  getTrackedWallets,
   type CopyTradeState,
-  type TrackedWallet,
-  type CopyTrade as CopyTradeType,
 } from "~/lib/revenue/copy-trade";
 
 export const Route = createFileRoute("/trade")({
@@ -54,11 +51,10 @@ const TOP_TOKENS = [
 ];
 
 function TradePage() {
-  const { address, isConnected } = useAccount();
-  const { config: initConfig, positions: initPositions, history: initHistory, stats: initStats, copyState: initCopyState } = Route.useLoaderData();
+  const { isConnected } = useAccount();
+  const { config: initConfig, positions: initPositions, stats: initStats, copyState: initCopyState } = Route.useLoaderData();
   const [config, setConfig] = useState<TradeConfig>(initConfig);
   const [positions, setPositions] = useState<TradePosition[]>(initPositions);
-  const [history] = useState(initHistory);
   const [stats, setStats] = useState(initStats);
 
   const [tab, setTab] = useState<"manual" | "copy">("manual");
@@ -221,10 +217,10 @@ function TradePage() {
 
         {/* Stats Bar */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-          <StatCard label="Open Positions" value={stats.openPositions} color="blue" />
-          <StatCard label="Total P&L" value={`$${stats.totalPnl.toFixed(2)}`} color={stats.totalPnl >= 0 ? "green" : "red"} />
-          <StatCard label="Win Rate" value={`${stats.winRate}%`} color="purple" />
-          <StatCard label="Trades Today" value={`${stats.dailyTrades}/${stats.maxDailyTrades}`} color="teal" />
+          <StatCard label="Open Positions" value={stats.openPositions} />
+          <StatCard label="Total P&L" value={`$${stats.totalPnl.toFixed(2)}`} />
+          <StatCard label="Win Rate" value={`${stats.winRate}%`} />
+          <StatCard label="Trades Today" value={`${stats.dailyTrades}/${stats.maxDailyTrades}`} />
         </div>
 
         {!isConnected && (
@@ -639,14 +635,7 @@ function TradePage() {
   );
 }
 
-function StatCard({ label, value, color }: { label: string; value: string | number; color: string }) {
-  const colors: Record<string, string> = {
-    blue: "border-accent-blue/20 bg-accent-blue/5",
-    green: "border-green-500/20 bg-green-500/5",
-    red: "border-red-500/20 bg-red-500/5",
-    purple: "border-purple-500/20 bg-purple-500/5",
-    teal: "border-cyan-500/20 bg-cyan-500/5",
-  };
+function StatCard({ label, value }: { label: string; value: string | number }) {
   return (
     <div className={`glass-panel p-4 text-center`}>
       <div className="text-2xl font-black text-white">{value}</div>

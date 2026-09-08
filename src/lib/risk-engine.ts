@@ -36,6 +36,8 @@ export interface RiskSystemState {
   circuitBreakerReason: string;
   killSwitchTripped: boolean;
   killSwitchReason: string;
+  /** Milliseconds epoch when the kill switch was activated; 0 when not tripped. */
+  killSwitchTimestamp?: number;
   marketDropPct: number;
   lastMarketCheck: number;
   totalExposure: number;
@@ -72,6 +74,9 @@ let lastMarketCheck = Date.now();
 
 let killSwitchTripped = false;
 let killSwitchReason = "";
+
+/** Timestamp (ms epoch) when the kill switch was activated; 0 when not tripped. */
+let killSwitchTimestamp = 0;
 
 /** Timestamp of last successful API health check (Binance WS + CoinGecko) */
 let lastApiHealthCheck = Date.now();
@@ -676,6 +681,7 @@ export async function getRiskStateRaw(): Promise<RiskSystemState> {
     circuitBreakerReason,
     killSwitchTripped,
     killSwitchReason,
+    killSwitchTimestamp,
     marketDropPct,
     lastMarketCheck,
     totalExposure,

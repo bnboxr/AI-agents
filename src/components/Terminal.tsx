@@ -59,7 +59,7 @@ export default function Terminal({ className = "" }: TerminalProps) {
 
     try {
       // Dynamic imports — these only work in browser
-      const [{ Terminal: XTerm }, { FitAddon }, { WebLinksAddon }] =
+      const [{ Terminal: XTerm }, { default: FitAddonModule }, { default: WebLinksModule }] =
         await Promise.all([
           import("@xterm/xterm"),
           import("@xterm/addon-fit"),
@@ -93,8 +93,8 @@ export default function Terminal({ className = "" }: TerminalProps) {
         rows: 24,
       });
 
-      const fitAddon = new FitAddon();
-      const webLinksAddon = new WebLinksAddon();
+      const fitAddon = new FitAddonModule.FitAddon();
+      const webLinksAddon = new WebLinksModule.WebLinksAddon();
 
       term.loadAddon(fitAddon);
       term.loadAddon(webLinksAddon);
@@ -115,7 +115,7 @@ export default function Terminal({ className = "" }: TerminalProps) {
 
       // ── Connect WebSocket ────────────────────────────────────
 
-      connectWebSocket(term, fitAddon);
+      connectWebSocket(term);
 
       // ── Resize observer ──────────────────────────────────────
 
@@ -162,7 +162,7 @@ export default function Terminal({ className = "" }: TerminalProps) {
 
   // ── WebSocket connection ──────────────────────────────────────
 
-  function connectWebSocket(term: any, fitAddon: any) {
+  function connectWebSocket(term: any) {
     const protocol = location.protocol === "https:" ? "wss:" : "ws:";
     const wsUrl = `${protocol}//${location.host}/ws/terminal`;
     const ws = new WebSocket(wsUrl);

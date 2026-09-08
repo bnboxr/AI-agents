@@ -1,6 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useEffect, useCallback } from "react";
-import { useAccount } from "wagmi";
 import {
   getActiveAirdrops,
   getAirdropState,
@@ -10,7 +9,6 @@ import {
   checkEligibility,
   recordClaim,
   type Airdrop,
-  type FarmedWallet,
   type AirdropFarmingState,
 } from "~/lib/airdrop-farmer";
 
@@ -43,11 +41,9 @@ const CATEGORY_ICONS: Record<string, string> = {
 };
 
 function EarnPage() {
-  const { address, isConnected } = useAccount();
   const { airdrops: initialAirdrops, state: initialState } = Route.useLoaderData();
   const [airdrops, setAirdrops] = useState<Airdrop[]>(initialAirdrops);
   const [state, setState] = useState<AirdropFarmingState>(initialState);
-  const [loading, setLoading] = useState(false);
   const [eligibilityLoading, setEligibilityLoading] = useState(false);
 
   // Filters
@@ -81,7 +77,7 @@ function EarnPage() {
   const handleCheckEligibility = useCallback(async () => {
     setEligibilityLoading(true);
     try {
-      const results = await checkEligibility();
+      await checkEligibility();
       setState(getAirdropState());
       // Refresh airdrops
       const fresh = await getActiveAirdrops();

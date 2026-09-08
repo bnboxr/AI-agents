@@ -140,7 +140,7 @@ export function ChainChart({ points, tokenSymbol, currentPrice, change24h }: Cha
                   fontFamily: 'var(--font-mono)',
                 }}
                 labelFormatter={(ts: number) => fmtDateTime(ts)}
-                formatter={(value: number) => [fmtPrice(value), tokenSymbol]}
+                formatter={(value) => [fmtPrice(Number(value)), tokenSymbol]}
               />
               <Area
                 type="monotone"

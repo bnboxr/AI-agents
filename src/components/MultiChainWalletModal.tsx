@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import type { JSX } from "react";
 import { useAccount, useConnect, useDisconnect, useBalance } from "wagmi";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { formatUnits } from "viem";
@@ -159,7 +160,7 @@ function EVMTab() {
         </div>
       ) : (
         <div className="space-y-2">
-          {connectors.map((conn) => (
+          {connectors.map((conn: (typeof connectors)[number]) => (
             <button
               key={conn.id}
               onClick={() => handleConnect(conn)}

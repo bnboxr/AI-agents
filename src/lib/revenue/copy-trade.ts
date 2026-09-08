@@ -1,12 +1,17 @@
 // ── Copy Trading ───────────────────────────────────────────────
 // Real wallet monitoring via Etherscan API (free tier, no key needed
-// for basic usage). Mirror trades through Bitunix adapter.
+// for basic usage). Mirror trades through REAL signed exchange orders
+// (Binance/Bitunix — Phase A). Missing exchange keys → THROW, never a
+// placeholder copy trade.
 //
 // Zero seededRandom — all data from real on-chain sources.
 //
 // References:
 //   Etherscan: https://api.etherscan.io/api?module=account&action=txlist&address={addr}
 //   COPY_TRADE_WALLETS env var: comma-separated addresses to track
+
+import { requireEnv } from "~/lib/env-guard";
+import { getBinanceAdapter, getBitunixAdapter, type ExchangeAdapter } from "~/lib/exchange";
 
 // ── Types ──────────────────────────────────────────────────────
 
@@ -38,6 +43,10 @@ export interface CopyTrade {
   exitTime: number | null;
   pnl: number | null;
   txHash: string;
+  /** Real exchange order id for the mirror entry (Phase A signed order) */
+  orderId?: string;
+  /** Real exchange order id for the closing order */
+  exitOrderId?: string;
   status: "open" | "closed" | "liquidated";
 }
 
@@ -215,43 +224,138 @@ function decodeSwapToken(tx: EtherscanTx): string | null {
 
 /**
  * Approximate trade direction and size from transaction.
- * This is a heuristic — real DeFi trades require full event log parsing.
+ * The USD size is the REAL ETH value × the REAL market price of ETH
+ * (CoinGecko / exchange ticker) — never a fabricated "$2000/ETH" or a
+ * flat "$500" placeholder. Token→token swaps whose USD value cannot be
+ * decoded are skipped (return null) instead of inventing a size.
  */
-function approximateTradeFromTx(tx: EtherscanTx): {
+async function approximateTradeFromTx(tx: EtherscanTx): Promise<{
   symbol: string;
   direction: "long" | "short";
   size: number;
-  entryPrice: number;
-} | null {
+} | null> {
   const valueEth = Number(tx.value) / 1e18;
-  const token = decodeSwapToken(tx);
 
   if (valueEth > 0.01) {
-    // Sending ETH to DEX — buying tokens (long)
+    // Sending ETH to a DEX — buying tokens (long)
+    const token = decodeSwapToken(tx);
     const symbol = token ?? "TOKEN";
-    // Approximate price — we'd need an oracle for real price
-    // Use placeholder that will be enriched by the caller
-    const size = valueEth * (token ? 2000 : 3000); // rough USD estimate
+    const ethUsd = await fetchRealEthUsdPrice();
+    if (ethUsd <= 0) return null;
+    const size = +(valueEth * ethUsd).toFixed(2);
+    if (size <= 0) return null;
     return {
       symbol: `${symbol}/ETH`,
       direction: "long",
       size,
-      entryPrice: 0, // will be enriched
     };
   }
 
   if (valueEth < 0.0001 && isDexSwap(tx)) {
-    // Token-to-token swap — likely selling
-    const symbol = token ?? "TOKEN";
-    return {
-      symbol: `${symbol}/ETH`,
-      direction: "short",
-      size: 500, // placeholder
-      entryPrice: 0,
-    };
+    // Token-to-token swap — the USD size is NOT decodable from tx.value.
+    // Never fabricate a "$500" placeholder: skip.
+    return null;
   }
 
   return null;
+}
+
+// ── Live copy execution (real orders) ─────────────────────────
+
+let cachedEthUsd: { price: number; ts: number } | null = null;
+
+/** Real ETH/USD price (CoinGecko, 60s cache) — used for real trade sizing. */
+async function fetchRealEthUsdPrice(): Promise<number> {
+  const now = Date.now();
+  if (cachedEthUsd && now - cachedEthUsd.ts < 60_000) return cachedEthUsd.price;
+  try {
+    const resp = await fetch(
+      "https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd",
+      { signal: AbortSignal.timeout(8000) },
+    );
+    if (!resp.ok) return 0;
+    const json = (await resp.json()) as { ethereum?: { usd?: number } };
+    const price = json.ethereum?.usd;
+    if (typeof price === "number" && price > 0) {
+      cachedEthUsd = { price, ts: now };
+      return price;
+    }
+  } catch {
+    // fall through
+  }
+  // Real fallback: Binance public ticker (keyless market data).
+  try {
+    const price = await getBinanceAdapter().getPrice("ETHUSDT");
+    if (price > 0) {
+      cachedEthUsd = { price, ts: now };
+      return price;
+    }
+  } catch {
+    // no price available — caller refuses the trade
+  }
+  return 0;
+}
+
+/**
+ * Pick the live signed exchange adapter (Phase A). When neither Binance
+ * nor Bitunix has real keys, this THROWS the clear error — never returns
+ * a paper adapter and never records a placeholder trade.
+ */
+function requireLiveCopyAdapter(): ExchangeAdapter {
+  const binance = getBinanceAdapter();
+  if (binance.isLive) return binance;
+  const bitunix = getBitunixAdapter();
+  if (bitunix.isLive) return bitunix;
+  // Guard surfaces the exact missing vars (never reached when present).
+  requireEnv("BINANCE_API_KEY");
+  requireEnv("BITUNIX_API_KEY");
+  throw new Error(
+    "[CopyTrade] Live mirror requires exchange keys (BINANCE_*/BITUNIX_*) — add keys to Secrets. No placeholder copy trades.",
+  );
+}
+
+/** Map "TOKEN/ETH" → the base asset for the exchange pair ("TOKEN"). */
+function exchangeBaseFromSymbol(symbol: string): string | null {
+  const base = symbol.split("/")[0]?.trim().toUpperCase();
+  if (!base || base === "TOKEN") return null; // unknown asset — never invent a pair
+  return base;
+}
+
+/**
+ * Place a REAL MARKET order on a live exchange and return the real
+ * orderId + avgPrice. Throws on rejection / missing avgPrice — the entry
+ * price of a copy trade always comes from the exchange, never from a zero.
+ */
+async function placeLiveCopyOrder(opts: {
+  symbol: string;
+  side: "BUY" | "SELL";
+  quantity: number;
+}): Promise<{ orderId: string; avgPrice: number }> {
+  const adapter = requireLiveCopyAdapter();
+  const base = exchangeBaseFromSymbol(opts.symbol);
+  if (!base) {
+    throw new Error(`[CopyTrade] Cannot mirror unknown asset "${opts.symbol}" — no invented pair.`);
+  }
+  if (opts.quantity <= 0) {
+    throw new Error(`[CopyTrade] Cannot place an order with quantity ${opts.quantity}.`);
+  }
+
+  const result = await adapter.placeOrder({
+    symbol: base,
+    side: opts.side,
+    type: "MARKET",
+    quantity: opts.quantity,
+  });
+
+  if (result.status === "REJECTED" || result.status === "CANCELLED") {
+    throw new Error(`[CopyTrade] ${adapter.name} rejected order ${result.orderId} (${result.status}).`);
+  }
+  if (result.avgPrice <= 0) {
+    throw new Error(
+      `[CopyTrade] Order ${result.orderId} returned no avgPrice — not recording a fake entry price.`,
+    );
+  }
+  return { orderId: result.orderId, avgPrice: result.avgPrice };
 }
 
 // ── Public API ────────────────────────────────────────────────
@@ -285,35 +389,52 @@ export async function scanWallets(): Promise<CopyTradeState> {
         // Only mirror DEX swaps
         if (!isDexSwap(tx)) continue;
 
-        const approx = approximateTradeFromTx(tx);
+        const approx = await approximateTradeFromTx(tx);
         if (!approx) continue;
 
-        // Create a copy trade
+        // Real copy size (capped), then a REAL market order on a live exchange.
         const copiedSize = Math.min(
           +(approx.size * (_state.copyPercent / 100)).toFixed(2),
           _state.maxPositionSize,
         );
+        if (copiedSize <= 0) continue;
 
-        const ct: CopyTrade = {
-          id: `ct-${Date.now()}-${tx.hash.slice(0, 8)}`,
-          walletAddress: wallet.address,
-          symbol: approx.symbol,
-          direction: approx.direction,
-          entryPrice: approx.entryPrice || 0,
-          size: approx.size,
-          copiedSize,
-          entryTime: Number(tx.timeStamp) * 1000,
-          exitPrice: null,
-          exitTime: null,
-          pnl: null,
-          txHash: tx.hash,
-          status: "open",
-        };
+        try {
+          const order = await placeLiveCopyOrder({
+            symbol: approx.symbol,
+            side: approx.direction === "long" ? "BUY" : "SELL",
+            quantity: copiedSize,
+          });
 
-        _state.openTrades.push(ct);
+          const ct: CopyTrade = {
+            id: `ct-${Date.now()}-${tx.hash.slice(0, 8)}`,
+            walletAddress: wallet.address,
+            symbol: approx.symbol,
+            direction: approx.direction,
+            entryPrice: order.avgPrice, // REAL exchange fill price
+            size: approx.size,          // REAL USD value of the whale trade
+            copiedSize,
+            entryTime: Number(tx.timeStamp) * 1000,
+            exitPrice: null,
+            exitTime: null,
+            pnl: null,
+            txHash: tx.hash,
+            orderId: order.orderId,
+            status: "open",
+          };
 
-        // Auto-close old trades (after 24h as paper simulation)
-        autoCloseOldTrades(now);
+          _state.openTrades.push(ct);
+          console.log(
+            `[CopyTrade] Mirrored ${approx.symbol} ${approx.direction} — order ${order.orderId} @ ${order.avgPrice} (${copiedSize})`,
+          );
+        } catch (err) {
+          // No placeholder trade is ever recorded: log the real failure and
+          // continue scanning (error surfaces, nothing is fabricated).
+          console.error(`[CopyTrade] Mirror failed for ${approx.symbol}:`, (err as Error).message);
+        }
+
+        // Auto-close old trades (after 24h) via real SELL/BUY orders.
+        await closeOldTrades(now);
       }
 
       wallet.lastCheckedAt = now;
@@ -326,20 +447,45 @@ export async function scanWallets(): Promise<CopyTradeState> {
   return getCopyTradeState();
 }
 
-function autoCloseOldTrades(now: number): void {
-  // Close trades older than 24 hours with nominal PnL
+async function closeOldTrades(now: number): Promise<void> {
+  // Close trades older than 24 hours with a REAL closing order. PnL is
+  // computed from real exit fills — never a fabricated pnl=0.
   const MAX_HOLD_MS = 24 * 60 * 60 * 1000;
   for (let i = _state.openTrades.length - 1; i >= 0; i--) {
     const trade = _state.openTrades[i];
-    if (now - trade.entryTime > MAX_HOLD_MS) {
-      // Paper close — mark with entry price (no gain/loss without real data)
-      trade.exitPrice = trade.entryPrice || 0;
+    if (now - trade.entryTime <= MAX_HOLD_MS || trade.status !== "open") continue;
+
+    try {
+      const closeSide = trade.direction === "long" ? "SELL" : "BUY";
+      const order = await placeLiveCopyOrder({
+        symbol: trade.symbol,
+        side: closeSide,
+        quantity: trade.copiedSize,
+      });
+
+      const exitPrice = order.avgPrice;
+      const pnl =
+        trade.direction === "long"
+          ? ((exitPrice - trade.entryPrice) / trade.entryPrice) * trade.copiedSize
+          : ((trade.entryPrice - exitPrice) / trade.entryPrice) * trade.copiedSize;
+
+      trade.exitPrice = exitPrice;
       trade.exitTime = now;
-      trade.pnl = 0;
+      trade.pnl = +pnl.toFixed(2);
       trade.status = "closed";
+      trade.exitOrderId = order.orderId;
       _state.closedTrades.push(trade);
       _state.openTrades.splice(i, 1);
       _state.totalTrades++;
+      _state.totalPnL += trade.pnl ?? 0;
+      if ((trade.pnl ?? 0) > 0) _state.profitableTrades++;
+      console.log(
+        `[CopyTrade] Closed ${trade.symbol} ${trade.direction} — ${closeSide} order ${order.orderId} @ ${exitPrice}, pnl ${trade.pnl}`,
+      );
+    } catch (err) {
+      // Real close failed (e.g. exchange keys absent). The trade stays OPEN
+      // rather than being closed with a fabricated pnl=0. Error surfaces.
+      console.error(`[CopyTrade] Failed to close ${trade.id} with a real order:`, (err as Error).message);
     }
   }
 }
@@ -398,15 +544,17 @@ export function unfollowWallet(address: string): boolean {
 
 /**
  * Mirror a specific trade (when we detect it programmatically).
+ * Places a REAL market order on a live exchange; the entry price comes
+ * from the actual fill — throws when no exchange keys are configured.
  */
-export function mirrorTrade(trade: {
+export async function mirrorTrade(trade: {
   walletAddress: string;
   symbol: string;
   direction: "long" | "short";
   entryPrice: number;
   size: number;
   txHash?: string;
-}): CopyTrade {
+}): Promise<CopyTrade> {
   const wallet = _state.trackedWallets.find(
     (w) => w.address.toLowerCase() === trade.walletAddress.toLowerCase(),
   );
@@ -415,13 +563,24 @@ export function mirrorTrade(trade: {
     +(trade.size * (_state.copyPercent / 100)).toFixed(2),
     _state.maxPositionSize,
   );
+  if (copiedSize <= 0) {
+    throw new Error(`[CopyTrade] Copied size for ${trade.symbol} is 0 — no empty order.`);
+  }
+
+  // REAL order first — the recorded entry price is the real fill, never the
+  // caller-provided estimate and never a zero.
+  const order = await placeLiveCopyOrder({
+    symbol: trade.symbol,
+    side: trade.direction === "long" ? "BUY" : "SELL",
+    quantity: copiedSize,
+  });
 
   const ct: CopyTrade = {
     id: `ct-${Date.now()}-${(trade.txHash ?? _state.openTrades.length.toString(36)).slice(0, 8)}`,
     walletAddress: trade.walletAddress,
     symbol: trade.symbol,
     direction: trade.direction,
-    entryPrice: trade.entryPrice,
+    entryPrice: order.avgPrice,
     size: trade.size,
     copiedSize,
     entryTime: Date.now(),
@@ -429,6 +588,7 @@ export function mirrorTrade(trade: {
     exitTime: null,
     pnl: null,
     txHash: trade.txHash ?? "",
+    orderId: order.orderId,
     status: "open",
   };
 

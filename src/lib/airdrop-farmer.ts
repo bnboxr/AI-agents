@@ -10,6 +10,33 @@
 
 import { createServerFn } from "@tanstack/react-start";
 
+// ── Per-protocol eligibility providers ─────────────────────────────
+// Unknown protocols return "unchecked" — NEVER "eligible". Every provider
+// here performs a REAL check (on-chain balance / protocol allocation API).
+export type EligibilityResult = "eligible" | "ineligible" | "unchecked";
+
+export type EligibilityProvider = (walletAddress: string, airdrop: Airdrop) => Promise<EligibilityResult>;
+
+// Registry skeleton: add real per-protocol checks here (on-chain balance /
+// official allocation endpoints) as they are wired. Until a protocol has a
+// provider it is honestly "unchecked".
+const ELIGIBILITY_PROVIDERS: Record<string, EligibilityProvider> = {
+  // EVM claimable examples (to be wired with real endpoints):
+  // "scroll": async (w, a) => (await fetchScrollAllocation(w)).allocated > 0 ? "eligible" : "ineligible",
+  // "layerzero": async (w, a) => ...
+};
+
+async function checkProtocolEligibility(walletAddress: string, airdrop: Airdrop): Promise<EligibilityResult> {
+  const provider = ELIGIBILITY_PROVIDERS[airdrop.id] ?? ELIGIBILITY_PROVIDERS[airdrop.protocol.toLowerCase()];
+  if (!provider) return "unchecked"; // unknown protocol — never eligible
+  try {
+    return await provider(walletAddress, airdrop);
+  } catch (err) {
+    console.warn(`[Airdrop] eligibility provider failed for ${airdrop.id}:`, (err as Error).message);
+    return "unchecked"; // failed real check ≠ eligible
+  }
+}
+
 // ── Types ──────────────────────────────────────────────────────
 
 export interface Airdrop {
@@ -418,12 +445,9 @@ export const checkEligibility = createServerFn({ method: "GET" })
       if (wallet.status !== "active") continue;
       wallet.lastCheckedAt = now;
 
-      // Check each airdrop for this wallet
+      // Check each airdrop for this wallet — via real per-protocol providers.
       const eligibleAirdrops: Airdrop[] = [];
       for (const airdrop of airdrops) {
-        // Quick heuristic check:
-        // - If the wallet has been active (checked before), consider it possibly eligible
-        // - For real use, we'd query on-chain activity per airdrop's criteria
         const existing = wallet.eligibleAirdrops.find(e => e.airdropId === airdrop.id);
         if (existing) {
           // Already tracked — include in results
@@ -432,20 +456,21 @@ export const checkEligibility = createServerFn({ method: "GET" })
           continue;
         }
 
-        // Mark as potentially eligible for active/claimable airdrops
-        // Real implementation would query protocol-specific APIs
-        if (airdrop.status === "active" || airdrop.status === "claimable") {
-          wallet.eligibleAirdrops.push({
-            airdropId: airdrop.id,
-            amount: null,
-            claimed: false,
-          });
-          if (airdrop.status === "claimable") {
-            wallet.totalPending += airdrop.estimatedValue;
-          }
-          const ad = airdrops.find(a => a.id === airdrop.id);
-          if (ad) eligibleAirdrops.push(ad);
+        // REAL eligibility check (registry); unknown protocols ⇒ "unchecked",
+        // NEVER "eligible".
+        const verdict = await checkProtocolEligibility(wallet.address, airdrop);
+        if (verdict !== "eligible") continue;
+
+        wallet.eligibleAirdrops.push({
+          airdropId: airdrop.id,
+          amount: null,
+          claimed: false,
+        });
+        if (airdrop.status === "claimable") {
+          wallet.totalPending += airdrop.estimatedValue;
         }
+        const ad = airdrops.find(a => a.id === airdrop.id);
+        if (ad) eligibleAirdrops.push(ad);
       }
 
       results.push({ wallet: { ...wallet, eligibleAirdrops: [...wallet.eligibleAirdrops] }, airdrops: eligibleAirdrops });

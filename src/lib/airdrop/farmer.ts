@@ -6,6 +6,7 @@ import { ethers } from "ethers";
 import { sql, isDbAvailable } from "../db";
 import { SUPPORTED_CHAINS } from "../chains-config";
 import { getAutonomousPrivateKey } from "../autonomous-wallet";
+import { requireEnv } from "../env-guard";
 
 export interface AirdropProtocol {
   name: string;
@@ -90,28 +91,10 @@ const FARM_PROTOCOLS: AirdropProtocol[] = [
     interactionType: "swap",
     abi: SWAP_ABI,
   },
-  // Solana (chainId 101 — simulated via Jupiter)
-  {
-    name: "Jupiter (Solana)",
-    chainId: 101,
-    contractAddress: "JUP6LkbZbjS1jKKwapdHNy7VxpHGZ3Vxqn8XLpPrM5oN",
-    interactionType: "swap",
-    abi: SWAP_ABI,
-  },
-  {
-    name: "Raydium (Solana)",
-    chainId: 101,
-    contractAddress: "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8",
-    interactionType: "swap",
-    abi: SWAP_ABI,
-  },
-  {
-    name: "Orca (Solana)",
-    chainId: 101,
-    contractAddress: "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc",
-    interactionType: "swap",
-    abi: SWAP_ABI,
-  },
+  // NOTE: Solana protocols (Jupiter/Raydium/Orca) were REMOVED — they had
+  // EVM ABIs against a Solana RPC (EVM-ABI-on-Solana) and could never
+  // execute. A real Solana farming path (Jupiter v6 quote+swap + keypair
+  // signing) is a future task; until then nothing fake is listed.
 ];
 
 // ── Liquid tokens per chain for swap paths ────────────────────────────
@@ -125,10 +108,6 @@ const COMMON_TOKENS: Record<number, string[]> = {
     "0xaf88d065e77c8cC2239327C5EDb3A432268e5831", // USDC
     "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1", // WETH
   ],
-  101: [
-    "So11111111111111111111111111111111111111112", // Wrapped SOL
-    "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", // USDC
-  ],
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────
@@ -139,7 +118,6 @@ function getRpc(chainId: number): string {
   }
   if (chainId === 8453) return "https://mainnet.base.org";
   if (chainId === 42161) return "https://arb1.arbitrum.io/rpc";
-  if (chainId === 101) return "https://api.mainnet-beta.solana.com";
   throw new Error(`No RPC for chainId ${chainId}`);
 }
 
@@ -200,23 +178,17 @@ export async function farmAirdrops(
     };
   }
 
-  // Use autonomous wallet if available, fall back to env var
-  let pk = await getAutonomousPrivateKey();
+  // Use autonomous wallet if available, fall back to env var.
+  // Missing key → THROW (owner hard rule: no mock claims).
+  let pk = await getAutonomousPrivateKey().catch(() => null);
   if (!pk) {
     pk = process.env.FARMER_PRIVATE_KEY;
   }
   if (!pk) {
-    return {
-      success: false,
-      interactions: 0,
-      txHashes: [],
-      gasSpent: "0",
-      totalUsdValue: "0",
-      skippedReason: "No wallet configured. Generate autonomous wallet in Settings, or set FARMER_PRIVATE_KEY.",
-      protocolNames: eligible.map((p) => p.name),
-      timestamp: ts,
-    };
+    requireEnv("FARMER_PRIVATE_KEY"); // throws the clear error
+    throw new Error("[Airdrop] FARMER_PRIVATE_KEY missing — no mock claims.");
   }
+  requireEnv("FARMER_WALLET_ADDRESS");
 
   // Execute interactions
   const results: { proto: AirdropProtocol; txHash: string; amountEth: string }[] = [];

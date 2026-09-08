@@ -132,10 +132,18 @@ const config: HardhatUserConfig = {
       accounts: accounts(),
     },
 
-    // ── Polygon Mumbai ────────────────────────────────────────
+    // ── Polygon Mumbai (deprecated) ─────────────────────────
     "polygon-mumbai": {
       url: `https://polygon-mumbai.g.alchemy.com/v2/${process.env.ALCHEMY_API_KEY || "demo"}`,
       chainId: 80001,
+      accounts: accounts(),
+      gasPrice: 40_000_000_000, // 40 gwei
+    },
+
+    // ── Polygon Amoy (current testnet, chainId 80002) ───────
+    "polygon-amoy": {
+      url: process.env.POLYGON_AMOY_RPC_URL || "https://polygon-amoy-bor-rpc.publicnode.com",
+      chainId: 80002,
       accounts: accounts(),
       gasPrice: 40_000_000_000, // 40 gwei
     },

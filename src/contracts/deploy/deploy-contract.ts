@@ -5,10 +5,12 @@
  *   npx hardhat run deploy/deploy-contract.ts --network <name>
  *
  * Set DEPLOY_CONTRACT env var to one of:
- *   FlashLoanArbitrage, CrossChainArbitrage, HSMCVault, YieldOptimizer
+ *   FlashLoanArbitrage, CrossChainArbitrage, HSMCVault, YieldOptimizer,
+ *   PaymentSettlement
  *
  * Example:
  *   DEPLOY_CONTRACT=HSMCVault npx hardhat run deploy/deploy-contract.ts --network sepolia
+ *   DEPLOY_CONTRACT=PaymentSettlement npx hardhat run deploy/deploy-contract.ts --network polygon-amoy
  */
 
 import { ethers, network, run } from "hardhat";
@@ -70,11 +72,11 @@ async function verifyContract(
 async function main() {
   const contractName = process.env.DEPLOY_CONTRACT || "";
   if (!contractName) {
-    console.error("❌ Set DEPLOY_CONTRACT to one of: FlashLoanArbitrage, CrossChainArbitrage, HSMCVault, YieldOptimizer");
+    console.error("❌ Set DEPLOY_CONTRACT to one of: FlashLoanArbitrage, CrossChainArbitrage, HSMCVault, YieldOptimizer, PaymentSettlement");
     process.exit(1);
   }
 
-  const validContracts = ["FlashLoanArbitrage", "CrossChainArbitrage", "HSMCVault", "YieldOptimizer"];
+  const validContracts = ["FlashLoanArbitrage", "CrossChainArbitrage", "HSMCVault", "YieldOptimizer", "PaymentSettlement"];
   if (!validContracts.includes(contractName)) {
     console.error(`❌ Unknown contract: ${contractName}. Must be one of: ${validContracts.join(", ")}`);
     process.exit(1);
@@ -150,6 +152,19 @@ async function main() {
       console.log(`  ✅ Deployed at: ${crossAddr}`);
       await verifyContract(crossAddr, args, "CrossChainArbitrage");
       console.log(`\n  CrossChainArbitrage: ${crossAddr}`);
+      break;
+    }
+
+    case "PaymentSettlement": {
+      // PaymentSettlement: constructor() — owner = deployer (no args)
+      console.log("📜 Deploying PaymentSettlement...");
+      const PaymentSettlement = await ethers.getContractFactory("PaymentSettlement");
+      const settlement = await PaymentSettlement.deploy();
+      await settlement.waitForDeployment();
+      const settleAddr = await settlement.getAddress();
+      console.log(`  ✅ Deployed at: ${settleAddr}`);
+      await verifyContract(settleAddr, [], "PaymentSettlement");
+      console.log(`\n  📌 Add to .env: VITE_POS_CONTRACT_ADDRESS=${settleAddr}`);
       break;
     }
   }

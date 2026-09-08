@@ -2,15 +2,18 @@
 // Real LP pool discovery via DeFiLlama Yields API, with auto-compound
 // logic based on gas-cost vs reward breakeven analysis.
 //
-// LIVE MODE: Connects to real Uniswap V3 / Curve / Balancer contracts
-// when wallet is connected. Paper mode tracks hypothetical performance
-// using real APYs from DeFiLlama.
+// LIVE MODE: builds and sends REAL deposit transactions (Aerodrome V2 on
+// Base) when FARMER_PRIVATE_KEY + BASE_RPC_URL are configured. Missing env
+// → throw, never a fake deposit string.
 //
 // Zero seededRandom / Math.random() — all data from real APIs.
 //
 // References:
 //   DeFiLlama Yields: https://yields.llama.fi/pools
 //   Uniswap V3 NonfungiblePositionManager: 0xC36442b4a4522E871399CD717aBDD847Ab11FE88
+//   Aerodrome V2 router (Base): 0xcF77a3Ba9A5CA399B7c97c74d54e5b1Beb874E43
+
+import { requireEnv } from "~/lib/env-guard";
 
 // ── Types ──────────────────────────────────────────────────────
 
@@ -29,6 +32,8 @@ export interface LPPosition {
   lastCompound: number;
   compoundCount: number;
   status: "active" | "closed";
+  /** Real on-chain deposit tx hash (present only when a live deposit was sent) */
+  txHash?: string;
 }
 
 export interface LPYieldState {
@@ -53,6 +58,8 @@ export interface DeFiLlamaPool {
   apy: number;            // total APY
   ilRisk: "low" | "medium" | "high";
   stablecoin: boolean;
+  /** Real underlying token addresses (from DeFiLlama) — used for REAL deposits */
+  underlyingTokens: string[];
 }
 
 // ── Cache ──────────────────────────────────────────────────────
@@ -126,6 +133,9 @@ export async function fetchDeFiLlamaPools(minTvl = 100_000): Promise<DeFiLlamaPo
         apy: Number(entry.apy ?? 0),
         ilRisk: inferILRisk(String(entry.symbol ?? ""), Number(entry.apyBase ?? 0)),
         stablecoin: isStablecoinPair(String(entry.symbol ?? "")),
+        underlyingTokens: Array.isArray(entry.underlyingTokens)
+          ? (entry.underlyingTokens as unknown[]).filter((t): t is string => typeof t === "string")
+          : [],
       });
     }
 
@@ -253,17 +263,21 @@ export async function depositLP(
     status: "active",
   };
 
-  // LIVE mode: attempt contract interaction via viem
-  if (!_state.paperMode) {
-    try {
-      const txRef = await buildRealLPDeposit(pool, amount);
-      if (txRef) {
-        console.log(`[LP] LIVE deposit tx: ${txRef}`);
-      }
-    } catch (err) {
-      console.warn("[LP] LIVE deposit failed, tracking locally:", err);
-    }
+  if (_state.paperMode) {
+    // Explicitly labeled simulation (BASE_RPC_URL not configured) — the UI
+    // shows this as paper mode; no real funds move.
+    _state.positions.push(position);
+    _state.totalDeposited += amount;
+    _state.lastUpdate = Date.now();
+    recalcBlendedAPY();
+    return position;
   }
+
+  // LIVE: a REAL deposit transaction is sent. Any failure THROWS — we never
+  // "track locally" a live deposit (owner hard rule).
+  const txHash = await buildRealLPDeposit(pool, amount);
+  console.log(`[LP] LIVE deposit tx: ${txHash}`);
+  position.txHash = txHash;
 
   _state.positions.push(position);
   _state.totalDeposited += amount;
@@ -274,44 +288,188 @@ export async function depositLP(
 }
 
 /**
- * Build a real LP deposit transaction.
- * Supports Uniswap V3, Curve, Balancer on Ethereum/Base/Arbitrum.
+ * Build and SEND a real LP deposit transaction.
+ *
+ * Supported today: Aerodrome V2 (Base, chain 8453) via the V2 router
+ * `addLiquidity` — approve both underlying tokens, then add liquidity.
+ * Other projects (uniswap-v3/curve/balancer/beefy/…) THROW "not yet
+ * supported" — never a fake "project:pool:amount" string.
+ *
+ * Guards: requireEnv("FARMER_PRIVATE_KEY") + requireEnv("BASE_RPC_URL").
  */
 async function buildRealLPDeposit(
   pool: DeFiLlamaPool,
   amount: number,
-): Promise<string | null> {
-  try {
-    const baseRpc = typeof process !== "undefined" && process.env?.BASE_RPC_URL;
-    if (!baseRpc && pool.chain === "base") return null;
+): Promise<string> {
+  // Guards first — missing env throws a clear error, never simulates.
+  const farmerKey = requireEnv("FARMER_PRIVATE_KEY");
+  const baseRpc = requireEnv("BASE_RPC_URL");
 
-    const { createPublicClient, http } = await import("viem");
-    // Dynamic chain selection
-    let chain: unknown;
-    if (pool.chain === "base") {
-      const { base } = await import("viem/chains");
-      chain = base;
-    } else if (pool.chain === "arbitrum") {
-      const { arbitrum } = await import("viem/chains");
-      chain = arbitrum;
-    } else {
-      const { mainnet } = await import("viem/chains");
-      chain = mainnet;
-    }
+  if (pool.chain !== "base") {
+    throw new Error(
+      `[LP] Real deposit for ${pool.project} on ${pool.chain} is not yet supported — refused (pool ${pool.pool}). No fake deposit.`,
+    );
+  }
+  if (pool.project !== "aerodrome" && pool.project !== "aerodrome-v1") {
+    throw new Error(
+      `[LP] Real deposit for project "${pool.project}" is not yet supported — add a per-project path first. No fake deposit (pool ${pool.pool}).`,
+    );
+  }
+  if (!pool.underlyingTokens || pool.underlyingTokens.length < 2) {
+    throw new Error(
+      `[LP] Pool ${pool.pool} has no real underlyingTokens from DeFiLlama — cannot build a real deposit.`,
+    );
+  }
 
-    const rpcUrl = pool.chain === "base" ? baseRpc : undefined;
-    if (!rpcUrl) return null;
+  const { createPublicClient, createWalletClient, http } = await import("viem");
+  const { base } = await import("viem/chains");
+  const { privateKeyToAccount } = await import("viem/accounts");
 
-    const client = createPublicClient({
-      chain: chain as Parameters<typeof createPublicClient>[0]["chain"],
-      transport: http(rpcUrl),
+  const account = privateKeyToAccount(farmerKey as `0x${string}`);
+  const publicClient = createPublicClient({ chain: base, transport: http(baseRpc) });
+  const walletClient = createWalletClient({ chain: base, account, transport: http(baseRpc) });
+
+  const tokenA = pool.underlyingTokens[0] as `0x${string}`;
+  const tokenB = pool.underlyingTokens[1] as `0x${string}`;
+
+  // Real on-chain decimals (never assume 6/18).
+  const decimalsOf = async (addr: `0x${string}`): Promise<number> => {
+    const d = (await publicClient.readContract({
+      address: addr,
+      abi: ERC20_DECIMALS_ABI,
+      functionName: "decimals",
+    })) as number;
+    return Number(d);
+  };
+  const [decA, decB] = await Promise.all([decimalsOf(tokenA), decimalsOf(tokenB)]);
+
+  // Real prices from CoinGecko (for the USD split). Unpriced assets are
+  // refused — we never guess a token price.
+  const symbolA = pool.symbol.split("-")[0]?.toUpperCase() ?? "";
+  const symbolB = pool.symbol.split("-")[1]?.toUpperCase() ?? "";
+  const priceA = await fetchCoinGeckoPrice(symbolA);
+  const priceB = await fetchCoinGeckoPrice(symbolB);
+  if (priceA <= 0 || priceB <= 0) {
+    throw new Error(
+      `[LP] Cannot price ${symbolA}/${symbolB} (CoinGecko) — refusing to build a real deposit with an invented rate.`,
+    );
+  }
+
+  const usdPerSide = amount / 2;
+  const rawA = BigInt(Math.floor((usdPerSide / priceA) * 10 ** decA));
+  const rawB = BigInt(Math.floor((usdPerSide / priceB) * 10 ** decB));
+  if (rawA <= 0n || rawB <= 0n) {
+    throw new Error(
+      `[LP] Deposit amount too small to build a real tx (rawA=${rawA}, rawB=${rawB}).`,
+    );
+  }
+
+  // 1% slippage min amounts
+  const minA = (rawA * 99n) / 100n;
+  const minB = (rawB * 99n) / 100n;
+  const deadline = Math.floor(Date.now() / 1000) + 600;
+  const AERODROME_V2_ROUTER = "0xcF77a3Ba9A5CA399B7c97c74d54e5b1Beb874E43";
+
+  // Approve the router to move both tokens (real txs).
+  for (const [token, raw] of [
+    [tokenA, rawA],
+    [tokenB, rawB],
+  ] as const) {
+    const approveHash = await walletClient.writeContract({
+      address: token,
+      abi: ERC20_APPROVE_ABI,
+      functionName: "approve",
+      args: [AERODROME_V2_ROUTER as `0x${string}`, raw],
+      chain: base,
+      account,
     });
+    await publicClient.waitForTransactionReceipt({ hash: approveHash, timeout: 120_000 });
+  }
 
-    await client.getBlockNumber();
-    return `${pool.project}:${pool.pool}:${amount}`;
-  } catch (err) {
-    console.warn("[LP] buildRealLPDeposit error:", err);
-    return null;
+  // addLiquidity on the Aerodrome V2 router.
+  const addHash = await walletClient.writeContract({
+    address: AERODROME_V2_ROUTER as `0x${string}`,
+    abi: AERODROME_V2_ROUTER_ABI,
+    functionName: "addLiquidity",
+    args: [tokenA, tokenB, rawA, rawB, minA, minB, account.address, BigInt(deadline)],
+    chain: base,
+    account,
+  });
+  await publicClient.waitForTransactionReceipt({ hash: addHash, timeout: 120_000 });
+
+  return addHash;
+}
+
+// ── Real on-chain ABIs (minimal) ───────────────────────────────
+
+const ERC20_DECIMALS_ABI = [
+  {
+    type: "function",
+    name: "decimals",
+    inputs: [],
+    outputs: [{ name: "", type: "uint8" }],
+    stateMutability: "view",
+  },
+] as const;
+
+const ERC20_APPROVE_ABI = [
+  {
+    type: "function",
+    name: "approve",
+    inputs: [
+      { name: "spender", type: "address" },
+      { name: "amount", type: "uint256" },
+    ],
+    outputs: [{ name: "", type: "bool" }],
+    stateMutability: "nonpayable",
+  },
+] as const;
+
+const AERODROME_V2_ROUTER_ABI = [
+  {
+    type: "function",
+    name: "addLiquidity",
+    inputs: [
+      { name: "tokenA", type: "address" },
+      { name: "tokenB", type: "address" },
+      { name: "amountADesired", type: "uint256" },
+      { name: "amountBDesired", type: "uint256" },
+      { name: "amountAMin", type: "uint256" },
+      { name: "amountBMin", type: "uint256" },
+      { name: "to", type: "address" },
+      { name: "deadline", type: "uint256" },
+    ],
+    outputs: [
+      { name: "amountA", type: "uint256" },
+      { name: "amountB", type: "uint256" },
+      { name: "liquidity", type: "uint256" },
+    ],
+    stateMutability: "nonpayable",
+  },
+] as const;
+
+/** CoinGecko price (USD) for a Base pool asset symbol — real data only. */
+async function fetchCoinGeckoPrice(symbol: string): Promise<number> {
+  const id =
+    symbol === "USDC" ? "usd-coin"
+    : symbol === "USDT" ? "tether"
+    : symbol === "WETH" ? "ethereum"
+    : symbol === "DAI" ? "dai"
+    : symbol === "AERO" ? "aerodrome-finance"
+    : symbol === "MAI" ? "mimatic"
+    : "";
+  if (!id) return 0;
+  try {
+    const resp = await fetch(
+      `https://api.coingecko.com/api/v3/simple/price?ids=${id}&vs_currencies=usd`,
+      { signal: AbortSignal.timeout(8000) },
+    );
+    if (!resp.ok) return 0;
+    const json = (await resp.json()) as Record<string, { usd?: number }>;
+    const price = json[id]?.usd;
+    return typeof price === "number" && price > 0 ? price : 0;
+  } catch {
+    return 0;
   }
 }
 

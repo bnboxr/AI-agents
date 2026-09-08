@@ -2,9 +2,13 @@
 // Marinade Finance Liquid Staking on Solana
 // Contract: MarBmsSgKXdrU1UfULcZBaTNRoCMWqMKmGpFUHuFa1s (Marinade v2)
 //
-// LIVE MODE: Connects to Solana via @solana/web3.js when SOLANA_RPC_URL
-// is configured and a Phantom wallet is connected. Falls back to
-// simulated mode when wallet/RPC are unavailable.
+// LIVE MODE: builds, signs and sends REAL Marinade deposit transactions
+// via the official @marinade.finance/marinade-ts-sdk when SOLANA_RPC_URL /
+// SOLANA_WALLET_PUBKEY / SOLANA_PRIVATE_KEY (or autonomous wallet) are
+// configured. Missing env → THROW, never an unsigned blob / simulated
+// transfer.
+
+import { requireEnv } from "~/lib/env-guard";
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -208,39 +212,108 @@ async function fetchRealMSolBalance(): Promise<number | null> {
 }
 
 /**
- * Build and send a real Marinade deposit transaction.
+ * Build, sign and send a REAL Marinade deposit transaction.
+ *
+ * Uses the official @marinade.finance/marinade-ts-sdk to build the real
+ * Anchor `deposit` instruction (state/mSOL mint/mint authority/liq-pool
+ * legs/reserve PDA + user WSOL account), signs with the staking keypair
+ * and broadcasts it. Returns the REAL transaction signature.
+ *
+ * Guards (owner hard rule): SOLANA_RPC_URL + SOLANA_WALLET_PUBKEY + a key
+ * source (SOLANA_PRIVATE_KEY or the autonomous wallet) — when absent this
+ * THROWS. It never returns an unsigned blob or a simulated transfer.
  */
-async function sendRealMarinadeDeposit(amountSOL: number): Promise<string | null> {
-  try {
-    const { PublicKey, Transaction, SystemProgram, LAMPORTS_PER_SOL } =
-      await import("@solana/web3.js");
+async function sendRealMarinadeDeposit(amountSOL: number): Promise<string> {
+  // ── Guards first — no unsigned blob, no SystemProgram.transfer fake ──
+  const rpcUrl = requireEnv("SOLANA_RPC_URL");
+  const walletPubkeyStr = requireEnv("SOLANA_WALLET_PUBKEY");
 
-    const walletPubkeyStr =
-      typeof process !== "undefined" && process.env?.SOLANA_WALLET_PUBKEY;
-    if (!walletPubkeyStr) return null;
+  const { Connection, PublicKey, LAMPORTS_PER_SOL } = await import("@solana/web3.js");
+  const sdk = await import("@marinade.finance/marinade-ts-sdk");
 
-    const walletPubkey = new PublicKey(walletPubkeyStr);
-    const marinadeProgramId = new PublicKey(MARINADE_PROGRAM_ID);
-
-    // Build deposit instruction (simplified Marinade deposit)
-    // In production, would use the full Marinade SDK
-    const tx = new Transaction().add(
-      SystemProgram.transfer({
-        fromPubkey: walletPubkey,
-        toPubkey: marinadeProgramId,
-        lamports: Math.floor(amountSOL * LAMPORTS_PER_SOL),
-      }),
+  const walletPubkey = new PublicKey(walletPubkeyStr);
+  const keypair = await resolveStakingKeypair();
+  if (!keypair.publicKey.equals(walletPubkey)) {
+    // Honest mismatch check — signing with a key that isn't the configured
+    // wallet would send funds from the wrong account.
+    console.warn(
+      `[pSOL] SOLANA_WALLET_PUBKEY (${walletPubkey.toBase58()}) differs from the keypair public key (${keypair.publicKey.toBase58()}) — continuing with the keypair.`,
     );
+  }
 
-    // Note: In production, the wallet adapter (Phantom) would sign this.
-    // The transaction is constructed here; signing happens client-side.
-    // For server-side, we'd need the private key which we don't have.
-    // Return the serialized transaction for the client to sign.
-    const serialized = tx.serialize({ requireAllSignatures: false });
-    return Buffer.from(serialized).toString("base64");
+  const connection = new Connection(rpcUrl, "confirmed");
+
+  // Real Marinade deposit instruction via the official SDK.
+  const mar = new sdk.Marinade(
+    new sdk.MarinadeConfig({ connection, publicKey: keypair.publicKey }),
+  );
+  const lamports = Math.floor(amountSOL * LAMPORTS_PER_SOL);
+  if (lamports <= 0) {
+    throw new Error(`[pSOL] Deposit amount ${amountSOL} SOL is below 1 lamport.`);
+  }
+  const { transaction } = await mar.deposit(new sdk.BN(lamports));
+  if (!transaction) {
+    throw new Error("[pSOL] Marinade SDK produced no transaction — nothing sent.");
+  }
+
+  // Fee payer + recent blockhash, then sign locally (never transmitted).
+  transaction.feePayer = keypair.publicKey;
+  const { blockhash } = await connection.getLatestBlockhash("confirmed");
+  transaction.recentBlockhash = blockhash;
+  transaction.sign(keypair);
+
+  const signature = await connection.sendRawTransaction(transaction.serialize());
+  await connection.confirmTransaction(signature, "confirmed");
+  return signature;
+}
+
+/** Decode a 64-byte Solana secret key from hex / base58 / JSON array. */
+async function decodeSolanaSecretKey(encoded: string): Promise<Uint8Array> {
+  const trimmed = encoded.trim();
+  // 128-char hex (optionally 0x-prefixed)
+  if (/^(0x)?[0-9a-fA-F]{128}$/.test(trimmed)) {
+    const hex = trimmed.replace(/^0x/, "");
+    const bytes = new Uint8Array(64);
+    for (let i = 0; i < 64; i++) bytes[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+    return bytes;
+  }
+  // JSON array of 64 numbers
+  if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+    const arr = JSON.parse(trimmed) as number[];
+    if (Array.isArray(arr) && arr.length === 64) return Uint8Array.from(arr);
+  }
+  // base58-encoded 64-byte secret
+  try {
+    const bs58 = (await import("bs58")).default;
+    const decoded = bs58.decode(trimmed);
+    if (decoded.length === 64) return decoded;
+  } catch {
+    // fall through to the error below
+  }
+  throw new Error(
+    "[pSOL] SOLANA_PRIVATE_KEY must be a 64-byte secret key (base58, hex, or JSON array of 64 numbers).",
+  );
+}
+
+/**
+ * Resolve the staking keypair: SOLANA_PRIVATE_KEY first, otherwise the
+ * autonomous wallet Solana derivation. Throws a clear error when neither
+ * is available — never an unsigned blob.
+ */
+async function resolveStakingKeypair(): Promise<import("@solana/web3.js").Keypair> {
+  const { Keypair } = await import("@solana/web3.js");
+  const secretEnv = process.env.SOLANA_PRIVATE_KEY;
+  if (secretEnv && secretEnv.trim().length > 0) {
+    return Keypair.fromSecretKey(await decodeSolanaSecretKey(secretEnv));
+  }
+  // Fall back to the autonomous-wallet Solana derivation (BIP44).
+  try {
+    const { getSolanaSecretKey } = await import("~/lib/chains/solana-wallet");
+    return Keypair.fromSecretKey(await getSolanaSecretKey());
   } catch (err) {
-    console.warn("[PSol] sendRealMarinadeDeposit failed:", err);
-    return null;
+    throw new Error(
+      `[pSOL] No staking key available: set SOLANA_PRIVATE_KEY (or AUTONOMOUS_WALLET_SECRET for the derived wallet). ${(err as Error).message}`,
+    );
   }
 }
 
@@ -318,29 +391,15 @@ export async function depositStake(amountSOL: number): Promise<PSolStakingState>
         `New stake: ${state.stakedSOL.toFixed(4)} SOL`,
     );
   } else {
-    // ── LIVE Mode ──────────────────────────────────────────────────
-    const txBase64 = await sendRealMarinadeDeposit(amountSOL);
+    // ── LIVE Mode: real on-chain deposit (throws when env/key missing) ──
+    const signature = await sendRealMarinadeDeposit(amountSOL);
+    state.stakedSOL += amountSOL;
+    state.msolBalance += amountSOL;
 
-    if (txBase64) {
-      state.stakedSOL += amountSOL;
-      state.msolBalance += amountSOL;
-
-      logAction(
-        `depositStake(${amountSOL} SOL) → LIVE: Marinade deposit tx built. ` +
-          `Transaction ready for Phantom wallet signing. ` +
-          `New stake: ${state.stakedSOL.toFixed(4)} SOL`,
-      );
-    } else {
-      // Failed to build live tx — fall back to tracking
-      state.stakedSOL += amountSOL;
-      state.msolBalance += amountSOL;
-
-      logAction(
-        `depositStake(${amountSOL} SOL) → LIVE (tracked): ` +
-          `Solana web3.js unavailable or wallet not connected. ` +
-          `Balance tracked locally. New stake: ${state.stakedSOL.toFixed(4)} SOL`,
-      );
-    }
+    logAction(
+      `depositStake(${amountSOL} SOL) → LIVE: Marinade deposit tx ${signature}. ` +
+        `New stake: ${state.stakedSOL.toFixed(4)} SOL`,
+    );
   }
 
   return getPSolState();

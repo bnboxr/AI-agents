@@ -12,6 +12,7 @@
     "format": "prettier --write ."
   },
   "dependencies": {
+    "@marinade.finance/marinade-ts-sdk": "^6.1.0",
     "@neondatabase/serverless": "^1.1.0",
     "@noble/hashes": "^2.2.0",
     "@scure/bip32": "1.6.0",
@@ -33,18 +34,19 @@
     "@xterm/xterm": "^5.5.0",
     "@xyflow/react": "^12.11.2",
     "bip39": "^3.1.0",
+    "bs58": "^6.0.0",
     "ed25519-hd-key": "^2.0.0",
     "ethers": "^6.13.0",
     "framer-motion": "^12.42.2",
     "qrcode": "^1.5.4",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
+    "react-hot-toast": "^2.5.2",
     "recharts": "^3.9.2",
     "tronweb": "^6.4.0",
     "viem": "^2.55.2",
     "wagmi": "^3.7.3",
-    "xrpl": "^5.0.0",
-    "react-hot-toast": "^2.5.2"
+    "xrpl": "^5.0.0"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.18",

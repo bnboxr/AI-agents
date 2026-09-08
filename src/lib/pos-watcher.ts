@@ -7,19 +7,22 @@
  * Master wallet architecture — no per-merchant tracking.
  */
 
-import { createPublicClient, http, parseAbiItem } from "viem";
+import { createPublicClient, http, parseAbiItem, type PublicClient } from "viem";
 import { polygonAmoy, polygon } from "viem/chains";
 import { confirmPaymentSession } from "./pos-service";
+import { requireEnv } from "./env-guard";
 
 // ── Config ─────────────────────────────────────────────────────────────
+// No silent demo defaults: the contract address and RPC come from env only
+// and THROW when absent (owner hard rule: no zero-address / /v2/demo RPC).
 
-const CONTRACT_ADDRESS =
-  (typeof process !== "undefined" && process.env?.VITE_POS_CONTRACT_ADDRESS) ||
-  "0x0000000000000000000000000000000000000000";
+function getContractAddress(): string {
+  return requireEnv("VITE_POS_CONTRACT_ADDRESS");
+}
 
-const RPC_URL =
-  (typeof process !== "undefined" && process.env?.VITE_POLYGON_RPC) ||
-  "https://polygon-amoy.g.alchemy.com/v2/demo";
+function getRpcUrl(): string {
+  return requireEnv("VITE_POLYGON_RPC");
+}
 
 const CHAIN =
   (typeof process !== "undefined" && process.env?.VITE_POS_NETWORK) === "mainnet"
@@ -28,12 +31,10 @@ const CHAIN =
 
 const POLL_INTERVAL = 5000; // 5 seconds
 
-// ── Client ─────────────────────────────────────────────────────────────
+// ── Client (created on start, after env guards pass) ───────────────────
 
-const publicClient = createPublicClient({
-  chain: CHAIN,
-  transport: http(RPC_URL),
-});
+let publicClient: PublicClient | null = null;
+let contractAddress = "";
 
 // ── Event Signature ────────────────────────────────────────────────────
 
@@ -53,6 +54,9 @@ const seenTxIds = new Set<string>(); // Deduplicate
 /**
  * Start monitoring the blockchain for PaymentReceived events.
  * Idempotent — calling multiple times is safe.
+ *
+ * Requires VITE_POS_CONTRACT_ADDRESS + VITE_POLYGON_RPC (else refuses to
+ * start — no demo fallback; errors surface in the console).
  */
 export function startPaymentWatcher(): void {
   if (isRunning) {
@@ -60,8 +64,25 @@ export function startPaymentWatcher(): void {
     return;
   }
 
+  let rpcUrl: string;
+  try {
+    rpcUrl = getRpcUrl();
+    contractAddress = getContractAddress();
+  } catch (err) {
+    console.error(
+      "[POS Watcher] Refusing to start — live settlement config missing:",
+      (err as Error).message,
+    );
+    return;
+  }
+
+  publicClient = createPublicClient({
+    chain: CHAIN,
+    transport: http(rpcUrl),
+  });
+
   isRunning = true;
-  console.log(`[POS Watcher] Starting on ${CHAIN.name} — contract ${CONTRACT_ADDRESS.slice(0, 10)}...`);
+  console.log(`[POS Watcher] Starting on ${CHAIN.name} — contract ${contractAddress.slice(0, 10)}...`);
 
   // Initial poll immediately
   pollForPayments();
@@ -93,12 +114,11 @@ export function isWatcherRunning(): boolean {
 // ── Internal Poll Logic ────────────────────────────────────────────────
 
 async function pollForPayments(): Promise<void> {
-  // Skip if no contract configured
-  if (
-    !CONTRACT_ADDRESS ||
-    CONTRACT_ADDRESS === "0x0000000000000000000000000000000000000000"
-  ) {
-    console.warn("[POS Watcher] No contract address configured — skipping poll");
+  // No contract configured → the watcher was never started (guards above
+  // refuse to start without VITE_POS_CONTRACT_ADDRESS). Never poll a
+  // zero-address silently.
+  if (!publicClient || !contractAddress) {
+    console.error("[POS Watcher] Poll skipped — watcher not started (missing VITE_POS_CONTRACT_ADDRESS / VITE_POLYGON_RPC).");
     return;
   }
 
@@ -115,7 +135,7 @@ async function pollForPayments(): Promise<void> {
     if (currentBlock < lastBlock) return;
 
     const logs = await publicClient.getLogs({
-      address: CONTRACT_ADDRESS as `0x${string}`,
+      address: contractAddress as `0x${string}`,
       event: PAYMENT_RECEIVED_EVENT,
       fromBlock: lastBlock,
       toBlock: currentBlock,

@@ -1,8 +1,19 @@
 // ── Bitunix Exchange Adapter ─────────────────────────────────────────
 // Bitunix REST: https://api.bitunix.com/api/v1
 // WebSocket: wss://ws.bitunix.com/ws
-// Paper mode default — no real API keys needed.
+// Live mode requires BITUNIX_API_KEY + BITUNIX_SECRET_KEY. When they are
+// missing, live methods THROW (owner hard rule: never simulate, never
+// fabricate). Paper mode remains available and is always labelled isPaper.
+//
+// ⚠ LIVE-VERIFICATION REQUIRED BEFORE REAL MONEY (owner decision gating):
+//   Bitunix's official docs (https://bitunix.com/api — JS-rendered) were NOT
+//   reachable in this session. The v2 HMAC scheme implemented here matches
+//   the standard convention: headers X-BX-APIKEY, X-BX-TIMESTAMP (ms),
+//   X-BX-SIGNATURE = HEX(HMAC_SHA256(secret, timestamp + method + path + body)).
+//   The concat is centralized in `signRequest` below — VERIFY it against
+//   docs.bitunix.com before enabling with real funds.
 
+import { createHmac } from "node:crypto";
 import type {
   ExchangeAdapter,
   ExchangeRole,
@@ -16,10 +27,12 @@ import type {
   PerpetualOrderRequest,
   PerpetualPosition,
 } from "./types";
+import { requireEnv } from "~/lib/env-guard";
 
 // ── Constants ──────────────────────────────────────────────────────
 
-const BITUNIX_REST = "https://api.bitunix.com/api/v1";
+const BITUNIX_REST =
+  process.env.BITUNIX_REST_OVERRIDE ?? "https://api.bitunix.com/api/v1";
 const BITUNIX_FUTURES_REST = "https://fapi.bitunix.com";
 const BITUNIX_WS = "wss://ws.bitunix.com/ws";
 const REQUEST_TIMEOUT = 8_000;
@@ -100,6 +113,92 @@ async function fetchWithTimeout(url: string, opts: RequestInit = {}, timeout = R
     return await fetch(url, { ...opts, signal: controller.signal });
   } finally {
     clearTimeout(timer);
+  }
+}
+
+// ── Bitunix HMAC signing (v2 scheme — VERIFY AGAINST OFFICIAL DOCS) ──
+//
+// ⚠ The exact concat `timestamp + method + path + body` is the standard
+// Bitunix v2 convention but could NOT be confirmed against
+// https://bitunix.com/api in this session (JS-rendered docs). Verify
+// against the official docs before enabling with real funds. The signing
+// logic is centralized here so a correction is a one-line change.
+
+/**
+ * Compute the X-BX-SIGNATURE value for a Bitunix private API request.
+ *
+ * @param secret    Bitunix secret key (BITUNIX_SECRET_KEY)
+ * @param timestamp epoch millis (the same value sent in X-BX-TIMESTAMP)
+ * @param method    uppercase HTTP method, e.g. "POST", "GET"
+ * @param path      request path, including query string for GET, e.g.
+ *                  "/api/v1/futures/order" or "/api/v1/futures/positions?symbol=BTCUSDT"
+ * @param body      canonical JSON request body ("" for GET/DELETE without body)
+ * @returns         lowercase hex HMAC-SHA256 digest
+ */
+export function bitunixHmacSignature(
+  secret: string,
+  timestamp: string,
+  method: string,
+  path: string,
+  body: string,
+): string {
+  const payload = `${timestamp}${method}${path}${body}`;
+  return createHmac("sha256", secret).update(payload, "utf8").digest("hex");
+}
+
+/**
+ * Build headers + body for a signed Bitunix request. `timestamp` belongs in
+ * the header ONLY (X-BX-TIMESTAMP) — never inside the JSON body.
+ */
+function signRequest(
+  apiKey: string,
+  secret: string,
+  method: "GET" | "POST",
+  path: string,
+  bodyJson?: string,
+): { headers: Record<string, string>; bodyJson: string } {
+  const timestamp = String(Date.now());
+  const body = bodyJson ?? "";
+  return {
+    headers: {
+      "X-BX-APIKEY": apiKey,
+      "X-BX-TIMESTAMP": timestamp,
+      "X-BX-SIGNATURE": bitunixHmacSignature(secret, timestamp, method, path, body),
+      "Content-Type": "application/json",
+    },
+    bodyJson: body,
+  };
+}
+
+/** Shared error-detail extraction for failed Bitunix responses. */
+async function bitunixErrorDetail(res: Response): Promise<string> {
+  const text = await res.text();
+  if (!text) return `HTTP ${res.status}`;
+  try {
+    const j = JSON.parse(text) as { code?: string; msg?: string; message?: string };
+    if (j.code && j.code !== "0") return `code ${j.code}: ${j.msg ?? j.message ?? ""}`;
+    return `HTTP ${res.status}: ${text.slice(0, 300)}`;
+  } catch {
+    return `HTTP ${res.status}: ${text.slice(0, 300)}`;
+  }
+}
+
+/** Map a Bitunix order-status string to the shared OrderResult status. */
+function mapBitunixStatus(status: string | undefined): OrderResult["status"] {
+  switch (status) {
+    case "FILLED":
+      return "FILLED";
+    case "PARTIALLY_FILLED":
+      return "PARTIALLY_FILLED";
+    case "NEW":
+    case "PENDING":
+      return "PENDING";
+    case "CANCELED":
+    case "REJECTED":
+    case "EXPIRED":
+      return "REJECTED";
+    default:
+      return "PENDING";
   }
 }
 
@@ -394,7 +493,72 @@ class BitunixAdapter implements ExchangeAdapter {
     if (!this.isLive) {
       return paperPlaceOrder(order);
     }
-    throw new Error("Live Bitunix trading not yet implemented. Use paper mode.");
+    // LIVE spot order — real signed request (path VERIFY against docs).
+    const apiKey = requireEnv("BITUNIX_API_KEY");
+    const secret = requireEnv("BITUNIX_SECRET_KEY");
+    const pair = getBitunixPair(order.symbol);
+    const rawPair = getRawSymbol(pair);
+
+    const body: Record<string, unknown> = {
+      symbol: rawPair,
+      side: order.side,
+      type: order.type,
+      quantity: order.quantity,
+    };
+    if (order.type === "LIMIT") {
+      if (!order.price) {
+        throw new Error(`[Bitunix] LIMIT spot order for ${rawPair} requires a price.`);
+      }
+      body.price = order.price;
+    }
+
+    // ⚠ SIGNATURE CONCAT + SPOT ORDER PATH must be verified against
+    // https://bitunix.com/api before enabling with real funds.
+    const path = "/api/v1/spot/order";
+    const { headers, bodyJson } = signRequest(apiKey, secret, "POST", path, JSON.stringify(body));
+
+    const res = await fetchWithTimeout(`${BITUNIX_REST}${path}`, {
+      method: "POST",
+      headers,
+      body: bodyJson,
+    });
+    if (!res.ok) {
+      throw new Error(`[Bitunix] spot order failed: ${await bitunixErrorDetail(res)}`);
+    }
+    const data = (await res.json()) as {
+      code?: string;
+      data?: {
+        orderId?: string;
+        symbol?: string;
+        side?: string;
+        type?: string;
+        origQty?: string;
+        executedQty?: string;
+        avgPrice?: string;
+        status?: string;
+        fee?: string;
+        feeAsset?: string;
+      };
+    };
+    if (data.code && data.code !== "0") {
+      throw new Error(`[Bitunix] spot order error: code=${data.code}`);
+    }
+    const d = data.data ?? {};
+    const timestamp = Date.now();
+    return {
+      orderId: d.orderId ?? `unknown_${timestamp}`,
+      symbol: d.symbol ?? rawPair,
+      side: (d.side as "BUY" | "SELL") ?? order.side,
+      type: (d.type as "MARKET" | "LIMIT") ?? order.type,
+      quantity: parseFloat(d.origQty ?? "0") || order.quantity,
+      filledQuantity: parseFloat(d.executedQty ?? "0"),
+      avgPrice: parseFloat(d.avgPrice ?? "0"),
+      status: mapBitunixStatus(d.status),
+      fee: parseFloat(d.fee ?? "0"),
+      feeAsset: d.feeAsset ?? "USDT",
+      timestamp,
+      isPaper: false,
+    };
   }
 
   async cancelOrder(orderId: string): Promise<void> {
@@ -456,81 +620,76 @@ class BitunixAdapter implements ExchangeAdapter {
     if (!this.isLive) {
       return this.paperPlacePerpetualOrder(request);
     }
-    // Live mode: use Bitunix futures REST API
-    try {
-      const pair = getBitunixPair(request.symbol);
-      const rawPair = getRawSymbol(pair);
-      const timestamp = Date.now();
+    // LIVE futures order — real signed request. Timestamp belongs in the
+    // X-BX-TIMESTAMP header ONLY (v2 scheme), never inside the body.
+    const apiKey = requireEnv("BITUNIX_API_KEY");
+    const secret = requireEnv("BITUNIX_SECRET_KEY");
+    const pair = getBitunixPair(request.symbol);
+    const rawPair = getRawSymbol(pair);
 
-      const body: Record<string, unknown> = {
-        symbol: rawPair,
-        side: request.side,
-        type: request.type,
-        quantity: request.quantity,
-        leverage: request.leverage,
-        marginMode: request.marginMode,
-        timestamp,
-      };
+    const body: Record<string, unknown> = {
+      symbol: rawPair,
+      side: request.side,
+      type: request.type,
+      quantity: request.quantity,
+      leverage: request.leverage,
+      marginMode: request.marginMode,
+    };
 
-      if (request.type === "LIMIT" && request.price) body.price = request.price;
-      if (request.reduceOnly) body.reduceOnly = true;
-      if (request.stopLossPrice) body.stopLossPrice = request.stopLossPrice;
-      if (request.takeProfitPrice) body.takeProfitPrice = request.takeProfitPrice;
+    if (request.type === "LIMIT" && request.price) body.price = request.price;
+    if (request.reduceOnly) body.reduceOnly = true;
+    if (request.stopLossPrice) body.stopLossPrice = request.stopLossPrice;
+    if (request.takeProfitPrice) body.takeProfitPrice = request.takeProfitPrice;
 
-      const res = await fetch(`${BITUNIX_FUTURES_REST}/api/v1/futures/order`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-BX-APIKEY": this.apiKey ?? "",
-        },
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT),
-      });
+    // ⚠ SIGNATURE CONCAT must be verified against the official docs.
+    const path = "/api/v1/futures/order";
+    const { headers, bodyJson } = signRequest(apiKey, secret, "POST", path, JSON.stringify(body));
 
-      if (!res.ok) {
-        const errText = await res.text();
-        throw new Error(`Bitunix futures order failed (${res.status}): ${errText}`);
-      }
-
-      const data = await res.json() as {
-        code?: string;
-        data?: {
-          orderId?: string;
-          symbol?: string;
-          side?: string;
-          type?: string;
-          origQty?: string;
-          executedQty?: string;
-          avgPrice?: string;
-          status?: string;
-          fee?: string;
-          feeAsset?: string;
-        };
-      };
-
-      if (data.code && data.code !== "0") {
-        throw new Error(`Bitunix futures error: ${data.code}`);
-      }
-
-      const d = data.data ?? {};
-      return {
-        orderId: d.orderId ?? `unknown_${timestamp}`,
-        symbol: d.symbol ?? rawPair,
-        side: (d.side as "BUY" | "SELL") ?? request.side,
-        type: (d.type as "MARKET" | "LIMIT") ?? request.type,
-        quantity: parseFloat(d.origQty ?? "0") || request.quantity,
-        filledQuantity: parseFloat(d.executedQty ?? "0"),
-        avgPrice: parseFloat(d.avgPrice ?? "0"),
-        status: (d.status === "FILLED" ? "FILLED" : d.status === "PARTIALLY_FILLED" ? "PARTIALLY_FILLED" : "PENDING") as OrderResult["status"],
-        fee: parseFloat(d.fee ?? "0"),
-        feeAsset: d.feeAsset ?? "USDT",
-        timestamp,
-        isPaper: false,
-      };
-    } catch (err) {
-      console.error("[Bitunix] placePerpetualOrder live error:", err);
-      throw err;
+    const res = await fetchWithTimeout(`${BITUNIX_FUTURES_REST}${path}`, {
+      method: "POST",
+      headers,
+      body: bodyJson,
+    });
+    if (!res.ok) {
+      throw new Error(`[Bitunix] futures order failed: ${await bitunixErrorDetail(res)}`);
     }
+
+    const data = await res.json() as {
+      code?: string;
+      data?: {
+        orderId?: string;
+        symbol?: string;
+        side?: string;
+        type?: string;
+        origQty?: string;
+        executedQty?: string;
+        avgPrice?: string;
+        status?: string;
+        fee?: string;
+        feeAsset?: string;
+      };
+    };
+
+    if (data.code && data.code !== "0") {
+      throw new Error(`[Bitunix] futures order error: code=${data.code}`);
+    }
+
+    const d = data.data ?? {};
+    const timestamp = Date.now();
+    return {
+      orderId: d.orderId ?? `unknown_${timestamp}`,
+      symbol: d.symbol ?? rawPair,
+      side: (d.side as "BUY" | "SELL") ?? request.side,
+      type: (d.type as "MARKET" | "LIMIT") ?? request.type,
+      quantity: parseFloat(d.origQty ?? "0") || request.quantity,
+      filledQuantity: parseFloat(d.executedQty ?? "0"),
+      avgPrice: parseFloat(d.avgPrice ?? "0"),
+      status: mapBitunixStatus(d.status),
+      fee: parseFloat(d.fee ?? "0"),
+      feeAsset: d.feeAsset ?? "USDT",
+      timestamp,
+      isPaper: false,
+    };
   }
 
   async getPerpetualPositions(symbol?: string): Promise<PerpetualPosition[]> {
@@ -538,65 +697,62 @@ class BitunixAdapter implements ExchangeAdapter {
       return this.paperGetPerpetualPositions(symbol);
     }
 
-    try {
-      const params = new URLSearchParams({ timestamp: Date.now().toString() });
-      if (symbol) {
-        const pair = getBitunixPair(symbol);
-        params.set("symbol", getRawSymbol(pair));
-      }
+    // LIVE positions — real signed GET. Timestamp lives in the header.
+    const apiKey = requireEnv("BITUNIX_API_KEY");
+    const secret = requireEnv("BITUNIX_SECRET_KEY");
 
-      const res = await fetch(
-        `${BITUNIX_FUTURES_REST}/api/v1/futures/positions?${params.toString()}`,
-        {
-          headers: {
-            "X-BX-APIKEY": this.apiKey ?? "",
-          },
-          signal: AbortSignal.timeout(REQUEST_TIMEOUT),
-        },
-      );
+    const pathBase = "/api/v1/futures/positions";
+    const query = symbol
+      ? `symbol=${encodeURIComponent(getRawSymbol(getBitunixPair(symbol)))}`
+      : "";
+    const path = query ? `${pathBase}?${query}` : pathBase;
 
-      if (!res.ok) throw new Error(`Bitunix positions fetch failed: ${res.status}`);
+    // ⚠ SIGNATURE CONCAT + query-in-path convention must be verified.
+    const { headers } = signRequest(apiKey, secret, "GET", path);
 
-      const data = await res.json() as {
-        code?: string;
-        data?: Array<{
-          symbol?: string;
-          positionSide?: string;
-          positionAmt?: string;
-          entryPrice?: string;
-          markPrice?: string;
-          leverage?: string;
-          marginType?: string;
-          unrealizedProfit?: string;
-          liquidationPrice?: string;
-          isolatedMargin?: string;
-        }>;
-      };
-
-      if (data.code && data.code !== "0") {
-        throw new Error(`Bitunix positions error: ${data.code}`);
-      }
-
-      return (data.data ?? []).map((p) => {
-        const qty = Math.abs(parseFloat(p.positionAmt ?? "0"));
-        const side: "LONG" | "SHORT" = parseFloat(p.positionAmt ?? "0") > 0 ? "LONG" : "SHORT";
-        return {
-          symbol: p.symbol ?? "",
-          side,
-          quantity: qty,
-          entryPrice: parseFloat(p.entryPrice ?? "0"),
-          markPrice: parseFloat(p.markPrice ?? "0"),
-          leverage: parseFloat(p.leverage ?? "1"),
-          marginMode: (p.marginType === "isolated" ? "isolated" : "cross") as "isolated" | "cross",
-          unrealizedPnl: parseFloat(p.unrealizedProfit ?? "0"),
-          liquidationPrice: parseFloat(p.liquidationPrice ?? "0"),
-          marginUsed: parseFloat(p.isolatedMargin ?? "0"),
-        };
-      });
-    } catch (err) {
-      console.error("[Bitunix] getPerpetualPositions live error:", err);
-      throw err;
+    const res = await fetchWithTimeout(`${BITUNIX_FUTURES_REST}${path}`, {
+      headers,
+    });
+    if (!res.ok) {
+      throw new Error(`[Bitunix] positions fetch failed: ${await bitunixErrorDetail(res)}`);
     }
+
+    const data = await res.json() as {
+      code?: string;
+      data?: Array<{
+        symbol?: string;
+        positionSide?: string;
+        positionAmt?: string;
+        entryPrice?: string;
+        markPrice?: string;
+        leverage?: string;
+        marginType?: string;
+        unrealizedProfit?: string;
+        liquidationPrice?: string;
+        isolatedMargin?: string;
+      }>;
+    };
+
+    if (data.code && data.code !== "0") {
+      throw new Error(`[Bitunix] positions error: code=${data.code}`);
+    }
+
+    return (data.data ?? []).map((p) => {
+      const qty = Math.abs(parseFloat(p.positionAmt ?? "0"));
+      const side: "LONG" | "SHORT" = parseFloat(p.positionAmt ?? "0") > 0 ? "LONG" : "SHORT";
+      return {
+        symbol: p.symbol ?? "",
+        side,
+        quantity: qty,
+        entryPrice: parseFloat(p.entryPrice ?? "0"),
+        markPrice: parseFloat(p.markPrice ?? "0"),
+        leverage: parseFloat(p.leverage ?? "1"),
+        marginMode: (p.marginType === "isolated" ? "isolated" : "cross") as "isolated" | "cross",
+        unrealizedPnl: parseFloat(p.unrealizedProfit ?? "0"),
+        liquidationPrice: parseFloat(p.liquidationPrice ?? "0"),
+        marginUsed: parseFloat(p.isolatedMargin ?? "0"),
+      };
+    });
   }
 
   async setLeverage(symbol: string, leverage: number): Promise<void> {
@@ -606,87 +762,84 @@ class BitunixAdapter implements ExchangeAdapter {
       return;
     }
 
-    try {
-      const pair = getBitunixPair(symbol);
-      const rawPair = getRawSymbol(pair);
-      const timestamp = Date.now();
+    // LIVE — real signed request; timestamp in header only.
+    const apiKey = requireEnv("BITUNIX_API_KEY");
+    const secret = requireEnv("BITUNIX_SECRET_KEY");
+    const pair = getBitunixPair(symbol);
+    const rawPair = getRawSymbol(pair);
 
-      const res = await fetch(`${BITUNIX_FUTURES_REST}/api/v1/futures/leverage`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-BX-APIKEY": this.apiKey ?? "",
-        },
-        body: JSON.stringify({ symbol: rawPair, leverage, timestamp }),
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT),
-      });
+    const body = { symbol: rawPair, leverage };
+    // ⚠ SIGNATURE CONCAT must be verified against the official docs.
+    const path = "/api/v1/futures/leverage";
+    const { headers, bodyJson } = signRequest(apiKey, secret, "POST", path, JSON.stringify(body));
 
-      if (!res.ok) {
-        const errText = await res.text();
-        throw new Error(`Bitunix setLeverage failed (${res.status}): ${errText}`);
-      }
-    } catch (err) {
-      console.error("[Bitunix] setLeverage error:", err);
-      throw err;
+    const res = await fetchWithTimeout(`${BITUNIX_FUTURES_REST}${path}`, {
+      method: "POST",
+      headers,
+      body: bodyJson,
+    });
+    if (!res.ok) {
+      throw new Error(`[Bitunix] setLeverage failed: ${await bitunixErrorDetail(res)}`);
     }
   }
 
   async closePerpetualPosition(symbol: string): Promise<OrderResult> {
     const pair = getBitunixPair(symbol);
     const rawPair = getRawSymbol(pair);
-    const timestamp = Date.now();
 
     if (!this.isLive) {
-      return this.paperClosePerpetualPosition(rawPair, timestamp);
+      return this.paperClosePerpetualPosition(rawPair, Date.now());
     }
 
-    try {
-      const res = await fetch(`${BITUNIX_FUTURES_REST}/api/v1/futures/order`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-BX-APIKEY": this.apiKey ?? "",
-        },
-        body: JSON.stringify({
-          symbol: rawPair,
-          side: "SELL",
-          type: "MARKET",
-          quantity: 0, // close all
-          reduceOnly: true,
-          timestamp,
-        }),
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT),
-      });
+    // LIVE — real signed close request; timestamp in header only.
+    const apiKey = requireEnv("BITUNIX_API_KEY");
+    const secret = requireEnv("BITUNIX_SECRET_KEY");
 
-      if (!res.ok) {
-        const errText = await res.text();
-        throw new Error(`Bitunix close position failed (${res.status}): ${errText}`);
-      }
+    const body = {
+      symbol: rawPair,
+      side: "SELL",
+      type: "MARKET",
+      quantity: 0, // close all
+      reduceOnly: true,
+    };
+    // ⚠ SIGNATURE CONCAT must be verified against the official docs.
+    const path = "/api/v1/futures/order";
+    const { headers, bodyJson } = signRequest(apiKey, secret, "POST", path, JSON.stringify(body));
 
-      const data = await res.json() as {
-        code?: string;
-        data?: { orderId?: string; avgPrice?: string; executedQty?: string; fee?: string };
-      };
-
-      const d = data.data ?? {};
-      return {
-        orderId: d.orderId ?? `close_${timestamp}`,
-        symbol: rawPair,
-        side: "SELL",
-        type: "MARKET",
-        quantity: parseFloat(d.executedQty ?? "0"),
-        filledQuantity: parseFloat(d.executedQty ?? "0"),
-        avgPrice: parseFloat(d.avgPrice ?? "0"),
-        status: "FILLED",
-        fee: parseFloat(d.fee ?? "0"),
-        feeAsset: "USDT",
-        timestamp,
-        isPaper: false,
-      };
-    } catch (err) {
-      console.error("[Bitunix] closePerpetualPosition error:", err);
-      throw err;
+    const res = await fetchWithTimeout(`${BITUNIX_FUTURES_REST}${path}`, {
+      method: "POST",
+      headers,
+      body: bodyJson,
+    });
+    if (!res.ok) {
+      throw new Error(`[Bitunix] close position failed: ${await bitunixErrorDetail(res)}`);
     }
+
+    const data = await res.json() as {
+      code?: string;
+      data?: { orderId?: string; avgPrice?: string; executedQty?: string; fee?: string };
+    };
+
+    if (data.code && data.code !== "0") {
+      throw new Error(`[Bitunix] close position error: code=${data.code}`);
+    }
+
+    const d = data.data ?? {};
+    const timestamp = Date.now();
+    return {
+      orderId: d.orderId ?? `close_${timestamp}`,
+      symbol: rawPair,
+      side: "SELL",
+      type: "MARKET",
+      quantity: parseFloat(d.executedQty ?? "0"),
+      filledQuantity: parseFloat(d.executedQty ?? "0"),
+      avgPrice: parseFloat(d.avgPrice ?? "0"),
+      status: "FILLED",
+      fee: parseFloat(d.fee ?? "0"),
+      feeAsset: "USDT",
+      timestamp,
+      isPaper: false,
+    };
   }
 
   // ── Paper Perpetuals Simulation ──────────────────────────────────

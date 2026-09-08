@@ -4,6 +4,7 @@ import {
   fetchDailySignal,
   fetchSignalHistory,
   getStripeCheckoutUrl,
+  checkSignalPremium,
 } from "~/lib/trading-signals";
 import type { TradingSignal, SignalStats } from "~/lib/trading-signals";
 
@@ -65,14 +66,38 @@ function SignalsPage() {
   const [history, setHistory] = useState<TradingSignal[]>([]);
   const [stats, setStats] = useState<SignalStats | null>(null);
   const [loading, setLoading] = useState(true);
-  const [unlocked] = useState(false);
+  const [unlocked, setUnlocked] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
-  // Premium gate. A `session_id` URL param is NOT proof of payment — there is no
-  // server-side Stripe verification wired here, so treating it as unlocked would be
-  // a free-pass mock. The signal stays honestly locked (`unlocked === false`) until a
-  // real, server-verified/webhook unlock path exists.
+  // Session attribution: a random id persisted locally. This is NOT proof of
+  // payment — it is the client_reference_id we send to Stripe so the webhook
+  // can attribute a REAL paid checkout to this browser. Unlock is granted
+  // only by the server after webhook verification (checkSignalPremium).
+  const [sessionId] = useState<string | undefined>(() => {
+    try {
+      const KEY = "hsmc_signal_session";
+      const existing = window.localStorage.getItem(KEY);
+      if (existing) return existing;
+      const id = crypto.randomUUID();
+      window.localStorage.setItem(KEY, id);
+      return id;
+    } catch {
+      return undefined; // storage unavailable — checkout still works, unlock attributed by email
+    }
+  });
+
+  // Real premium status from the server (webhook-verified payments only).
+  useEffect(() => {
+    if (!sessionId) return;
+    checkSignalPremium({ data: { sessionId } })
+      .then((res: { unlocked: boolean }) => setUnlocked(res.unlocked))
+      .catch((err: unknown) => {
+        console.error("[Signals] premium check failed:", err);
+        // Fail closed: locked until the server confirms a verified payment.
+        setUnlocked(false);
+      });
+  }, [sessionId]);
 
   // Fetch signals
   useEffect(() => {
@@ -107,8 +132,8 @@ function SignalsPage() {
   }, []);
 
   const handleUnlock = useCallback(() => {
-    window.location.href = getStripeCheckoutUrl();
-  }, []);
+    window.location.href = getStripeCheckoutUrl(sessionId);
+  }, [sessionId]);
 
   const handleCopy = useCallback(() => {
     if (!signal) return;

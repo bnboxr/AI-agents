@@ -19,6 +19,9 @@ import {
   getSignalHistory as getRevenueSignalHistory,
   calculateQualityMetrics,
 } from "~/lib/revenue/trading-data";
+// REAL premium state (Neon Postgres), written only by the verified Stripe
+// webhook — see src/routes/api/stripe-webhook.ts and src/lib/premium-unlock.ts.
+import { hasPremiumUnlock } from "~/lib/premium-unlock";
 import type { TradingSignal as RevenueTradingSignal } from "~/lib/revenue/trading-data";
 
 // ── Types ──────────────────────────────────────────────────────────
@@ -427,24 +430,37 @@ export function getSignalStats(): SignalStats {
 
 // ── Premium Access ─────────────────────────────────────────────────
 
-// Server-side premium gate. There is no real server-side Stripe verification
-// wired in this environment (no Stripe secret key / webhook), so a session cannot
-// be honestly proven to be premium-paid. Returning true for an arbitrary sessionId
-// would be a free pass — the exact mock this removes. Honest behavior: locked.
-//
-// ⚠ LEAD/OWNER DECISION REQUIRED: to perform REAL unlocks, wire a server-side
-// Stripe session check (STRIPE_SECRET_KEY + Stripe webhook) and verify the checkout
-// session here. Until then this returns false so the paywall is genuinely enforced.
-export function hasUnlockedPremium(_sessionId?: string): boolean {
-  return false; // honestly locked — real verification not yet wired
+/**
+ * Whether a session (client_reference_id) or email has a REAL, webhook-
+ * verified premium unlock. Results come from the durable premium store.
+ * No verified payment → locked (false). Fail-closed; never fake-unlock.
+ */
+export async function hasUnlockedPremium(
+  sessionId?: string,
+  email?: string,
+): Promise<boolean> {
+  return hasPremiumUnlock(sessionId, email);
 }
 
-// Client-side gate. There is no trustworthy client-side verification path: trusting
-// a localStorage flag was a local bypass (any value unlocked premium) and is removed.
-// Always returns false (locked) until a real server/webhook verification exists.
+// Client-side gate. There is no trustworthy client-side verification path:
+// trusting a localStorage flag was a local bypass (any value unlocked
+// premium) and is removed. The page must call `checkSignalPremium` (server
+// fn below) — client can never self-verify.
 export function hasUnlockedPremiumClient(_sessionId?: string): boolean {
-  return false; // honestly locked — real verification requires server webhook/secret
+  return false; // honestly locked — client cannot verify server state
 }
+
+// Server fn: real premium status for the signals page.
+export const checkSignalPremium = createServerFn({ method: "POST" }).handler(
+  async ({
+    data,
+  }: {
+    data: { sessionId?: string; email?: string };
+  }): Promise<{ unlocked: boolean }> => {
+    const unlocked = await hasUnlockedPremium(data.sessionId, data.email);
+    return { unlocked };
+  },
+);
 
 // ── Stripe ─────────────────────────────────────────────────────────
 
@@ -458,11 +474,20 @@ export const STRIPE_SIGNAL_LINK_DEFAULT =
 // Single canonical Stripe Price ID for the signal product (lowercase `qKp`).
 export const STRIPE_SIGNAL_PRICE_ID = "price_1TvhyEDMSAUyHlnSAFC30qKp";
 
-export function getStripeCheckoutUrl(_sessionId?: string): string {
-  if (typeof process !== "undefined" && process.env?.STRIPE_SIGNAL_LINK) {
-    return process.env.STRIPE_SIGNAL_LINK;
-  }
-  return STRIPE_SIGNAL_LINK_DEFAULT;
+/**
+ * Checkout URL for the signals product, optionally tagged with a
+ * client_reference_id. Stripe forwards that value back on the
+ * `checkout.session.completed` webhook object, which is how the server
+ * attributes a REAL payment to a browser session (premium-unlock store).
+ */
+export function getStripeCheckoutUrl(sessionId?: string): string {
+  const base =
+    typeof process !== "undefined" && process.env?.STRIPE_SIGNAL_LINK
+      ? process.env.STRIPE_SIGNAL_LINK
+      : STRIPE_SIGNAL_LINK_DEFAULT;
+  if (!sessionId || sessionId.trim().length === 0) return base;
+  const sep = base.includes("?") ? "&" : "?";
+  return `${base}${sep}client_reference_id=${encodeURIComponent(sessionId.trim())}`;
 }
 
 // ── Server Function: get daily signal ──────────────────────────────
